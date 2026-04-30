@@ -119,6 +119,9 @@
       font-size:1.05em;font-weight:700;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     }
+    .pl-title a,.pl-artist a{color:inherit;text-decoration:none}
+    .pl-title a:hover{text-decoration:underline;color:#ff6b35}
+    .pl-artist a:hover{text-decoration:underline;color:#ff6b35}
     .pl-artist{font-size:.82em;color:#aaa;margin-top:2px}
     .pl-meta{font-size:.7em;color:#555;letter-spacing:.07em;margin-top:2px}
     /* Related events strip */
@@ -383,6 +386,17 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   var titleEl  = document.getElementById('pl-title');
   var artistEl = document.getElementById('pl-artist');
   var metaEl   = document.getElementById('pl-meta');
+
+  function _esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function _setTrackMeta(t) {
+    var href = t.source_url || (t.artist_slug ? '/'+(t.artist_type||'artist')+'s/'+t.artist_slug+'/' : '');
+    titleEl.innerHTML  = href
+      ? '<a href="'+_esc(href)+'" title="View profile" style="display:block;overflow:hidden;text-overflow:ellipsis">'+_esc(t.title||'—')+'</a>'
+      : _esc(t.title||'—');
+    artistEl.innerHTML = t.artist_slug
+      ? '<a href="/'+_esc(t.artist_type||'artist')+'s/'+_esc(t.artist_slug)+'/">'+_esc(t.artist||'')+'</a>'
+      : _esc(t.artist||'');
+  }
   var chLabel  = null; // removed — pill buttons show active channel
   var playBtn  = document.getElementById('pl-play');
   var prevBtn  = document.getElementById('pl-prev');
@@ -571,8 +585,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     if (t.type === 'youtube') {
       _pendingVideo = t;
       audio.pause(); audio.src = ''; _visPlaying = false;
-      titleEl.textContent  = t.title  || '—';
-      artistEl.textContent = t.artist || '';
+      _setTrackMeta(t);
       metaEl.textContent   = (t.genre || '').toUpperCase();
       updateArt(t.art_url || '', t.genre, t.artist);
       document.title = (t.title || '—') + ' · CP Player';
@@ -584,8 +597,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
 
     _pendingVideo = null;
     audio.src = t.stream_url || '';
-    titleEl.textContent  = t.title  || '—';
-    artistEl.textContent = t.artist || '';
+    _setTrackMeta(t);
     var metaStr = t.genre || t.recorded_at || t.source || '';
     metaEl.textContent = metaStr ? metaStr.toUpperCase() : '';
     updateArt(t.art_url || '', t.genre, t.artist);
