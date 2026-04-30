@@ -224,12 +224,24 @@ function _cpGenreColors(g) {
   }
 
   // ── Track display ──
-  function setTrackDisplay(title, artist, genreStr, artUrl, trackId) {
-    if (barTitle)  barTitle.textContent  = (title  || '—').toUpperCase();
-    if (barArtist) barArtist.textContent = (artist || '').toUpperCase();
+  function _esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function setTrackDisplay(title, artist, genreStr, artUrl, trackId, track) {
+    var srcUrl    = (track && track.source_url)  || '';
+    var aSlug     = (track && track.artist_slug) || '';
+    var aType     = (track && track.artist_type) || 'artist';
+    var titleHref = srcUrl || (aSlug ? '/' + aType + 's/' + aSlug + '/' : '');
+    var titleHtml = titleHref
+      ? '<a href="' + _esc(titleHref) + '" title="View profile">' + _esc((title || '—').toUpperCase()) + '</a>'
+      : _esc((title || '—').toUpperCase());
+    var artistHtml = aSlug
+      ? '<a href="/' + _esc(aType) + 's/' + _esc(aSlug) + '/">' + _esc((artist || '').toUpperCase()) + '</a>'
+      : _esc((artist || '').toUpperCase());
+    if (barTitle)  barTitle.innerHTML  = titleHtml;
+    if (barArtist) barArtist.innerHTML = artistHtml;
     if (barGenre)  barGenre.textContent  = genreStr ? genreStr.toUpperCase() : '';
     _updateBarArt(artUrl || '', genreStr, artist);
-    if (window.cpPanel) window.cpPanel.onTrackMeta(title, artist, genreStr, artUrl, trackId);
+    if (window.cpPanel) window.cpPanel.onTrackMeta(title, artist, genreStr, artUrl, trackId, track);
   }
 
   function _updateBarArt(artUrl, genreStr, artist) {
@@ -286,7 +298,7 @@ function _cpGenreColors(g) {
       if (barSeekFill) barSeekFill.style.width = '0%';
       if (barCur)    barCur.textContent    = '0:00';
       clearRowProgress();
-      setTrackDisplay(t.title, t.artist, t.genre || t.recorded_at || '', t.art_url || '', t.id);
+      setTrackDisplay(t.title, t.artist, t.genre || t.recorded_at || '', t.art_url || '', t.id, t);
       _pendingVideo = t;
       window.cpPendingVideo = t;
       saveState();
@@ -297,7 +309,7 @@ function _cpGenreColors(g) {
     if (barSeekFill) barSeekFill.style.width = '0%';
     if (barCur)    barCur.textContent    = '0:00';
     clearRowProgress();
-    setTrackDisplay(t.title, t.artist, t.genre || t.recorded_at || '', t.art_url || '', t.id);
+    setTrackDisplay(t.title, t.artist, t.genre || t.recorded_at || '', t.art_url || '', t.id, t);
     if (seekTo > 0) {
       audio.addEventListener('loadedmetadata', function seek(){
         audio.currentTime = seekTo;
@@ -963,11 +975,19 @@ function _cpGenreColors(g) {
   }
 
   // ── Smooth text transition ──
+  function _pEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
   function _fadeText(el, text) {
     if (!el) return;
     if (el.textContent === text) return;
     el.style.opacity = '0';
     setTimeout(function(){ el.textContent = text; el.style.opacity = '1'; }, 120);
+  }
+
+  function _fadeHtml(el, html) {
+    if (!el) return;
+    el.style.opacity = '0';
+    setTimeout(function(){ el.innerHTML = html; el.style.opacity = '1'; }, 120);
   }
 
   // ── Art ──
@@ -1361,9 +1381,19 @@ function _cpGenreColors(g) {
     isOpen: function(){ return isOpen; },
     buildGenreStrip: buildGenreStrip,
 
-    onTrackMeta: function(title, artist, genre, artUrl, trackId) {
-      _fadeText(titleEl,  title  || '—');
-      _fadeText(artistEl, artist || '');
+    onTrackMeta: function(title, artist, genre, artUrl, trackId, track) {
+      var srcUrl    = (track && track.source_url)  || '';
+      var aSlug     = (track && track.artist_slug) || '';
+      var aType     = (track && track.artist_type) || 'artist';
+      var titleHref = srcUrl || (aSlug ? '/' + aType + 's/' + aSlug + '/' : '');
+      var titleHtml = titleHref
+        ? '<a href="' + _pEsc(titleHref) + '" title="View profile">' + _pEsc(title || '—') + '</a>'
+        : _pEsc(title || '—');
+      var artistHtml = aSlug
+        ? '<a href="/' + _pEsc(aType) + 's/' + _pEsc(aSlug) + '/">' + _pEsc(artist || '') + '</a>'
+        : _pEsc(artist || '');
+      _fadeHtml(titleEl,  titleHtml);
+      _fadeHtml(artistEl, artistHtml);
       _fadeText(metaEl,   genre ? genre.toUpperCase() : '');
       updateArt(artUrl || '', genre, artist);
       _applyReaction(null, 0, 0);

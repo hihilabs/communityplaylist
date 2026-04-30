@@ -57,6 +57,9 @@ body.has-player .cp-bar{display:flex}
   color:#444;font-size:.85em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+.cp-bar-title a,.cp-bar-artist a{color:inherit;text-decoration:none}
+.cp-bar-title a:hover{text-decoration:underline;color:#ff6b35}
+.cp-bar-artist a:hover{text-decoration:underline;color:#888}
 .cp-bar-btns{display:flex;gap:2px;flex-shrink:0}
 .cp-bar-btn{
   background:transparent;border:none;color:#333;cursor:pointer;
@@ -485,6 +488,9 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;
   transition:opacity .15s ease;
 }
+.cp-panel-title a,.cp-panel-artist a{color:inherit;text-decoration:none}
+.cp-panel-title a:hover{text-decoration:underline;color:#ff6b35}
+.cp-panel-artist a:hover{text-decoration:underline;color:#aaa}
 .cp-panel-meta{font-size:.68em;color:#444;font-family:'Courier New',monospace;letter-spacing:.05em;transition:opacity .15s ease}
 .cp-panel-events{display:flex;flex-direction:column;gap:3px;margin-top:6px;padding:0 2px}
 .cp-panel-event-chip{
