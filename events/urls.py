@@ -54,6 +54,7 @@ urlpatterns = [
     path('artists/register/', views.artist_register, name='artist_register'),
     path('artists/<int:pk>/', views.artist_by_pk, name='artist_by_pk'),       # legacy redirect
     path('artists/<slug:slug>/', views.artist_profile, name='artist_profile'),
+    path('artists/<slug:slug>/feed.rss', views.artist_rss, name='artist_rss'),
     path('artists/<slug:slug>/edit/', views.artist_edit, name='artist_edit'),
     path('events/<slug:slug>/', views.event_detail, name='event_detail'),
     path('events/<slug:slug>/lineup/', views.event_lineup_edit, name='event_lineup_edit'),
@@ -69,6 +70,7 @@ urlpatterns = [
     path('venues/register/', views.venue_register, name='venue_register'),
     path('venues/<slug:slug>/', views.venue_detail, name='venue_detail'),
     path('venues/<slug:slug>/feed.ics', views.venue_feed, name='venue_feed'),
+    path('venues/<slug:slug>/feed.rss', views.venue_rss,  name='venue_rss'),
     path('venues/<slug:slug>/edit/', views.venue_edit, name='venue_edit'),
     # Neighborhoods
     path('neighborhoods/', views.neighborhood_list, name='neighborhood_list'),
@@ -100,6 +102,7 @@ urlpatterns = [
     path('report/', views.report_page, name='report'),
     path('spaces/', views.community_space_list, name='community_space_list'),
     path('spaces/<slug:slug>/', views.community_space_profile, name='community_space_profile'),
+    path('spaces/<slug:slug>/feed.rss', views.space_rss, name='space_rss'),
     path('spaces/<slug:slug>/edit/', views.community_space_edit, name='community_space_edit'),
     path('spaces/<slug:slug>/supporters/', views.community_space_supporters, name='community_space_supporters'),
     # Ko-fi webhook — configure this URL at ko-fi.com/manage/webhooks

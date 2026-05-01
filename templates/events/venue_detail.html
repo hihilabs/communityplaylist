@@ -3,6 +3,7 @@
 {% block title %}{{ venue.name }} — Community Playlist{% endblock %}
 {% block head_extra %}
 <link rel="alternate" type="text/calendar" title="{{ venue.name }} events" href="/venues/{{ venue.slug }}/feed.ics">
+<link rel="alternate" type="application/rss+xml" title="{{ venue.name }} events RSS" href="/venues/{{ venue.slug }}/feed.rss">
 {% with desc=venue.description|default:""|truncatechars:200 %}{% with fallback="PDX music venue on Community Playlist — upcoming events, location, and more." %}{% with final_desc=desc|default:fallback %}
 <meta name="description" content="{{ final_desc }}">
 <link rel="canonical" href="https://communityplaylist.com/venues/{{ venue.slug }}/">
@@ -147,6 +148,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
       {% if venue.view_count %}<span style="color:#444">👁 {{ venue.view_count }}</span>{% endif %}
       {% if venue.website %}<span><a href="{{ venue.website|safe_href }}" target="_blank" rel="noopener">Website ↗</a></span>{% endif %}
       <span><a href="/venues/{{ venue.slug }}/feed.ics" title="Subscribe in Google Calendar, Apple Calendar, etc.">📅 Subscribe</a></span>
+      <span><a href="/venues/{{ venue.slug }}/feed.rss" title="RSS feed for this venue">RSS</a></span>
     </div>
     <div class="socials">
       {% if venue.instagram %}
@@ -291,5 +293,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
 
 <div class="epk-footer">
   <a href="/" title="Community Playlist · Portland">community playlist · pdx</a>
+  <span style="color:#222;font-size:.68em">·</span>
+  <a href="/venues/{{ venue.slug }}/feed.rss" title="RSS feed for this venue">RSS</a>
 </div>
 {% endblock %}

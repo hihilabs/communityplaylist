@@ -11,6 +11,7 @@
 <meta property="og:site_name"   content="Community Playlist PDX">
 <meta name="twitter:card" content="summary{% if space.photo %}_large_image{% endif %}">
 <link rel="canonical" href="https://communityplaylist.com/spaces/{{ space.slug }}/">
+<link rel="alternate" type="application/rss+xml" title="{{ space.name }} updates RSS" href="/spaces/{{ space.slug }}/feed.rss">
 {% endwith %}
 {% endblock %}
 
@@ -208,6 +209,7 @@ h1{color:var(--accent);font-size:1.3em;font-weight:700;line-height:1.2}
     {% if space.mastodon %}<a href="{{ space.mastodon }}" class="social-pill" target="_blank" rel="noopener">🐘 Mastodon</a>{% endif %}
     {% if space.tiktok %}<a href="https://tiktok.com/@{{ space.tiktok }}" class="social-pill" target="_blank" rel="noopener">🎵 TikTok</a>{% endif %}
     {% if space.kofi %}<a href="https://ko-fi.com/{{ space.kofi }}" class="social-pill" target="_blank" rel="noopener">☕ Ko-fi</a>{% endif %}
+    <a href="/spaces/{{ space.slug }}/feed.rss" class="social-pill" title="RSS feed for this space">RSS</a>
   </div>
 
   <div class="action-row">
@@ -506,6 +508,8 @@ h1{color:var(--accent);font-size:1.3em;font-weight:700;line-height:1.2}
 
 <div class="epk-footer">
   <a href="/" title="Community Playlist · Portland">community playlist · pdx</a>
+  <span class="epk-footer-sep">·</span>
+  <a href="/spaces/{{ space.slug }}/feed.rss" title="RSS feed">RSS</a>
   <span class="epk-footer-sep">·</span>
   <button id="cookie-btn" onclick="cpCookieModal()">Cookie Preferences</button>
   <span class="epk-footer-sep">·</span>

@@ -183,6 +183,22 @@ h1{color:var(--accent);font-size:1.2em;margin-bottom:22px}
 </div>
 {% endif %}
 
+<div class="card" style="border-color:#1a2a1a">
+  <div class="card-title" style="color:#4caf50">RSS Feed</div>
+  <p style="font-size:.8em;color:#666;margin-bottom:12px;line-height:1.6">Share this link so people can subscribe to your space's updates in any RSS reader (Feedly, NetNewsWire, etc.).</p>
+  <div class="fg">
+    <label style="color:#888">Your space RSS feed URL</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="rss-url" readonly
+             value="https://communityplaylist.com/spaces/{{ space.slug }}/feed.rss"
+             style="font-family:monospace;font-size:.82em;background:#111;cursor:pointer"
+             onclick="this.select()">
+      <button type="button" onclick="cpCopy('rss-url',this)"
+              style="background:transparent;border:1px solid #333;color:#666;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.78em;white-space:nowrap;flex-shrink:0">Copy</button>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-title">📁 Resource Library</div>
   <div class="fg">

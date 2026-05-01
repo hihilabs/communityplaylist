@@ -1449,6 +1449,94 @@ def rss_feed(request):
     return resp
 
 
+def venue_rss(request, slug):
+    from django.utils.feedgenerator import Rss201rev2Feed
+    venue = get_object_or_404(Venue, slug=slug)
+    base  = 'https://communityplaylist.com'
+    feed  = Rss201rev2Feed(
+        title=f'{venue.name} — Events on Community Playlist',
+        link=f'{base}/venues/{venue.slug}/',
+        description=f'Upcoming events at {venue.name} in Portland, OR.',
+        language='en',
+        feed_url=f'{base}/venues/{venue.slug}/feed.rss',
+    )
+    events = Event.objects.filter(
+        venue=venue, status='approved', start_date__gte=timezone.now()
+    ).order_by('start_date')[:60]
+    for event in events:
+        desc = event.description[:500] if event.description else ''
+        feed.add_item(
+            title=event.title,
+            link=f'{base}/events/{event.slug}/',
+            unique_id=f'{base}/events/{event.slug}/',
+            description=desc,
+            pubdate=event.start_date if timezone.is_aware(event.start_date) else timezone.make_aware(event.start_date),
+        )
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
+def artist_rss(request, slug):
+    from django.utils.feedgenerator import Rss201rev2Feed
+    artist = get_object_or_404(Artist, slug=slug)
+    base   = 'https://communityplaylist.com'
+    feed   = Rss201rev2Feed(
+        title=f'{artist.name} — Events on Community Playlist',
+        link=f'{base}/artists/{artist.slug}/',
+        description=f'Upcoming events featuring {artist.name} in Portland, OR.',
+        language='en',
+        feed_url=f'{base}/artists/{artist.slug}/feed.rss',
+    )
+    events = Event.objects.filter(
+        artists=artist, status='approved', start_date__gte=timezone.now()
+    ).order_by('start_date')[:60]
+    for event in events:
+        desc = event.description[:500] if event.description else ''
+        feed.add_item(
+            title=event.title,
+            link=f'{base}/events/{event.slug}/',
+            unique_id=f'{base}/events/{event.slug}/',
+            description=desc,
+            pubdate=event.start_date if timezone.is_aware(event.start_date) else timezone.make_aware(event.start_date),
+        )
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
+def space_rss(request, slug):
+    from django.utils.feedgenerator import Rss201rev2Feed
+    from .models import KofiPost
+    space = get_object_or_404(CommunitySpace, slug=slug, is_public=True)
+    base  = 'https://communityplaylist.com'
+    feed  = Rss201rev2Feed(
+        title=f'{space.name} — Updates on Community Playlist',
+        link=f'{base}/spaces/{space.slug}/',
+        description=space.description[:200] if space.description else f'{space.name} — community space in Portland, OR.',
+        language='en',
+        feed_url=f'{base}/spaces/{space.slug}/feed.rss',
+    )
+    posts = KofiPost.objects.filter(
+        community_space=space, is_public=True
+    ).order_by('-timestamp')[:40]
+    for post in posts:
+        emoji = {'Subscription': '⭐', 'Shop_Order': '🛒', 'Commission': '🎨', 'Blog_Post': '📝'}.get(post.kofi_type, '☕')
+        title = f'{emoji} {post.from_name}' if post.kofi_type != 'Blog_Post' else (post.message[:80] or 'Update')
+        desc  = post.message or ''
+        pub   = post.timestamp or post.created_at
+        feed.add_item(
+            title=title,
+            link=post.url or f'{base}/spaces/{space.slug}/',
+            unique_id=post.url or f'{base}/spaces/{space.slug}/#{post.pk}',
+            description=desc,
+            pubdate=pub if timezone.is_aware(pub) else timezone.make_aware(pub),
+        )
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
 def calendar_subscribe(request):
     genres = Genre.objects.filter(
         events__status='approved', events__start_date__gte=timezone.now()

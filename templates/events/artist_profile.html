@@ -19,6 +19,7 @@
 {% if artist.photo %}<meta name="twitter:image" content="https://communityplaylist.com{{ artist.photo.url }}">{% endif %}
 <!-- Canonical -->
 <link rel="canonical" href="https://communityplaylist.com/artists/{{ artist.slug }}/">
+<link rel="alternate" type="application/rss+xml" title="{{ artist.name }} events RSS" href="/artists/{{ artist.slug }}/feed.rss">
 <!-- JSON-LD structured data -->
 <script type="application/ld+json">
 {
@@ -194,6 +195,7 @@ h1{color:var(--accent);font-size:1.25em;font-weight:700;line-height:1.2}
         {% if artist.kofi %}<a href="https://ko-fi.com/{{ artist.kofi }}" class="social-pill" target="_blank" rel="noopener" style="border-color:#ff5e5b;color:#ff8a80">☕ Ko-fi</a>{% endif %}
         {% if artist.tiktok %}<a href="https://tiktok.com/@{{ artist.tiktok }}" class="social-pill" target="_blank" rel="noopener">🎵 TikTok</a>{% endif %}
         {% if artist.mb_id %}<a href="https://musicbrainz.org/artist/{{ artist.mb_id }}" class="social-pill" target="_blank" rel="noopener">🎼 MusicBrainz</a>{% endif %}
+        <a href="/artists/{{ artist.slug }}/feed.rss" class="social-pill" title="RSS feed for this artist">RSS</a>
       </div>
 
       <div class="action-row">
@@ -438,6 +440,8 @@ window.cpEmbedLinks = [
 
 <div class="epk-footer">
   <a href="/" title="Community Playlist · Portland">community playlist · pdx</a>
+  <span class="epk-footer-sep">·</span>
+  <a href="/artists/{{ artist.slug }}/feed.rss" title="RSS feed">RSS</a>
   <span class="epk-footer-sep">·</span>
   <button id="cookie-btn" onclick="cpCookieModal()">Cookie Preferences</button>
   <span class="epk-footer-sep">·</span>
