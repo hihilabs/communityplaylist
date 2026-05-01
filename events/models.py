@@ -154,6 +154,7 @@ class Artist(models.Model):
     tiktok     = models.CharField(max_length=100, blank=True, help_text='Handle without @')
     twitch     = models.CharField(max_length=100, blank=True, help_text='Channel name without @')
     beatport   = models.URLField(blank=True, help_text='Beatport artist page URL')
+    rss_feed   = models.URLField(blank=True, help_text='External RSS feed URL (blog, Substack, etc.) — items pulled and shown on profile')
     discogs    = models.URLField(blank=True, help_text='Discogs artist page URL')
     house_mixes = models.CharField(max_length=100, blank=True, help_text='house-mixes.com username')
     HOUSE_MIXES_SORT_CHOICES = [
@@ -448,6 +449,7 @@ class CommunitySpace(models.Model):
         max_length=64, blank=True, unique=True, null=True,
         help_text='Auto-generated webhook verification token — paste this into Ko-fi Settings → Webhooks',
     )
+    rss_feed  = models.URLField(blank=True, help_text='External RSS feed URL (blog, Substack, etc.) — new items auto-posted to CP Bluesky tagging this space')
 
     # Resources
     drive_folder_url = models.URLField(
@@ -675,6 +677,33 @@ class CommunityAsk(models.Model):
         if self.board_offering_id:
             return self.board_offering.get_absolute_url()
         return ''
+
+
+class ExternalFeedItem(models.Model):
+    """One item pulled from an entity's external RSS feed (blog, Substack, etc.)."""
+    community_space = models.ForeignKey(
+        'CommunitySpace', null=True, blank=True, on_delete=models.CASCADE, related_name='feed_items',
+    )
+    artist = models.ForeignKey(
+        'Artist', null=True, blank=True, on_delete=models.CASCADE, related_name='feed_items',
+    )
+    venue = models.ForeignKey(
+        'Venue', null=True, blank=True, on_delete=models.CASCADE, related_name='feed_items',
+    )
+    title       = models.CharField(max_length=500)
+    link        = models.URLField(max_length=1000)
+    description = models.TextField(blank=True)
+    published   = models.DateTimeField(null=True, blank=True)
+    guid        = models.CharField(max_length=1000)
+    bsky_posted = models.BooleanField(default=False)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-published', '-created_at']
+
+    def __str__(self):
+        owner = self.community_space or self.artist or self.venue or '?'
+        return f'{owner} — {self.title[:60]}'
 
 
 class SupportTicket(models.Model):
@@ -1152,6 +1181,7 @@ class Venue(models.Model):
     youtube_channel_id = models.CharField(max_length=50, blank=True, help_text='Cached YouTube channel ID (UCxxx…)')
     view_count   = models.PositiveIntegerField(default=0)
     allow_comments = models.BooleanField(default=False, help_text='Allow public comments on venue page')
+    rss_feed     = models.URLField(blank=True, help_text='External RSS feed URL — items pulled and shown on profile')
     created_at   = models.DateTimeField(auto_now_add=True)
 
     class Meta:

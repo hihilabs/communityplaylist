@@ -184,10 +184,11 @@ h1{color:var(--accent);font-size:1.2em;margin-bottom:22px}
 {% endif %}
 
 <div class="card" style="border-color:#1a2a1a">
-  <div class="card-title" style="color:#4caf50">RSS Feed</div>
-  <p style="font-size:.8em;color:#666;margin-bottom:12px;line-height:1.6">Share this link so people can subscribe to your space's updates in any RSS reader (Feedly, NetNewsWire, etc.).</p>
-  <div class="fg">
-    <label style="color:#888">Your space RSS feed URL</label>
+  <div class="card-title" style="color:#4caf50">RSS / Feed Integration</div>
+  <p style="font-size:.8em;color:#666;margin-bottom:14px;line-height:1.6">Two-way: share your CP profile feed with any RSS reader, <em>and</em> paste your own blog/Substack/website RSS so new posts auto-appear here and get amplified on CP's Bluesky.</p>
+
+  <div class="fg" style="margin-bottom:12px">
+    <label style="color:#888">Your CP profile feed (share this with RSS readers)</label>
     <div style="display:flex;gap:8px;align-items:center">
       <input type="text" id="rss-url" readonly
              value="https://communityplaylist.com/spaces/{{ space.slug }}/feed.rss"
@@ -196,6 +197,13 @@ h1{color:var(--accent);font-size:1.2em;margin-bottom:22px}
       <button type="button" onclick="cpCopy('rss-url',this)"
               style="background:transparent;border:1px solid #333;color:#666;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.78em;white-space:nowrap;flex-shrink:0">Copy</button>
     </div>
+  </div>
+
+  <div class="fg">
+    <label>Your external RSS feed (blog, Substack, website, etc.)</label>
+    <input type="url" name="rss_feed" value="{{ space.rss_feed }}"
+           placeholder="https://yourblog.substack.com/feed">
+    <div class="hint">New posts will appear on your profile and get a shoutout on CP's Bluesky — tagging you automatically.</div>
   </div>
 </div>
 

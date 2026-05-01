@@ -5290,6 +5290,9 @@ def community_space_profile(request, slug):
     week_ago     = _tz.now() - __import__('datetime').timedelta(days=7)
     kofi_recent  = [p for p in kofi_support if p.timestamp and p.timestamp >= week_ago]
 
+    from .models import ExternalFeedItem
+    feed_items = list(space.feed_items.order_by('-published', '-created_at')[:12]) if space.rss_feed else []
+
     # Handle new update post (owner only)
     if request.method == 'POST' and request.POST.get('_post_update') == '1' and can_edit:
         body = request.POST.get('update_body', '').strip()
@@ -5309,6 +5312,7 @@ def community_space_profile(request, slug):
         'kofi_blog':     kofi_blog,
         'kofi_support':  kofi_support,
         'kofi_recent':   kofi_recent,
+        'feed_items':    feed_items,
     })
 
 
@@ -5382,7 +5386,7 @@ def community_space_edit(request, slug):
 
     for field in ['name', 'bio', 'address', 'neighborhood', 'website',
                   'contact_email', 'instagram', 'bluesky', 'mastodon', 'tiktok', 'kofi',
-                  'drive_folder_url', 'sol_wallet', 'donation_url']:
+                  'drive_folder_url', 'sol_wallet', 'donation_url', 'rss_feed']:
         space.__setattr__(field, request.POST.get(field, '').strip())
 
     # Auto-generate webhook token on first save if Ko-fi handle is set

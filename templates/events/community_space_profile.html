@@ -396,6 +396,23 @@ h1{color:var(--accent);font-size:1.3em;font-weight:700;line-height:1.2}
 </a>
 {% endif %}
 
+{# ── 7a. External RSS feed items ── #}
+{% if feed_items %}
+<div class="section-label">📡 Updates</div>
+<div class="kofi-posts">
+  {% for item in feed_items %}
+  <a href="{{ item.link }}" class="kofi-post-card" target="_blank" rel="noopener">
+    <div class="kofi-post-meta">
+      <span class="kofi-post-icon">📝</span>
+      {% if item.published %}<span class="kofi-post-date">{{ item.published|date:"M j, Y" }}</span>{% endif %}
+    </div>
+    <div class="kofi-post-title">{{ item.title|truncatechars:120 }}</div>
+    <span class="kofi-post-link">Read more ↗</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {# ── 7. Ko-fi Posts + Supporters ── #}
 {% if space.kofi %}
 {% if kofi_blog %}
