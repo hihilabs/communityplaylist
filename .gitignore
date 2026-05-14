@@ -19,3 +19,11 @@ staticfiles/
 *.sock
 *.log
 communityplaylist.sock
+
+# Backups / scratch
+*.bak
+*.bak-*
+*.backup-*
+db.sqlite3.*
+discord_event_sync.py
+discord_sync.env

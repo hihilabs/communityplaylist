@@ -7,7 +7,7 @@ from decouple import config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-h+uj_=cyo*v!34-=wvv8_xrdk0a-pjpselopb8)aeb-jx+66=c')
+SECRET_KEY = config('SECRET_KEY')  # no default — startup crash if unset
 DEBUG      = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS      = config('ALLOWED_HOSTS', default='communityplaylist.com,www.communityplaylist.com', cast=Csv())
@@ -25,6 +25,8 @@ INSTALLED_APPS = [
     'django.contrib.sitemaps',
     'events',
     'board',
+    'social',
+    'wiki',
 ]
 
 MIDDLEWARE = [
@@ -147,9 +149,14 @@ SPOTIFY_CLIENT_SECRET = config('SPOTIFY_CLIENT_SECRET', default='')
 BLUESKY_HANDLE       = config('BLUESKY_HANDLE', default='')
 BLUESKY_APP_PASSWORD = config('BLUESKY_APP_PASSWORD', default='')
 
-# Local Ollama — moondream vision model for flyer scanning (tokyo7, no API cost)
+# Local Ollama — llama3.2-vision:11b for flyer scanning fallback (tokyo7, no API cost)
 OLLAMA_URL          = config('OLLAMA_URL', default='http://10.0.0.124:11434')
-OLLAMA_FLYER_MODEL  = config('OLLAMA_FLYER_MODEL', default='moondream')
+OLLAMA_FLYER_MODEL  = config('OLLAMA_FLYER_MODEL', default='llama3.2-vision:11b')
+
+# Anthropic — Claude Vision for flyer scanning (primary, higher accuracy)
+# Leave blank to use Ollama fallback only (free, on-box)
+ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')
+FLYER_VLM_MODEL   = config('FLYER_VLM_MODEL', default='claude-haiku-4-5-20251001')
 
 # Ko-fi — webhook verification + daily broadcast
 KOFI_VERIFICATION_TOKEN = config('KOFI_VERIFICATION_TOKEN', default='')  # KF_API_... key from ko-fi.com/manage/api
@@ -164,6 +171,10 @@ DISCORD_WEBHOOK_OPS    = config('DISCORD_WEBHOOK_OPS',    default='')  # ops ale
 # Create bot at discord.com/developers, add to server with MANAGE_EVENTS permission
 DISCORD_BOT_TOKEN = config('DISCORD_BOT_TOKEN', default='')  # Bot token (not webhook)
 DISCORD_GUILD_ID  = config('DISCORD_GUILD_ID',  default='')  # Server/Guild ID (right-click server → Copy ID)
+# Bot channel IDs — set these to the numeric channel IDs for each CP bot channel
+DISCORD_CHAN_EVENTS = config('DISCORD_CHAN_EVENTS', default='')  # #cp-events
+DISCORD_CHAN_TRADE  = config('DISCORD_CHAN_TRADE',  default='')  # #cp-free-trade
+DISCORD_CHAN_DROPS  = config('DISCORD_CHAN_DROPS',  default='')  # #cp-drops
 
 # Social auto-posting limits
 SOCIAL_DAILY_POST_LIMIT  = 27  # max Bluesky posts/day; above this, events split by category
@@ -171,13 +182,13 @@ SOCIAL_BOARD_DELAY_HOURS = 1   # hours after topic creation before auto-posting
 
 # Last.fm API — user top tracks / recent plays on public profiles
 # Register at: https://www.last.fm/api/account/create
-LASTFM_API_KEY    = config('LASTFM_API_KEY',    default='f20acc46f0492bbea83a73865f36a735')
-LASTFM_API_SECRET = config('LASTFM_API_SECRET', default='31118728f864c32cab4d8af55e5d14c5')
+LASTFM_API_KEY    = config('LASTFM_API_KEY',    default='')
+LASTFM_API_SECRET = config('LASTFM_API_SECRET', default='')
 
 # Discogs API — user collection on public profiles (read-only, no OAuth needed)
 # Register at: https://www.discogs.com/settings/developers
-DISCOGS_CONSUMER_KEY    = config('DISCOGS_CONSUMER_KEY',    default='NIIjwGGZHxtpGqVViANR')
-DISCOGS_CONSUMER_SECRET = config('DISCOGS_CONSUMER_SECRET', default='LuqJsKXktiCLKJYoynYSoikWuWKNyIWb')
+DISCOGS_CONSUMER_KEY    = config('DISCOGS_CONSUMER_KEY',    default='')
+DISCOGS_CONSUMER_SECRET = config('DISCOGS_CONSUMER_SECRET', default='')
 
 # Email — Plesk local SMTP with SASL auth
 # Uses communityplaylist/email_backend.py to skip self-signed cert verification
@@ -197,3 +208,18 @@ SERVER_EMAIL = 'noreply@communityplaylist.com'
 
 # Worker API (Unraid pull-worker)
 WORKER_SECRET = config('WORKER_SECRET', default='')
+
+# ── Security headers ──────────────────────────────────────────────────────────
+SECURE_CONTENT_TYPE_NOSNIFF    = True
+SECURE_BROWSER_XSS_FILTER      = True
+X_FRAME_OPTIONS                = 'DENY'
+SESSION_COOKIE_SECURE          = not DEBUG
+CSRF_COOKIE_SECURE             = not DEBUG
+SECURE_HSTS_SECONDS            = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD            = True
+
+# Cloudflare sits in front and terminates TLS; it sets X-Forwarded-Proto: https
+# so Django can trust that header and enforce HTTPS at the app layer.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT     = not DEBUG   # redirect HTTP→HTTPS (CF handles it first, but belt+suspenders)

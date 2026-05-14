@@ -1,0 +1,82 @@
+{% extends 'wiki/base.html' %}
+{% load wiki_tags %}
+
+{% block title %}{{ genre.name }} — Genre{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom: 8px; font-size: 12px; color: var(--muted);">
+  <a href="/wiki/">← Token Index</a>
+</div>
+
+<h1>{{ genre.name }}</h1>
+
+<div style="display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap;">
+  {% for token in genre.tokens.all %}
+    <a href="{{ token.get_absolute_url }}" class="chip accent">{{ token.name }}</a>
+  {% endfor %}
+</div>
+
+{% if genre.description %}
+  <p style="color: var(--text); margin-top: 12px; max-width: 680px;">{{ genre.description }}</p>
+{% endif %}
+
+{% if genre.mb_id or genre.lastfm_tag or genre.discogs_style or genre.beatport_name or genre.wikipedia_url %}
+<h2>Sources &amp; Attribution</h2>
+<table class="source-table">
+  <thead>
+    <tr><th>Source</th><th>Entry</th><th>Link</th></tr>
+  </thead>
+  <tbody>
+    {% if genre.wikipedia_url %}
+    <tr>
+      <td style="font-weight:600;color:var(--text)">Wikipedia</td>
+      <td style="color:var(--muted)">{{ genre.name }}</td>
+      <td><a href="{{ genre.wikipedia_url|safe_url }}" target="_blank" rel="noopener">↗</a></td>
+    </tr>
+    {% endif %}
+    {% if genre.mb_id %}
+    <tr>
+      <td style="font-weight:600;color:var(--text)">MusicBrainz</td>
+      <td style="color:var(--muted)">{{ genre.mb_id }}</td>
+      <td><a href="https://musicbrainz.org/genre/{{ genre.mb_id }}" target="_blank" rel="noopener">↗</a></td>
+    </tr>
+    {% endif %}
+    {% if genre.lastfm_tag %}
+    <tr>
+      <td style="font-weight:600;color:var(--text)">Last.fm</td>
+      <td style="color:var(--muted)">{{ genre.lastfm_tag }}</td>
+      <td><a href="https://www.last.fm/tag/{{ genre.lastfm_tag|urlencode }}" target="_blank" rel="noopener">↗</a></td>
+    </tr>
+    {% endif %}
+    {% if genre.discogs_style %}
+    <tr>
+      <td style="font-weight:600;color:var(--text)">Discogs</td>
+      <td style="color:var(--muted)">{{ genre.discogs_style }}</td>
+      <td><a href="https://www.discogs.com/search/?style={{ genre.discogs_style|urlencode }}" target="_blank" rel="noopener">↗</a></td>
+    </tr>
+    {% endif %}
+    {% if genre.beatport_name %}
+    <tr>
+      <td style="font-weight:600;color:var(--text)">Beatport</td>
+      <td style="color:var(--muted)">{{ genre.beatport_name }}</td>
+      <td><a href="https://www.beatport.com/genre/{{ genre.beatport_name|slugify }}/1" target="_blank" rel="noopener">↗</a></td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+<p style="font-size: 11px; margin-top: 8px; font-style: italic;">
+  This wiki is an homage to these sources. Data may be incomplete — community improvements welcome.
+</p>
+{% endif %}
+
+<h2>Token Graph</h2>
+<p>
+  Each token is independently searchable. Tracks tagged
+  {% for t in genre.tokens.all %}
+    <a href="{{ t.get_absolute_url }}">{{ t.name }}</a>{% if not forloop.last %} + {% endif %}
+  {% endfor %}
+  share sonic DNA with everything else carrying those tokens.
+</p>
+
+{% endblock %}
