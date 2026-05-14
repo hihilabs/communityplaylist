@@ -22,10 +22,15 @@ def _banner():
 
 
 def _get_ip(request):
-    return (
-        request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-        or request.META.get('REMOTE_ADDR', '')
-    )
+    # CF-Connecting-IP is set by Cloudflare and cannot be spoofed by the client.
+    # Fall back to the last (rightmost) XFF hop, then REMOTE_ADDR.
+    cf_ip = request.META.get('HTTP_CF_CONNECTING_IP', '').strip()
+    if cf_ip:
+        return cf_ip
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.split(',')[-1].strip()  # rightmost = set by trusted proxy
+    return request.META.get('REMOTE_ADDR', '')
 
 
 def _rate_limited(request):
@@ -258,6 +263,8 @@ def give_new(request):
                         )
                         offering.board_topic = topic
                         offering.save(update_fields=['board_topic'])
+                        from events.discord_bot import post_trade_offering
+                        post_trade_offering(offering)
                         return redirect(offering.get_absolute_url())
     else:
         initial = {'neighborhood': hood_obj} if hood_obj else {}

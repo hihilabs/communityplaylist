@@ -104,13 +104,17 @@ class Command(BaseCommand):
                     ev.website = result['ticket_url'][:500]
                     changed.append('website')
 
-                # Link artist stubs if names match existing Artists
+                # Link or auto-stub artists found in flyer
                 if result.get('artists'):
                     for name in result['artists'][:10]:
-                        artist = Artist.objects.filter(
-                            name__iexact=name.strip(), is_stub=False
-                        ).first()
-                        if artist and artist not in ev.artists.all():
+                        name = name.strip()
+                        if not name:
+                            continue
+                        artist = Artist.objects.filter(name__iexact=name).first()
+                        if not artist:
+                            artist = Artist.objects.create(name=name, is_stub=True)
+                            changed.append(f'stub:{artist.name}')
+                        if artist not in ev.artists.all():
                             ev.artists.add(artist)
                             changed.append(f'artist:{artist.name}')
 

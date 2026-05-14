@@ -10,7 +10,7 @@ class TopicForm(forms.ModelForm):
         'autocomplete': 'off',
     }))
     # Timing honeypot — JS stamps epoch on page load; bots submit too fast
-    _t = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'id': 'id__t_topic'}))
+    form_ts = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'id': 'id__t_topic'}))
 
     class Meta:
         model = Topic
@@ -36,7 +36,7 @@ class ReplyForm(forms.ModelForm):
         'autocomplete': 'off',
     }))
     # Timing honeypot
-    _t = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'id': 'id__t_reply'}))
+    form_ts = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'id': 'id__t_reply'}))
 
     class Meta:
         model = Reply
@@ -61,7 +61,7 @@ class OfferingForm(forms.ModelForm):
         'autocomplete': 'off',
     }))
     # Timing honeypot
-    _t = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'id': 'id__t_offer'}))
+    form_ts = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'id': 'id__t_offer'}))
 
     # "Not listed" escape hatch — handled in the view
     new_neighborhood_name = forms.CharField(

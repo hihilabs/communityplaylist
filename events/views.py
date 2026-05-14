@@ -24,6 +24,27 @@ CP_VERSION = '0.9.4'   # bump on each deploy
 # Portland city center
 PDX_LAT, PDX_LNG = 45.5051, -122.6750
 
+# ── Auth rate limiting ────────────────────────────────────────────────────────
+def _client_ip(request):
+    cf = request.META.get('HTTP_CF_CONNECTING_IP', '').strip()
+    if cf:
+        return cf
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.split(',')[-1].strip()
+    return request.META.get('REMOTE_ADDR', '')
+
+def _auth_rate_limited(request, action, limit=10, window=300):
+    """Return True (and increment) if this IP has exceeded limit within window seconds."""
+    from django.core.cache import cache
+    ip  = _client_ip(request)
+    key = f'auth_rl_{action}_{ip}'
+    count = cache.get(key, 0)
+    if count >= limit:
+        return True
+    cache.set(key, count + 1, window)
+    return False
+
 def haversine_miles(lat1, lng1, lat2, lng2):
     """Great-circle distance in miles between two lat/lng points."""
     R = 3958.8  # Earth radius in miles
@@ -33,12 +54,19 @@ def haversine_miles(lat1, lng1, lat2, lng2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1487255057257857105/tv3mMFyLyx86r4sKma-1zFvM-4-qt43jhWqf7nJm3N_LzAvq3ZWIVpmNTL5LeKUKKBiz"
+def _get_discord_webhook():
+    from django.conf import settings as _s
+    return (getattr(_s, 'DISCORD_WEBHOOK_OPS', '')
+            or getattr(_s, 'DISCORD_WEBHOOK_BOARD', '')
+            or getattr(_s, 'DISCORD_WEBHOOK', ''))
 
 def notify_discord(message):
+    webhook = _get_discord_webhook()
+    if not webhook:
+        return
     try:
-        requests.post(DISCORD_WEBHOOK, json={"content": message})
-    except:
+        requests.post(webhook, json={"content": message})
+    except Exception:
         pass
 
 
@@ -769,11 +797,13 @@ def event_submit(request):
                 event.submitted_user = request.user
             event.save()
             form.save_m2m()
-            # Save flyer URL if provided
+            # Save flyer URL if provided (http/https only — block javascript: etc.)
             flyer_url = request.POST.get('flyer_url', '').strip()
-            if flyer_url:
+            if flyer_url and flyer_url.lower().startswith(('http://', 'https://')):
                 event.flyer_url = flyer_url
                 event.save(update_fields=['flyer_url'])
+            else:
+                flyer_url = ''
 
             # Queue geocoding async — Unraid worker fills lat/lng without blocking this request
             from .models import WorkerTask
@@ -1024,6 +1054,9 @@ def _send_verification_email(user, profile):
 def register_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
+    if request.method == 'POST' and _auth_rate_limited(request, 'register', limit=5, window=600):
+        messages.error(request, 'Too many attempts. Please wait a few minutes.')
+        return render(request, 'accounts/register.html', {'form': RegisterForm()})
     form = RegisterForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         from django.contrib.auth.models import User
@@ -1051,10 +1084,17 @@ def register_view(request):
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
+    if request.method == 'POST' and _auth_rate_limited(request, 'login', limit=10, window=300):
+        messages.error(request, 'Too many login attempts. Please wait a few minutes.')
+        return render(request, 'accounts/login.html', {'form': StyledAuthForm()})
     form = StyledAuthForm(request, data=request.POST or None)
     if request.method == 'POST' and form.is_valid():
         login(request, form.get_user())
-        return redirect(request.GET.get('next', 'dashboard'))
+        from django.utils.http import url_has_allowed_host_and_scheme
+        next_url = request.GET.get('next', '')
+        if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=not settings.DEBUG):
+            return redirect(next_url)
+        return redirect('dashboard')
     return render(request, 'accounts/login.html', {'form': form})
 
 
@@ -1851,16 +1891,24 @@ def _save_asks_for_venue(venue, post, user=None):
 
 def neighborhood_list(request):
     """All active neighborhoods with upcoming event counts."""
+    from django.db.models import Q
+    from events.geocode import PDX_BOUNDS
     now = timezone.now()
     hoods = Neighborhood.objects.filter(active=True)
-    # Annotate with upcoming event count
-    from django.db.models import Count
+    # Events with coordinates must be within the PDX geo fence;
+    # events without coordinates are kept (may simply not have been geocoded yet).
+    in_fence = Q(latitude__isnull=True) | (
+        Q(latitude__gte=PDX_BOUNDS['lat_min']) &
+        Q(latitude__lte=PDX_BOUNDS['lat_max']) &
+        Q(longitude__gte=PDX_BOUNDS['lng_min']) &
+        Q(longitude__lte=PDX_BOUNDS['lng_max'])
+    )
     hood_data = []
     for h in hoods:
         count = Event.objects.filter(
             status='approved',
             start_date__gte=now,
-        ).filter(h.event_q()).count()
+        ).filter(in_fence).filter(h.event_q()).count()
         hood_data.append({'hood': h, 'count': count})
     # Sort by event count descending, then name
     hood_data.sort(key=lambda x: (-x['count'], x['hood'].name))
@@ -2290,6 +2338,13 @@ def _discogs_search(artist, title):
         return {}
 
 
+_EMBED_ALLOWED_HOSTS = {
+    'youtube.com', 'www.youtube.com',
+    'bandcamp.com', 'soundcloud.com', 'www.soundcloud.com',
+    'open.spotify.com', 'twitch.tv', 'www.twitch.tv',
+    'mixcloud.com', 'www.mixcloud.com',
+}
+
 def _fetch_embed_html(url, max_width=600):
     """
     Fetch embeddable HTML for Bandcamp, SoundCloud, or YouTube channel URLs.
@@ -2297,7 +2352,16 @@ def _fetch_embed_html(url, max_width=600):
     """
     import requests as _req
     import html as _html
+    from urllib.parse import urlparse as _urlparse
     _HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; CommunityPlaylist/1.0; +https://communityplaylist.com)'}
+
+    # Allowlist guard — prevents SSRF against internal hosts
+    try:
+        _parsed_host = _urlparse(url).hostname or ''
+    except Exception:
+        return None
+    if _parsed_host not in _EMBED_ALLOWED_HOSTS and not any(_parsed_host.endswith('.' + h) for h in _EMBED_ALLOWED_HOSTS):
+        return None
 
     # ── YouTube channel (handle /@x, /channel/UCx, /c/x) ────────────
     if 'youtube.com' in url and ('/@' in url or '/channel/UC' in url or '/c/' in url):
@@ -4256,6 +4320,8 @@ def promoter_detail(request, slug):
                        .filter(promoters=promoter, start_date__gte=timezone.now(), status='approved')
                        .order_by('start_date')[:12])
 
+    linked_artists = promoter.linked_artists.all().order_by('name')
+
     return render(request, 'events/promoter_detail.html', {
         'promoter': promoter, 'tracks': tracks,
         'can_edit': can_edit, 'is_following': is_following,
@@ -4268,6 +4334,8 @@ def promoter_detail(request, slug):
         'listings': listings,
         'pending_reservations': pending_reservations,
         'upcoming_events': upcoming_events,
+        'promoter_edit_fields': EditSuggestion.FIELDS['promoter'],
+        'linked_artists': linked_artists,
     })
 
 
@@ -4470,10 +4538,16 @@ def api_event_detail(request, slug):
     elif event.photo:
         photo_url = event.photo.url
 
+    from events.enrich import clean_text as _clean
+    raw_desc = event.description or ''
+    panel_desc = _clean(raw_desc)[:600]
+    if len(raw_desc) > 600 and not panel_desc.endswith('…'):
+        panel_desc = panel_desc.rstrip() + '…'
+
     data = {
         'title':            event.title,
         'slug':             event.slug,
-        'description':      event.description,
+        'description':      panel_desc,
         'start_date':       localtime(event.start_date).strftime('%a, %b %-d @ %-I:%M %p'),
         'end_date':         localtime(event.end_date).strftime('%a, %b %-d @ %-I:%M %p') if event.end_date else '',
         'location':         event.location,
@@ -4527,6 +4601,47 @@ def api_shelters(request):
         pass
 
     return JsonResponse({'shelters': data})
+
+
+def api_upcoming_events(request):
+    """
+    GET /api/upcoming-events/?days=30&limit=100
+    Returns upcoming approved events as JSON for the Unraid Discord sync worker.
+    Secured by X-Worker-Secret header (same secret as worker API).
+    """
+    secret = getattr(settings, 'WORKER_SECRET', '')
+    if not secret or request.headers.get('X-Worker-Secret') != secret:
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    from datetime import timedelta
+    days  = min(int(request.GET.get('days',  '30')), 90)
+    limit = min(int(request.GET.get('limit', '100')), 200)
+    now   = timezone.now()
+    qs    = (Event.objects
+             .filter(status='approved', start_date__gte=now,
+                     start_date__lte=now + timedelta(days=days))
+             .order_by('start_date')[:limit])
+
+    events_data = []
+    for e in qs:
+        photo_url = ''
+        try:
+            if e.photo:
+                photo_url = settings.SITE_URL + e.photo.url
+        except Exception:
+            pass
+        events_data.append({
+            'slug':       e.slug,
+            'title':      e.title,
+            'location':   e.location or 'Portland, OR',
+            'description': (e.description or '')[:1000],
+            'start_iso':  e.start_date.strftime('%Y-%m-%dT%H:%M:%S+00:00'),
+            'end_iso':    e.end_date.strftime('%Y-%m-%dT%H:%M:%S+00:00') if e.end_date else None,
+            'url':        f'{settings.SITE_URL}/events/{e.slug}/',
+            'photo_url':  photo_url,
+        })
+
+    return JsonResponse({'events': events_data, 'count': len(events_data)})
 
 
 # ── Global Shop ────────────────────────────────────────────────────────────────

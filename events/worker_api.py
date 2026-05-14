@@ -21,7 +21,7 @@ ALLOWED_COMMANDS = {
     "harvest_twitch", "harvest_instagram", "discover_instagram",
     "bluesky_digest", "daily_digest", "compress_images",
     "auto_stub_artists", "check_live_streams", "dedup_events",
-    "fetch_event_images",
+    "fetch_event_images", "enrich_event_flyers", "harvest_instagram_flyers",
 }
 
 
@@ -35,6 +35,7 @@ def _worker_auth(view):
     return inner
 
 
+@csrf_exempt
 @_worker_auth
 def pending_tasks(request):
     from .models import WorkerTask

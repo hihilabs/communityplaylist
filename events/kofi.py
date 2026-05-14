@@ -133,14 +133,18 @@ def _handle_entity_event(kind, obj, data):
     # Discord shoutout for donation/subscription events
     s = _settings()
     webhook = getattr(s, 'DISCORD_WEBHOOK_BOARD', '')
-    if webhook and kofi_type != 'Blog_Post':
-        emoji = {'Subscription': '⭐', 'Shop_Order': '🛒', 'Commission': '🎨'}.get(kofi_type, '☕')
-        label = {'Subscription': 'subscribed', 'Shop_Order': 'placed a shop order', 'Commission': 'commissioned'}.get(kofi_type, 'supported')
-        name  = getattr(obj, 'name', str(obj))
-        msg   = f'**{from_name}** just {label} **{name}** on Ko-fi! {emoji}'
-        if message and is_public:
-            msg += f'\n> {message}'
-        _discord_post(webhook, {'embeds': [{'description': msg, 'color': 0xFF5E5B}]})
+    if kofi_type != 'Blog_Post':
+        try:
+            from events.discord_bot import post_kofi_shoutout
+            post_kofi_shoutout(
+                from_name=from_name,
+                message=message,
+                support_type=kofi_type,
+                kofi_url=url or 'https://ko-fi.com/communityplaylist',
+                is_public=is_public,
+            )
+        except Exception as _e:
+            print(f'[Ko-fi] discord_bot shoutout error: {_e}')
 
 
 # ── Webhook receiver ──────────────────────────────────────────────────────────
@@ -213,24 +217,20 @@ def _store_site_kofi_post(data):
 
 def _fire_supporter_shoutout(from_name, message, support_type, kofi_url, is_public):
     s = _settings()
-    webhook = getattr(s, 'DISCORD_WEBHOOK_BOARD', '')
     cp_kofi = getattr(s, 'KOFI_PAGE', 'communityplaylist')
     cp_url  = f'https://ko-fi.com/{cp_kofi}'
 
-    emoji = {'Subscription': '⭐', 'Shop Order': '🛒'}.get(support_type, '☕')
-    label = {'Subscription': 'subscribed', 'Shop Order': 'placed a shop order'}.get(support_type, 'bought a coffee')
-
-    if webhook:
-        desc = f'**{from_name}** just {label} on Ko-fi! {emoji}'
-        if message and is_public:
-            desc += f'\n> {message}'
-        desc += f'\n\n[Support Community Playlist]({cp_url})'
-        _discord_post(webhook, {'embeds': [{
-            'title': f'{emoji} Ko-fi Support — Thank You!',
-            'description': desc,
-            'color': 0xFF5E5B,
-            'url': cp_url,
-        }]})
+    try:
+        from events.discord_bot import post_kofi_shoutout
+        post_kofi_shoutout(
+            from_name=from_name,
+            message=message,
+            support_type=support_type,
+            kofi_url=kofi_url or cp_url,
+            is_public=is_public,
+        )
+    except Exception as _e:
+        print(f'[Ko-fi] discord_bot shoutout error: {_e}')
 
     token, did = _bsky_session()
     if token:

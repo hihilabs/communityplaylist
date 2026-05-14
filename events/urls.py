@@ -23,6 +23,7 @@ urlpatterns = [
     path('api/route/', views.api_route_proxy, name='api_route_proxy'),
     path('api/events/<slug:slug>/', views.api_event_detail, name='api_event_detail'),
     path('api/shelters/', views.api_shelters, name='api_shelters'),
+    path('api/upcoming-events/', views.api_upcoming_events, name='api_upcoming_events'),
     path('api/lastfm/', views.api_lastfm_proxy, name='api_lastfm_proxy'),
     path('api/discogs/', views.api_discogs_proxy, name='api_discogs_proxy'),
     path('api/youtube-channel/', views.api_youtube_channel_proxy, name='api_youtube_channel_proxy'),

@@ -44,10 +44,18 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true')
+        parser.add_argument('--force', action='store_true', help='Run even if already posted today')
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
+        force   = options['force']
         limit   = getattr(settings, 'SOCIAL_DAILY_POST_LIMIT', 27)
+
+        from django.core.cache import cache
+        today_key = f'bluesky_digest_ran_{timezone.now().date()}'
+        if not dry_run and not force and cache.get(today_key):
+            self.stdout.write('[bluesky_digest] already ran today — skipping (use --force to override)')
+            return
 
         token, did = _bsky_session()
         if not token:
@@ -156,4 +164,6 @@ class Command(BaseCommand):
             if len(batches) > 1:
                 time.sleep(5)  # pause between category batches
 
+        if not dry_run and total_posted > 0:
+            cache.set(today_key, True, 60 * 60 * 20)  # lock out re-runs for 20 h
         self.stdout.write(f'[bluesky_digest] done — {total_posted} event posts')

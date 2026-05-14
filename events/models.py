@@ -1379,11 +1379,13 @@ class EditSuggestion(models.Model):
     TYPE_VENUE        = 'venue'
     TYPE_ARTIST       = 'artist'
     TYPE_NEIGHBORHOOD = 'neighborhood'
+    TYPE_PROMOTER     = 'promoter'
     TYPE_CHOICES = [
         (TYPE_EVENT,        'Event'),
         (TYPE_VENUE,        'Venue'),
         (TYPE_ARTIST,       'Artist'),
         (TYPE_NEIGHBORHOOD, 'Neighborhood'),
+        (TYPE_PROMOTER,     'Crew / Collective / Promoter'),
     ]
     STATUS_PENDING  = 'pending'
     STATUS_APPROVED = 'approved'
@@ -1397,8 +1399,9 @@ class EditSuggestion(models.Model):
     FIELDS = {
         TYPE_EVENT:        [('description','Description'), ('location','Location'), ('price_info','Price info'), ('website','Website / tickets URL')],
         TYPE_VENUE:        [('description','Description'), ('address','Address'), ('website','Website')],
-        TYPE_ARTIST:       [('bio','Bio'), ('website','Website')],
+        TYPE_ARTIST:       [('bio','Bio'), ('website','Website'), ('instagram','Instagram handle'), ('soundcloud','SoundCloud username'), ('bandcamp','Bandcamp URL')],
         TYPE_NEIGHBORHOOD: [('description','Description'), ('wiki_url','Wikipedia URL')],
+        TYPE_PROMOTER:     [('bio','Bio / Description'), ('website','Website'), ('instagram','Instagram handle'), ('soundcloud','SoundCloud username'), ('bandcamp','Bandcamp URL'), ('discord','Discord invite link')],
     }
 
     user            = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='edit_suggestions')
@@ -1431,6 +1434,8 @@ class EditSuggestion(models.Model):
             return Artist.objects.filter(pk=self.target_id).first()
         if self.target_type == self.TYPE_NEIGHBORHOOD:
             return Neighborhood.objects.filter(pk=self.target_id).first()
+        if self.target_type == self.TYPE_PROMOTER:
+            return PromoterProfile.objects.filter(pk=self.target_id).first()
         return None
 
     def apply(self):

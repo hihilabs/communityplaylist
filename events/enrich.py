@@ -17,14 +17,21 @@ def clean_text(text, max_len=None):
     # Decode HTML entities: &amp; -> &, &quot; -> ", &#39; -> ', etc.
     text = html.unescape(text)
 
-    # Strip CSS blocks injected by page builders e.g. ".fe-block-xxx { ... }"
-    text = re.sub(r'\.[a-zA-Z0-9_-]+\s*\{[^}]*\}', '', text)
-
     # Strip <style>...</style> blocks
     text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.I)
 
     # Strip remaining HTML tags
     text = re.sub(r'<[^>]+>', ' ', text)
+
+    # Strip CSS blocks injected by page builders:
+    #   class selectors:  .fe-block-xxx { ... }
+    #   ID selectors:     #block-xxx { ... }
+    #   nested/chained:   .foo .bar { ... }
+    # Use DOTALL so { ... } matches multi-line blocks
+    text = re.sub(r'[#.][a-zA-Z0-9_\-\s.#]*\{[^}]*\}', '', text, flags=re.DOTALL)
+
+    # Strip lone CSS custom property lines: --property: value;
+    text = re.sub(r'--[a-zA-Z0-9_-]+\s*:[^;\n]+;?', '', text)
 
     # Collapse excessive whitespace / blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
@@ -248,6 +255,19 @@ def enrich_event(event, geocode=True, save=True):
 
     # Geocode + neighborhood
     if geocode and event.location and not event.location.startswith(('http', 'www')):
+        # Text-based pre-check: reject locations that explicitly name non-PNW places.
+        # This catches events where geocoding fails (returns None) but the location
+        # string is clearly outside our area — e.g. "Ace Hotel Kyoto, Japan".
+        _loc_lower = event.location.lower()
+        _FOREIGN_MARKERS = (
+            ', japan', 'kyoto', 'tokyo', 'osaka', ', uk', ', london', ', canada',
+            ', australia', ', germany', ', france', ', netherlands', ', mexico',
+            ', china', ', korea', ', taiwan', ', india', ', brazil',
+        )
+        if any(m in _loc_lower for m in _FOREIGN_MARKERS):
+            out_of_area = True
+            return changed, out_of_area
+
         if event.latitude is None or event.longitude is None:
             lat, lng = geocode_location(event.location)
             if lat:

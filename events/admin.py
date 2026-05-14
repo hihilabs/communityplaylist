@@ -530,6 +530,13 @@ class PlaylistTrackAdmin(admin.ModelAdmin):
         return obj.source_label
     source_display.short_description = 'Source'
 
+    def save_model(self, request, obj, form, change):
+        is_new = not obj.pk
+        super().save_model(request, obj, form, change)
+        if is_new:
+            from events.discord_bot import post_track_drop
+            post_track_drop(obj)
+
 
 @admin.register(VideoTrack)
 class VideoTrackAdmin(admin.ModelAdmin):
@@ -1196,6 +1203,8 @@ class EventAdmin(admin.ModelAdmin):
             from board.social import post_event_discord, create_discord_scheduled_event
             post_event_discord(obj)           # rich embed → #events text/forum channel
             create_discord_scheduled_event(obj)  # native event → Discord Events tab
+            from events.discord_bot import post_event_approved
+            post_event_approved(obj)          # bot embed → #cp-events channel
             from events.bluesky import post_event_to_bluesky
             post_event_to_bluesky(obj)
 
@@ -1619,7 +1628,7 @@ def _build_alerts():
             'level': 'warn',
             'icon': '📋',
             'label': f'{pending_events} event{"s" if pending_events != 1 else ""} pending approval',
-            'url': '/admin/events/event/?status__exact=pending',
+            'url': '/cp-manage/events/event/?status__exact=pending',
         })
 
     pending_edits = EditSuggestion.objects.filter(status=EditSuggestion.STATUS_PENDING).count()
@@ -1628,7 +1637,7 @@ def _build_alerts():
             'level': 'warn',
             'icon': '✏️',
             'label': f'{pending_edits} edit suggestion{"s" if pending_edits != 1 else ""} to review',
-            'url': '/admin/events/editsuggestion/?status__exact=pending',
+            'url': '/cp-manage/events/editsuggestion/?status__exact=pending',
         })
 
     pending_photos = EventPhoto.objects.filter(approved=False).count()
@@ -1637,7 +1646,7 @@ def _build_alerts():
             'level': 'warn',
             'icon': '🖼',
             'label': f'{pending_photos} event photo{"s" if pending_photos != 1 else ""} awaiting approval',
-            'url': '/admin/events/eventphoto/?approved__exact=0',
+            'url': '/cp-manage/events/eventphoto/?approved__exact=0',
         })
 
     claimed_unverified = Venue.objects.filter(verified=False, claimed_by__isnull=False).count()
@@ -1646,7 +1655,7 @@ def _build_alerts():
             'level': 'info',
             'icon': '🏛',
             'label': f'{claimed_unverified} claimed venue{"s" if claimed_unverified != 1 else ""} not yet verified',
-            'url': '/admin/events/venue/?verified__exact=0',
+            'url': '/cp-manage/events/venue/?verified__exact=0',
         })
 
     spam_topics = Topic.objects.filter(flagged=True).count() if hasattr(Topic, 'flagged') else 0
@@ -1655,7 +1664,7 @@ def _build_alerts():
             'level': 'error',
             'icon': '🚫',
             'label': f'{spam_topics} flagged board topic{"s" if spam_topics != 1 else ""}',
-            'url': '/admin/board/topic/',
+            'url': '/cp-manage/board/topic/',
         })
 
     return alerts
@@ -1730,7 +1739,7 @@ class CronStatusAdmin(admin.ModelAdmin):
             raise PermissionDenied
         if command not in _COMMAND_MAP:
             messages.error(request, f'Unknown command: {command}')
-            return HttpResponseRedirect('/admin/events/cronstatus/')
+            return HttpResponseRedirect('/cp-manage/events/cronstatus/')
 
         import sys
         from django.conf import settings as _settings
@@ -1756,7 +1765,7 @@ class CronStatusAdmin(admin.ModelAdmin):
             messages.success(request, f'✓ "{command}" launched — reload this page in a moment to see updated log output.')
         except Exception as e:
             messages.error(request, f'Failed to launch "{command}": {e}')
-        return HttpResponseRedirect('/admin/events/cronstatus/')
+        return HttpResponseRedirect('/cp-manage/events/cronstatus/')
 
     def changelist_view(self, request, _extra_context=None):
         if not request.user.is_staff:
@@ -1977,12 +1986,12 @@ class InstagramAccountAdmin(admin.ModelAdmin):
     def linked_badge(self, obj):
         if obj.promoter_profile_id:
             return format_html(
-                '<a href="/admin/events/promoterprofile/{}/change/" style="color:#4caf50;font-size:.8em">promoter</a>',
+                '<a href="/cp-manage/events/promoterprofile/{}/change/" style="color:#4caf50;font-size:.8em">promoter</a>',
                 obj.promoter_profile_id
             )
         if obj.artist_id:
             return format_html(
-                '<a href="/admin/events/artist/{}/change/" style="color:#4caf50;font-size:.8em">artist</a>',
+                '<a href="/cp-manage/events/artist/{}/change/" style="color:#4caf50;font-size:.8em">artist</a>',
                 obj.artist_id
             )
         return format_html('<span style="color:#555;font-size:.8em">—</span>')
@@ -2154,7 +2163,7 @@ class InstagramPostAdmin(admin.ModelAdmin):
     def flyer_badge(self, obj):
         if obj.sourced_event_id:
             return format_html(
-                '<a href="/admin/events/event/{}/change/" style="color:#4caf50;font-size:.8em">✓ event #{}</a>',
+                '<a href="/cp-manage/events/event/{}/change/" style="color:#4caf50;font-size:.8em">✓ event #{}</a>',
                 obj.sourced_event_id, obj.sourced_event_id
             )
         if obj.flyer_scanned:
@@ -2192,7 +2201,7 @@ class GenreSuggestionAdmin(admin.ModelAdmin):
 
     def track_link(self, obj):
         if obj.track_id:
-            return format_html('<a href="/admin/events/playlisttrack/{}/change/">PT #{}</a>', obj.track_id, obj.track_id)
+            return format_html('<a href="/cp-manage/events/playlisttrack/{}/change/">PT #{}</a>', obj.track_id, obj.track_id)
         return '—'
     track_link.short_description = 'Track'
 
