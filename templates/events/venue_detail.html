@@ -164,19 +164,19 @@ body{background:#111;color:#eee;font-family:sans-serif}
         <a href="https://twitter.com/{{ venue.twitter }}" target="_blank" rel="noopener" class="social-link"><span class="si">𝕏</span> Twitter</a>
       {% endif %}
       {% if venue.mastodon %}
-        <a href="{{ venue.mastodon }}" target="_blank" rel="noopener" class="social-link"><span class="si">🐘</span> Mastodon</a>
+        <a href="{{ venue.mastodon|safe_href }}" target="_blank" rel="noopener" class="social-link"><span class="si">🐘</span> Mastodon</a>
       {% endif %}
       {% if venue.tiktok %}
         <a href="https://tiktok.com/@{{ venue.tiktok }}" target="_blank" rel="noopener" class="social-link"><span class="si">♪</span> TikTok</a>
       {% endif %}
       {% if venue.youtube %}
-        <a href="{{ venue.youtube }}" target="_blank" rel="noopener" class="social-link"><span class="si">▶</span> YouTube</a>
+        <a href="{{ venue.youtube|safe_href }}" target="_blank" rel="noopener" class="social-link"><span class="si">▶</span> YouTube</a>
       {% endif %}
       {% if venue.twitch %}
         <a href="https://twitch.tv/{{ venue.twitch }}" target="_blank" rel="noopener" class="social-link" style="border-color:#6441a5;color:#9f7fd4"><span class="si">📺</span> Twitch</a>
       {% endif %}
       {% if venue.bandcamp %}
-        <a href="{{ venue.bandcamp }}" target="_blank" rel="noopener" class="social-link"><span class="si">🎵</span> Bandcamp</a>
+        <a href="{{ venue.bandcamp|safe_href }}" target="_blank" rel="noopener" class="social-link"><span class="si">🎵</span> Bandcamp</a>
       {% endif %}
       {% if venue.soundcloud %}
         <a href="https://soundcloud.com/{{ venue.soundcloud }}" target="_blank" rel="noopener" class="social-link"><span class="si">☁</span> SoundCloud</a>
@@ -185,7 +185,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
         <a href="https://mixcloud.com/{{ venue.mixcloud }}" target="_blank" rel="noopener" class="social-link"><span class="si">〰</span> Mixcloud</a>
       {% endif %}
       {% if venue.discord %}
-        <a href="{{ venue.discord }}" target="_blank" rel="noopener" class="social-link"><span class="si">💬</span> Discord</a>
+        <a href="{{ venue.discord|safe_href }}" target="_blank" rel="noopener" class="social-link"><span class="si">💬</span> Discord</a>
       {% endif %}
       {% if venue.medium %}
         <a href="https://medium.com/@{{ venue.medium }}" target="_blank" rel="noopener" class="social-link"><span class="si">✍</span> Medium</a>
@@ -224,15 +224,15 @@ body{background:#111;color:#eee;font-family:sans-serif}
   <div class="ask-cta">
     {% if ask.ask_type == 'fund' %}
       {% with donate_url=ask.donation_url|default:venue.website %}
-      {% if donate_url %}<a href="{{ donate_url }}" target="_blank" rel="noopener" class="btn-donate">♥ Donate</a>{% endif %}
+      {% if donate_url %}<a href="{{ donate_url|safe_href }}" target="_blank" rel="noopener" class="btn-donate">♥ Donate</a>{% endif %}
       {% endwith %}
     {% elif ask.ask_type == 'item' %}
-      {% if venue.discord %}<a href="{{ venue.discord }}" target="_blank" rel="noopener" class="btn-contact">🤝 I have this</a>
-      {% elif venue.website %}<a href="{{ venue.website }}" target="_blank" rel="noopener" class="btn-contact">🤝 I have this</a>{% endif %}
-      {% if ask.product_url %}<a href="{{ ask.product_url }}" target="_blank" rel="noopener" class="btn-view-item">View item ↗</a>{% endif %}
+      {% if venue.discord %}<a href="{{ venue.discord|safe_href }}" target="_blank" rel="noopener" class="btn-contact">🤝 I have this</a>
+      {% elif venue.website %}<a href="{{ venue.website|safe_href }}" target="_blank" rel="noopener" class="btn-contact">🤝 I have this</a>{% endif %}
+      {% if ask.product_url %}<a href="{{ ask.product_url|safe_href }}" target="_blank" rel="noopener" class="btn-view-item">View item ↗</a>{% endif %}
     {% else %}
-      {% if venue.discord %}<a href="{{ venue.discord }}" target="_blank" rel="noopener" class="btn-contact">💬 Reach out</a>
-      {% elif venue.website %}<a href="{{ venue.website }}" target="_blank" rel="noopener" class="btn-contact">✉ Contact</a>{% endif %}
+      {% if venue.discord %}<a href="{{ venue.discord|safe_href }}" target="_blank" rel="noopener" class="btn-contact">💬 Reach out</a>
+      {% elif venue.website %}<a href="{{ venue.website|safe_href }}" target="_blank" rel="noopener" class="btn-contact">✉ Contact</a>{% endif %}
     {% endif %}
   </div>
 </div>

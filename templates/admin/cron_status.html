@@ -95,7 +95,7 @@
 <div class="health-section-title">System Health</div>
 <div class="health-grid">
 
-  <a href="/admin/events/event/?status__exact=pending" class="health-card {{ stats.ev_status }}" style="text-decoration:none">
+  <a href="/cp-manage/events/event/?status__exact=pending" class="health-card {{ stats.ev_status }}" style="text-decoration:none">
     <div class="health-label">Pending Review</div>
     <div class="health-primary">{{ stats.pending }}</div>
     <div class="health-sub">
@@ -116,7 +116,7 @@
     </div>
   </div>
 
-  <a href="/admin/events/venuefeed/?active__exact=1" class="health-card {{ stats.feed_status }}" style="text-decoration:none">
+  <a href="/cp-manage/events/venuefeed/?active__exact=1" class="health-card {{ stats.feed_status }}" style="text-decoration:none">
     <div class="health-label">Active Feeds</div>
     <div class="health-primary">{{ stats.active_feeds }}</div>
     <div class="health-sub">

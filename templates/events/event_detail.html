@@ -166,7 +166,7 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 {% endif %}
 {% if event.extra_links %}
 {% for link in event.extra_links %}
-<a href="{{ link }}" target="_blank" class="more-link" style="margin-left:12px">{{ link|truncatechars:50 }} →</a>
+<a href="{{ link|safe_href }}" target="_blank" class="more-link" style="margin-left:12px">{{ link|truncatechars:50 }} →</a>
 {% endfor %}
 {% endif %}
 {% if user.is_authenticated and not event.submitted_user and event.submitted_email == user.email %}

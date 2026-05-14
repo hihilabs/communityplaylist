@@ -3,25 +3,25 @@
 {% block styles %}
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#111;color:#eee;font-family:sans-serif}
+body{background:#0d0a18;color:#eee;font-family:sans-serif}
 .page-wrap{max-width:860px;margin:0 auto;padding:16px}
-.back{color:#ff6b35;text-decoration:none;font-size:.85em;display:inline-block;margin-bottom:20px}
-.back:hover{text-decoration:underline}
+.back{color:#cc88ff;text-decoration:none;font-size:.85em;display:inline-block;margin-bottom:20px;opacity:.7;transition:opacity .15s}
+.back:hover{opacity:1;text-decoration:underline}
 .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;flex-wrap:wrap;gap:10px}
-h1{color:#ff6b35;font-size:1.4em}
-.register-btn{background:#ff6b35;color:#fff;padding:7px 16px;border-radius:6px;text-decoration:none;font-size:.85em}
-.register-btn:hover{background:#e55a25}
+h1{color:#cc88ff;font-size:1.4em}
+.register-btn{background:linear-gradient(135deg,#6622aa,#4a1880);color:#fff;padding:7px 16px;border-radius:6px;text-decoration:none;font-size:.85em;box-shadow:0 0 14px rgba(102,34,170,.35);transition:box-shadow .15s,filter .15s}
+.register-btn:hover{box-shadow:0 0 22px rgba(204,136,255,.45);filter:brightness(1.1)}
 .venue-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-.venue-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px;text-decoration:none;display:block;transition:border-color .2s}
-.venue-card:hover{border-color:#ff6b35}
-.venue-logo{width:48px;height:48px;border-radius:8px;object-fit:cover;background:#1a1a1a;display:block;margin-bottom:12px;outline:.25px solid rgba(255,255,255,.15)}
-.venue-logo-placeholder{width:48px;height:48px;border-radius:8px;background:#252525;display:flex;align-items:center;justify-content:center;font-size:1.4em;margin-bottom:12px}
-.venue-name{color:#ff6b35;font-size:1em;font-weight:600;margin-bottom:4px}
-.venue-hood{color:#666;font-size:.78em;margin-bottom:8px}
-.venue-desc{color:#888;font-size:.8em;line-height:1.5}
-.verified{display:inline-block;background:#1a2a1a;color:#4caf50;font-size:.65em;padding:1px 6px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;vertical-align:middle;margin-left:5px}
-.empty{text-align:center;padding:60px;color:#555}
-.empty a{color:#ff6b35;text-decoration:none}
+.venue-card{background:linear-gradient(150deg,#141020 0%,#0f0c1c 60%,#0d0818 100%);border:1.5px solid #2a1a40;border-radius:10px;padding:18px;text-decoration:none;display:block;transition:border-color .2s,box-shadow .2s}
+.venue-card:hover{border-color:#cc88ff;box-shadow:0 0 22px rgba(204,136,255,.14),0 3px 12px rgba(0,0,0,.6)}
+.venue-logo{width:48px;height:48px;border-radius:8px;object-fit:cover;background:#1a0f28;display:block;margin-bottom:12px;outline:.25px solid rgba(204,136,255,.25)}
+.venue-logo-placeholder{width:48px;height:48px;border-radius:8px;background:#1a0f28;border:1px solid #3a2050;display:flex;align-items:center;justify-content:center;font-size:1.4em;margin-bottom:12px;color:#4a2878}
+.venue-name{color:#cc88ff;font-size:1em;font-weight:600;margin-bottom:4px}
+.venue-hood{color:#554477;font-size:.78em;margin-bottom:8px}
+.venue-desc{color:#665577;font-size:.8em;line-height:1.5}
+.verified{display:inline-block;background:#1e1030;color:#aa66ff;font-size:.65em;padding:1px 6px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;vertical-align:middle;margin-left:5px;border:1px solid #3a1a60}
+.empty{text-align:center;padding:60px;color:#3a2a4a}
+.empty a{color:#cc88ff;text-decoration:none}
 </style>
 {% endblock %}
 {% block body %}

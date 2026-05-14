@@ -72,7 +72,7 @@ h1{color:#ff6b35;font-size:1.5em;margin-bottom:8px}
   <form method="post">
     {% csrf_token %}
     {{ reply_form.website }}
-    {{ reply_form._t }}
+    {{ reply_form.form_ts }}
     <div class="form-group">
       <label>Your name</label>
       {{ reply_form.author_name }}

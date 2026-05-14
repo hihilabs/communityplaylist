@@ -145,6 +145,17 @@ h1{color:var(--accent);font-size:1.5em;margin-bottom:4px}
 .save-btn:hover{color:#cc4466}
 .save-btn.saved{color:#cc4466}
 @media(max-width:600px){h1{font-size:1.2em}.hero-photo,.hero-placeholder{width:120px;height:120px;font-size:2.6em}}
+.sources-panel{border:1px solid #1e1e1e;border-radius:8px;padding:12px 16px;margin:24px 0;background:#131313}
+.sources-panel summary{color:#444;font-size:.74em;text-transform:uppercase;letter-spacing:.09em;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+.sources-panel summary::before{content:'›';display:inline-block;transition:transform .2s;font-size:1.1em}
+details[open] .sources-panel summary::before{transform:rotate(90deg)}
+.sources-panel .src-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.sources-panel .src-row{display:flex;align-items:center;gap:10px;font-size:.8em}
+.sources-panel .src-badge{background:#1a1a2a;color:#8899cc;font-size:.7em;padding:2px 7px;border-radius:3px;font-weight:600;letter-spacing:.04em;flex-shrink:0}
+.sources-panel .src-badge.crew{background:#1e1228;color:#cc88ff}
+.sources-panel .src-name{color:#777}
+.sources-panel .src-count{color:#444;font-size:.88em}
+.sources-panel .src-note{color:#333;font-size:.75em;font-style:italic}
 </style>
 {% endblock %}
 {% block body %}
@@ -685,5 +696,44 @@ document.getElementById('cookie-modal').addEventListener('click', function(e) {
 })();
 {% endif %}
 </script>
+
+{# ── Profile Sources ── #}
+{% if linked_artists or promoter.name_variants %}
+<div style="max-width:800px;margin:0 auto;padding:0 20px">
+<details>
+<div class="sources-panel">
+  <summary>Profile sources</summary>
+  <div class="src-list">
+    <div class="src-row">
+      <span class="src-badge crew">crew profile</span>
+      <span class="src-name">{{ promoter.name }}</span>
+      <span class="src-count">— crew/collective listing</span>
+    </div>
+    {% for a in linked_artists %}
+    <div class="src-row">
+      <span class="src-badge">artist stub</span>
+      <span class="src-name"><a href="/artists/{{ a.slug }}/" style="color:#777;text-decoration:none">{{ a.name }}</a></span>
+      {% if a.auto_bio %}
+      <span class="src-count">— {{ a.view_count }} views</span>
+      {% endif %}
+      {% if a.mb_id %}<span class="src-note">MusicBrainz enriched</span>{% endif %}
+    </div>
+    {% endfor %}
+    <div class="src-row" style="margin-top:6px">
+      <span class="src-note" style="color:#333">Profile data auto-compiled from event history &amp; submissions. See something wrong? Use the suggest-edit button below.</span>
+    </div>
+  </div>
+</div>
+</details>
+</div>
+{% endif %}
+
+{% if request.user.is_authenticated %}
+<div style="max-width:800px;margin:0 auto;padding:0 20px 40px">
+{% with target_type="promoter" target_id=promoter.pk fields=promoter_edit_fields %}
+{% include "partials/suggest_edit.html" %}
+{% endwith %}
+</div>
+{% endif %}
 
 {% endblock %}

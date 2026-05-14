@@ -12,76 +12,114 @@
 {% block head_extra %}{% endblock %}
 <script src="https://cdn.jsdelivr.net/npm/@hotwired/turbo@7.3.0/dist/turbo.es2017-umd.js" data-turbo-track="reload"></script>
 <style>
-/* ── CP Mini Bar — terminal aesthetic, fixed in left sidebar ── */
+/* ── CP Mini Bar — event card aesthetic, anchored bottom-left ── */
 .cp-bar{
   position:fixed;bottom:0;left:0;
-  width:270px;
-  background:#080808;
-  border-top:1px solid #1e1e1e;
-  border-right:1px solid #1e1e1e;
-  border-top-right-radius:8px;
+  width:360px;
+  background:#121212;
+  border:1px solid #1c1c1c;
+  border-bottom:none;
+  border-left:5px solid #cc88ff;
+  border-radius:10px 10px 0 0;
   z-index:9000;
-  font-family:'Courier New',Courier,monospace;
-  font-size:.78em;
-  color:#ff6b35;
+  font-family:sans-serif;
+  font-size:.85em;
+  color:#d8d8d8;
   flex-direction:column;
   display:none;
   overflow:hidden;
+  transform:translateY(0);
+  opacity:1;
+  transition:box-shadow .2s,border-left-color .4s,transform .28s cubic-bezier(.4,0,.2,1),opacity .22s ease;
 }
+.cp-bar:hover{box-shadow:-4px 0 18px rgba(204,136,255,.1)}
 body.has-player .cp-bar{display:flex}
+/* Hide mini bar when full panel is open — slide it down out of view */
+body.has-panel .cp-bar{transform:translateY(110%);opacity:0;pointer-events:none}
 .cp-bar-main{
-  display:flex;align-items:center;gap:6px;
-  padding:7px 8px 7px 10px;min-width:0;
+  display:flex;align-items:center;gap:8px;
+  padding:12px 10px 10px 8px;min-width:0;
   cursor:pointer;
 }
+/* Small flyer-style art thumbnail */
+.cp-bar-thumb{
+  width:36px;height:52px;border-radius:4px;
+  flex-shrink:0;overflow:hidden;position:relative;
+  background:#1a1a1a;outline:1px solid rgba(255,255,255,.06);
+}
+/* Always-visible thin progress line anchored above the drop zone */
+.cp-bar-prog-line{
+  height:2px;background:#1a1a1a;position:relative;flex-shrink:0;
+}
+.cp-bar-prog-fill{
+  position:absolute;left:0;top:0;height:100%;width:0%;
+  background:#cc88ff;opacity:.55;
+  transition:width .08s linear,background .4s;pointer-events:none;
+}
+.cp-bar-thumb-grad{
+  position:absolute;inset:0;
+  background:linear-gradient(135deg,#1a1a2e,#0a0a1a);
+  transition:background .6s;
+}
+.cp-bar-thumb-img{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;display:none;
+}
+.cp-bar-info{flex:1;min-width:0;overflow:hidden}
+/* Header row: badge left, controls right */
+.cp-bar-hdr{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px}
+/* "NOW PLAYING" badge — matches cat-badge style */
+.cp-bar-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 7px;border-radius:3px;
+  font-size:.68em;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  background:#1e1028;border:1px solid #3a1a50;color:#cc88ff;
+  flex-shrink:0;
+}
 .cp-bar-dot{
-  width:7px;height:7px;border-radius:50%;
-  background:#ff6b35;flex-shrink:0;
+  width:5px;height:5px;border-radius:50%;
+  background:#cc88ff;flex-shrink:0;
   animation:cp-dot-pulse 1.8s ease-in-out infinite;
 }
 @keyframes cp-dot-pulse{
-  0%,100%{opacity:1;box-shadow:0 0 5px #ff6b35}
-  50%{opacity:.3;box-shadow:0 0 0 #ff6b35}
+  0%,100%{opacity:1;box-shadow:0 0 5px #cc88ff}
+  50%{opacity:.3;box-shadow:0 0 0 #cc88ff}
 }
-.cp-bar-info{flex:1;min-width:0;overflow:hidden}
-.cp-bar-label{
-  display:block;font-size:.65em;color:#222;
-  letter-spacing:.1em;line-height:1;margin-bottom:1px;
-}
+.cp-bar-label{line-height:1}
 .cp-bar-title{
-  color:#ff6b35;font-weight:700;
+  color:#ddc8ff;font-weight:700;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-size:1em;line-height:1.2;
+  font-size:.92em;line-height:1.3;margin-bottom:2px;
 }
 .cp-bar-artist{
-  color:#444;font-size:.85em;
+  color:#7755aa;font-size:.76em;font-family:monospace;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .cp-bar-title a,.cp-bar-artist a{color:inherit;text-decoration:none}
-.cp-bar-title a:hover{text-decoration:underline;color:#ff6b35}
-.cp-bar-artist a:hover{text-decoration:underline;color:#888}
-.cp-bar-btns{display:flex;gap:2px;flex-shrink:0}
+.cp-bar-title a:hover{text-decoration:underline;color:#e8d0ff}
+.cp-bar-artist a:hover{text-decoration:underline;color:#bb88ff}
+.cp-bar-btns{display:flex;gap:0;flex-shrink:0;align-items:center}
 .cp-bar-btn{
-  background:transparent;border:none;color:#333;cursor:pointer;
-  font-family:inherit;font-size:.9em;
-  width:24px;height:24px;
+  background:transparent;border:none;color:#4a3360;cursor:pointer;
+  font-size:.8em;
+  width:20px;height:20px;
   display:flex;align-items:center;justify-content:center;
   border-radius:3px;transition:color .12s;padding:0;
 }
-.cp-bar-btn:hover{color:#ff6b35}
+.cp-bar-btn:hover{color:#cc88ff}
 .cp-bar-heart.saved{color:#cc4466}
 .cp-bar-chevron{
-  background:transparent;border:none;color:#ff6b35;cursor:pointer;
-  font-size:1.3em;padding:0 4px;
+  background:transparent;border:none;color:#4a3360;cursor:pointer;
+  font-size:1em;padding:0 2px;
   transition:transform .2s,color .15s;
-  flex-shrink:0;font-family:inherit;line-height:1;
+  flex-shrink:0;line-height:1;
 }
-.cp-bar-chevron:hover{color:#ffaa80}
+.cp-bar-chevron:hover{color:#cc88ff}
 .cp-bar.drop-open .cp-bar-chevron{transform:rotate(180deg)}
 .cp-bar-drop{
   max-height:0;overflow:hidden;
   transition:max-height .28s cubic-bezier(.4,0,.2,1);
-  border-top:0 solid #1a1a1a;
+  border-top:0 solid #1c1c1c;
 }
 .cp-bar.drop-open .cp-bar-drop{max-height:320px;border-top-width:1px}
 .cp-bar-art-wrap{
@@ -91,30 +129,36 @@ body.has-player .cp-bar{display:flex}
 .cp-bar-art-grad{position:absolute;inset:0;transition:background .6s}
 .cp-bar-art-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .cp-bar-vis{position:absolute;inset:0;width:100%;height:100%;opacity:.75;pointer-events:none;display:block}
-.cp-bar-progress-wrap{padding:8px 10px 4px}
+.cp-bar-progress-wrap{padding:6px 10px 4px}
 .cp-bar-seek{
-  width:100%;height:4px;background:#1c1c1c;
+  width:100%;height:3px;background:#1c1c1c;
   border-radius:2px;overflow:hidden;cursor:pointer;position:relative;
 }
 .cp-bar-seek-fill{
-  height:100%;width:0%;background:#ff6b35;
+  height:100%;width:0%;background:#cc88ff;
   border-radius:2px;transition:width .08s linear;pointer-events:none;
 }
-.cp-bar-seek:hover .cp-bar-seek-fill{background:#ffaa80}
+.cp-bar-seek:hover .cp-bar-seek-fill{background:#e0aaff}
 .cp-bar-times{
   display:flex;justify-content:space-between;
-  font-size:.72em;color:#2a2a2a;margin-top:2px;
+  font-size:.7em;color:#4a3360;margin-top:2px;font-family:monospace;
 }
-.cp-bar-genre{padding:2px 10px 4px;font-size:.7em;color:#222;letter-spacing:.08em}
+.cp-bar-genre{padding:2px 10px 4px;font-size:.68em;color:#4a3360;letter-spacing:.08em;font-family:monospace}
 .cp-bar-open-btn{
   display:block;width:100%;
-  background:transparent;border:none;border-top:1px solid #141414;
-  color:#222;font-family:inherit;font-size:.72em;
+  background:transparent;border:none;border-top:1px solid #1a1028;
+  color:#4a3360;font-family:monospace;font-size:.7em;
   letter-spacing:.1em;cursor:pointer;
   padding:7px 10px;text-align:left;
   transition:color .15s,background .15s;
 }
-.cp-bar-open-btn:hover{color:#ff6b35;background:#0f0f0f}
+.cp-bar-open-btn:hover{color:#cc88ff;background:#0f0818}
+.cp-bar-qcount{
+  font-size:.62em;color:#3a2550;font-family:monospace;
+  white-space:nowrap;flex-shrink:0;letter-spacing:.04em;
+  transition:color .3s;
+}
+.cp-bar-qcount.loaded{color:#5a3880}
 
 /* Video panel — reparented into #cp-panel-video when active */
 #cp-video-panel{display:none;flex-direction:column}
@@ -153,12 +197,12 @@ body.has-player .cp-bar{display:flex}
 /* Genre channel buttons — used in panel genre strip */
 .cp-ch{
   background:transparent;border:1px solid #2a2a2a;color:#555;
-  padding:3px 10px;border-radius:2px;cursor:pointer;
+  padding:3px 11px;border-radius:12px;cursor:pointer;
   font-family:'Courier New',Courier,monospace;font-size:.72em;
-  white-space:nowrap;transition:all .12s;text-align:left;width:auto;
+  white-space:nowrap;transition:all .18s cubic-bezier(.4,0,.2,1);text-align:left;width:auto;
 }
 .cp-ch:hover{border-color:#ff6b35;color:#ff6b35}
-.cp-ch.active{background:#ff6b35;color:#111;border-color:#ff6b35}
+.cp-ch.active{background:linear-gradient(135deg,#ff6b35,#ff9944);color:#111;border-color:transparent;box-shadow:0 1px 8px rgba(255,107,53,.28)}
 .cp-ch.saved-ch{border-color:#3a1a2a;color:#aa4466}
 .cp-ch.saved-ch:hover{border-color:#cc4466;color:#cc4466}
 .cp-ch.saved-ch.active{background:#cc4466;border-color:#cc4466;color:#fff}
@@ -172,7 +216,8 @@ body.has-player .cp-bar{display:flex}
 
 /* Mobile bar */
 @media(max-width:640px){
-  .cp-bar{width:100%;border-top-right-radius:0;border-right:none}
+  .cp-bar{width:100%;border-top-right-radius:0;border-right:none;border-radius:0}
+  .cp-bar-thumb{width:28px;height:40px}
 }
 
 /* ── Event info corner panel (for map / artist clicks) ── */
@@ -195,20 +240,25 @@ body.has-player .cp-bar{display:flex}
   pointer-events:none;
   overflow:hidden;
 }
+#cp-event-panel::before{
+  content:'';display:block;height:2px;flex-shrink:0;
+  background:linear-gradient(90deg,#ff6b35,#cc88ff,#66bbff,#55dd55,#ddaa33);
+}
 #cp-event-panel.open{
   transform:translateY(0);
   opacity:1;
   pointer-events:auto;
 }
 #cp-ep-close{
-  position:absolute;top:8px;right:8px;
-  background:rgba(0,0,0,.6);border:1px solid #333;
-  color:#aaa;cursor:pointer;border-radius:50%;
-  width:26px;height:26px;font-size:14px;
+  position:absolute;top:10px;right:10px;
+  background:rgba(17,17,17,.75);border:1px solid #333;
+  color:#888;cursor:pointer;border-radius:50%;
+  width:26px;height:26px;font-size:13px;
   display:flex;align-items:center;justify-content:center;
-  z-index:1;line-height:1;
+  z-index:1;line-height:1;transition:all .15s;
+  backdrop-filter:blur(4px);
 }
-#cp-ep-close:hover{color:#fff;border-color:#ff6b35}
+#cp-ep-close:hover{color:#fff;border-color:#ff6b35;background:rgba(255,107,53,.15)}
 #cp-ep-photo{width:100%;height:140px;object-fit:cover;display:block;flex-shrink:0}
 #cp-ep-scroll{overflow-y:auto;padding:12px 14px 14px;flex:1;min-height:0}
 #cp-ep-cat{
@@ -220,16 +270,16 @@ body.has-player .cp-bar{display:flex}
 .cp-ep-meta{font-size:.8em;color:#888;display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
 .cp-ep-meta span{display:flex;align-items:baseline;gap:5px}
 #cp-ep-genres{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
-.cp-ep-genre{font-size:.7em;background:#1e1e1e;border:1px solid #333;border-radius:3px;padding:2px 7px;color:#aaa}
+.cp-ep-genre{font-size:.7em;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:10px;padding:2px 9px;color:#999}
 #cp-ep-desc{font-size:.82em;color:#bbb;line-height:1.55;margin:0 0 10px;white-space:pre-line}
 #cp-ep-links{display:flex;flex-direction:column;gap:6px}
 .cp-ep-link{
   font-size:.8em;color:#ff6b35;text-decoration:none;
-  border:1px solid #2a2a2a;border-radius:5px;
-  padding:6px 10px;display:block;
-  background:#161616;transition:border-color .15s;word-break:break-all;
+  border:1px solid #2a2a2a;border-radius:10px;
+  padding:7px 12px;display:block;
+  background:#161616;transition:border-color .18s,background .18s,box-shadow .18s;word-break:break-all;
 }
-.cp-ep-link:hover{border-color:#ff6b35}
+.cp-ep-link:hover{border-color:#ff6b35;background:#1c1008;box-shadow:0 0 10px rgba(255,107,53,.12)}
 .cp-ep-fullpage{margin-top:4px;text-align:center;font-size:.75em;color:#555;text-decoration:none;display:block;padding:4px}
 .cp-ep-fullpage:hover{color:#888}
 
@@ -298,9 +348,9 @@ body.has-player .cp-bar{display:flex}
 #cp-rh-close:hover{color:#ff6b35}
 .cp-rh-empty{color:#555;font-size:.85em;padding:20px 0;text-align:center}
 @media(max-width:640px){#cp-rh-map{display:none}#cp-rh-body{padding:10px}}
-.sh-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:.8em;font-weight:500;white-space:nowrap;border:1px solid transparent;transition:all .15s;line-height:1;flex-shrink:0}
-.sh-primary{background:#ff6b35;color:#111;border-color:#ff6b35}
-.sh-primary:hover{background:#e55a25;border-color:#e55a25}
+.sh-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:20px;text-decoration:none;font-size:.8em;font-weight:500;white-space:nowrap;border:1px solid transparent;transition:all .2s cubic-bezier(.4,0,.2,1);line-height:1;flex-shrink:0}
+.sh-primary{background:linear-gradient(135deg,#ff6b35,#ff9944);color:#111;border-color:transparent;box-shadow:0 2px 8px rgba(255,107,53,.28)}
+.sh-primary:hover{background:linear-gradient(135deg,#e55a25,#ff8033);box-shadow:0 2px 12px rgba(255,107,53,.45)}
 .sh-secondary{background:#1a1a1a;color:#888;border-color:#2a2a2a}
 .sh-secondary:hover{border-color:#ff6b35;color:#ff6b35}
 .sh-accent{background:#1a1a1a;color:#ff6b35;border-color:#ff6b35}
@@ -310,6 +360,15 @@ body.has-player .cp-bar{display:flex}
 .sh-icons::-webkit-scrollbar{display:none}
 .sh-icon{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:6px;color:#888;text-decoration:none;font-size:1.05em;flex-shrink:0;position:relative;background:transparent;border:none;cursor:pointer;transition:color .12s,background .12s;padding:0;line-height:1}
 .sh-icon:hover,.sh-icon.active{color:#ff6b35;background:#ff6b3515}
+/* Nav icons with persistent text labels */
+.sh-icon.sh-nav{flex-direction:column;gap:2px;width:auto;height:auto;min-height:36px;padding:3px 6px;font-size:1.1em}
+.sh-nav-lbl{font-size:.48em;color:#666;text-align:center;white-space:nowrap;letter-spacing:.02em;line-height:1;pointer-events:none}
+.sh-icon:hover .sh-nav-lbl,.sh-icon.active .sh-nav-lbl{color:#ff6b35}
+@media(min-width:961px) and (max-width:1200px){.sh-nav-lbl{display:none}}
+/* ── Tablet/car breakpoint: hide labels for true desktop, show later ── */
+/* Language toggle */
+.sh-lang-btn{font-family:monospace;font-size:.72em;font-weight:700;letter-spacing:.06em;color:#555;border:1px solid #252525;padding:0 7px;height:26px;border-radius:3px;line-height:1;flex-shrink:0;transition:all .12s;background:transparent;cursor:pointer}
+.sh-lang-btn:hover{color:#ff6b35;border-color:#ff6b35}
 .sh-icon svg{width:1em;height:1em;flex-shrink:0}
 .sh-badge{position:absolute;top:3px;right:2px;background:#5865F2;color:#fff;border-radius:8px;padding:0 4px;font-size:.55em;font-weight:700;line-height:1.6;min-width:14px;text-align:center;pointer-events:none}
 .sh-icon-signin{color:#666}
@@ -318,21 +377,29 @@ body.has-player .cp-bar{display:flex}
 .sh-menu-toggle:hover{color:#ff6b35;border-color:#ff6b35}
 /* Icon drawer inside sticky nav */
 .sh-icon-drawer{max-height:0;overflow:hidden;transition:max-height .38s cubic-bezier(.4,0,.2,1)}
-.sh-icon-drawer.open{max-height:420px}
-.sh-icon-drawer-inner{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:4px;padding:10px 12px 14px;border-top:1px solid #1a1a1a}
+.sh-icon-drawer.open{max-height:500px}
+.sh-icon-drawer-inner{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;padding:12px 12px 16px;border-top:1px solid #1a1a1a}
 /* App-style labeled drawer items */
-.sh-drw-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 8px;border-radius:10px;text-decoration:none;color:#888;font-size:1em;background:transparent;border:none;cursor:pointer;transition:color .12s,background .12s;position:relative;width:100%}
+.sh-drw-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:12px 6px 10px;border-radius:12px;text-decoration:none;color:#888;font-size:1em;background:transparent;border:none;cursor:pointer;transition:color .12s,background .12s;position:relative;width:100%}
 .sh-drw-item:hover,.sh-drw-item.active{color:#ff6b35;background:#ff6b3515}
-.sh-drw-icon{font-size:1.35em;line-height:1;display:flex;align-items:center;justify-content:center;position:relative}
-.sh-drw-icon svg{width:1.35em;height:1.35em}
-.sh-drw-label{font-size:.58em;color:#555;text-align:center;white-space:nowrap;letter-spacing:.01em;line-height:1;margin-top:1px}
+.sh-drw-icon{font-size:1.65em;line-height:1;display:flex;align-items:center;justify-content:center;position:relative}
+.sh-drw-icon svg{width:1.65em;height:1.65em}
+.sh-drw-label{font-size:.62em;color:#555;text-align:center;white-space:nowrap;letter-spacing:.01em;line-height:1;margin-top:1px}
 .sh-drw-item:hover .sh-drw-label,.sh-drw-item.active .sh-drw-label{color:#ff6b35}
-/* ≥961px: icon strip still visible — compress it as viewport narrows */
-@media(min-width:961px) and (max-width:1100px){
-  .sh-weather{max-width:140px}
+/* ≥961px: tablet / car range — enlarge nav icons for touch */
+@media(min-width:961px) and (max-width:1300px){
+  .sh-weather{max-width:120px}
   .sh-weather .wextra,.sh-weather .wsep{display:none}
-  .sh-icons{gap:0}
-  .sh-icon{width:30px;height:30px;font-size:.92em}
+  /* flex-shrink:1 + min-width:0 lets the strip compress and scroll internally
+     instead of overflowing the header at narrow viewports */
+  .sh-icons{gap:2px;overflow-x:auto;flex-shrink:1;min-width:0;-webkit-overflow-scrolling:touch}
+  .sh-icon{width:34px;height:34px;font-size:1em}
+  .sh-inner{min-height:66px;padding:6px 10px}
+  .sh-logo img{height:38px}
+  /* Nav icon: emoji + label, sized to match dock icons */
+  .sh-icon.sh-nav{font-size:1.55em;padding:7px 10px;min-height:54px;gap:4px}
+  .sh-nav-lbl{display:flex;font-size:.40em;color:#888;letter-spacing:.03em}
+  .sh-icon:hover .sh-nav-lbl,.sh-icon.active .sh-nav-lbl{color:#ff6b35}
 }
 /* ≤960px: icons collapse to drawer FIRST — search bar stays in header */
 @media(max-width:960px){
@@ -352,12 +419,31 @@ body.has-player .cp-bar{display:flex}
   body.has-panel .sh-icons{display:none!important}
   body.has-panel .sh-menu-toggle{display:flex}
 }
-@media(min-width:1101px) and (max-width:1480px){
+@media(min-width:1301px) and (max-width:1480px){
   body.has-panel .sh-weather .wextra,
   body.has-panel .sh-weather .wsep{display:none}
   body.has-panel .sh-search{max-width:140px}
   body.has-panel .sh-icons{gap:0}
   body.has-panel .sh-icon{width:28px;height:28px;font-size:.85em}
+}
+/* ── Header: in-between size refinements ── */
+/* 961-1060px: narrow tablet — smaller Submit, tighter search floor */
+@media(min-width:961px) and (max-width:1060px){
+  .sh-search{min-width:80px!important}
+  .sh-btn.sh-primary{font-size:.7em;padding:4px 9px}
+  .sh-icon.sh-nav{font-size:1.4em;padding:6px 8px;min-height:50px}
+}
+/* 1101-1300px panel open: compress icons so panel + header coexist */
+@media(min-width:1101px) and (max-width:1300px){
+  body.has-panel .sh-icon.sh-nav{font-size:1.1em;padding:3px 6px;min-height:38px}
+  body.has-panel .sh-nav-lbl{display:none!important}
+  body.has-panel .sh-weather{max-width:90px}
+  body.has-panel .sh-inner{min-height:54px}
+}
+/* 1301-1460px: step down gracefully from tablet to desktop icon size */
+@media(min-width:1301px) and (max-width:1460px){
+  .sh-icon.sh-nav{font-size:1.25em;padding:5px 8px;min-height:44px}
+  .sh-nav-lbl{display:flex;font-size:.44em}
 }
 /* ── Global header search ── */
 .sh-search{position:relative;flex:1;min-width:130px;max-width:480px;margin:0 8px}
@@ -670,6 +756,34 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
   body.has-panel{padding-right:0}
   .cp-panel-art{aspect-ratio:16/9}
 }
+/* ── Weather Panel ── */
+.wx-panel{position:fixed;top:56px;left:8px;z-index:8902;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:10px;width:288px;padding:16px;opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .18s,transform .18s;box-shadow:0 8px 40px rgba(0,0,0,.88)}
+.wx-panel.open{opacity:1;transform:translateY(0);pointer-events:auto}
+.wx-bd{position:fixed;inset:0;z-index:8901;display:none}
+.wx-bd.open{display:block}
+.wx-now{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.wx-big-icon{font-size:2.4em;line-height:1;flex-shrink:0}
+.wx-big-temp{font-size:2em;font-weight:700;color:#eee;line-height:1;font-family:monospace}
+.wx-cond-lbl{font-size:.68em;color:#555;margin-top:4px;text-transform:uppercase;letter-spacing:.08em}
+.wx-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:2px}
+.wx-mi{background:#111;border:1px solid #1c1c1c;border-radius:5px;padding:7px 9px}
+.wx-ml{font-size:.53em;color:#444;font-family:monospace;letter-spacing:.12em;display:block;margin-bottom:3px}
+.wx-mv{font-size:.82em;color:#999;font-family:monospace}
+.wx-sl{font-size:.55em;color:#555;font-family:monospace;letter-spacing:.14em;margin:12px 0 6px;padding-top:10px;border-top:1px solid #1c1c1c}
+.wx-hourly{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-bottom:2px}
+.wx-hourly::-webkit-scrollbar{display:none}
+.wx-hr{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;min-width:37px;padding:6px 3px;background:#111;border:1px solid #1c1c1c;border-radius:5px}
+.wx-hr-t{font-size:.55em;color:#555;font-family:monospace}
+.wx-hr-i{font-size:.95em;line-height:1}
+.wx-hr-c{font-size:.68em;color:#bbb;font-family:monospace}
+.wx-hr-p{font-size:.55em;color:#4455aa;font-family:monospace}
+.wx-daily{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px}
+.wx-day{background:#111;border:1px solid #1c1c1c;border-radius:5px;padding:8px 4px;text-align:center}
+.wx-dl{font-size:.55em;color:#555;font-family:monospace;letter-spacing:.06em;display:block;margin-bottom:4px}
+.wx-di{font-size:1.1em;display:block;margin-bottom:3px;line-height:1}
+.wx-dh{font-size:.72em;color:#ccc;font-family:monospace}
+.wx-do{font-size:.64em;color:#444;font-family:monospace}
+.wx-ft{font-size:.52em;color:#2a2a2a;font-family:monospace;text-align:right;letter-spacing:.04em;margin-top:4px}
 </style>
 </head>
 <body>
@@ -678,6 +792,29 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
 {% block nav_strip %}{% include 'events/_nav_strip.html' %}{% endblock %}
 {% block body %}{% endblock %}
 {% include 'events/_player.html' %}
+
+<!-- ── Weather Panel ── -->
+<div id="wx-panel" class="wx-panel" data-turbo-permanent role="dialog" aria-label="Portland weather">
+  <div class="wx-now">
+    <span class="wx-big-icon" id="wxp-icon">⛅</span>
+    <div>
+      <div class="wx-big-temp" id="wxp-temp">—°</div>
+      <div class="wx-cond-lbl" id="wxp-cond">Portland, OR</div>
+    </div>
+  </div>
+  <div class="wx-meta">
+    <div class="wx-mi"><span class="wx-ml">FEELS LIKE</span><span class="wx-mv" id="wxp-feel">—</span></div>
+    <div class="wx-mi"><span class="wx-ml">WIND</span><span class="wx-mv" id="wxp-wind">—</span></div>
+    <div class="wx-mi"><span class="wx-ml">HUMIDITY</span><span class="wx-mv" id="wxp-humid">—</span></div>
+    <div class="wx-mi"><span class="wx-ml">UV INDEX</span><span class="wx-mv" id="wxp-uv">—</span></div>
+  </div>
+  <div class="wx-sl">HOURLY FORECAST</div>
+  <div class="wx-hourly" id="wxp-hourly"><span style="color:#2a2a2a;font-family:monospace;font-size:.75em;padding:8px">loading…</span></div>
+  <div class="wx-sl">3-DAY FORECAST</div>
+  <div class="wx-daily" id="wxp-daily"></div>
+  <div class="wx-ft">Portland, OR · open-meteo.com</div>
+</div>
+<div id="wx-bd" class="wx-bd"></div>
 
 <!-- ── Resource Hub panel ── -->
 <div id="cp-resource-hub" data-turbo-permanent>
@@ -1101,6 +1238,9 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
 <script>
 // ── Header weather + air quality — runs on every page ────────────────────────
 (function(){
+  var WMO_I={0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌧️',63:'🌧️',65:'🌧️',71:'🌨️',73:'🌨️',75:'❄️',77:'🌨️',80:'🌦️',81:'🌦️',82:'⛈️',85:'🌨️',86:'❄️',95:'⛈️',96:'⛈️',99:'⛈️'};
+  var WMO_L={0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Foggy',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',80:'Showers',81:'Showers',82:'Heavy showers',85:'Snow showers',86:'Heavy snow',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
+
   function applyWx(wx) {
     var el = document.getElementById('header-weather'); if (!el) return;
     document.getElementById('hw-icon').textContent = wx.icon;
@@ -1111,15 +1251,81 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
     el.style.display = 'flex';
     if (window.cpCheckWeatherAlert) window.cpCheckWeatherAlert(wx._tempF, wx._pm25, wx._apparentF);
   }
-  // Re-apply cached data on every Turbo navigation (header is permanent so DOM persists)
+
+  function populatePanel(wx, d) {
+    var pi=document.getElementById('wxp-icon'),pt=document.getElementById('wxp-temp'),
+        pc=document.getElementById('wxp-cond'),pf=document.getElementById('wxp-feel'),
+        pw=document.getElementById('wxp-wind'),ph=document.getElementById('wxp-humid'),
+        pu=document.getElementById('wxp-uv');
+    if (!pi) return;
+    function tempColor(f){return f<32?'#66ccff':f<45?'#88aaff':f<58?'#aabbff':f<70?'#c8c8c8':f<80?'#ffcc44':f<90?'#ff9944':'#ff6b35';}
+    pi.textContent=wx.icon; pt.textContent=wx.temp; pc.textContent=wx.cond;
+    var tVal=parseFloat(d.current.temperature_2m);
+    if (!isNaN(tVal)){pt.style.color=tempColor(tVal);pc.style.color=tempColor(tVal);}
+    pf.textContent=Math.round(d.current.apparent_temperature)+'°F';
+    pw.textContent=Math.round(d.current.wind_speed_10m)+' mph';
+    ph.textContent=(d.current.relative_humidity_2m!=null?Math.round(d.current.relative_humidity_2m)+'%':'—');
+    var uv=d.current.uv_index;
+    pu.textContent=uv!=null?(uv.toFixed(1)+(uv<3?' Low':uv<6?' Mod':uv<8?' High':' V.High')):'—';
+    // Hourly — next 12 hours
+    var hEl=document.getElementById('wxp-hourly');
+    if (hEl && d.hourly) {
+      var now=new Date(), html='', shown=0;
+      for (var i=0;i<d.hourly.time.length&&shown<12;i++) {
+        var t=new Date(d.hourly.time[i]+''); if (t<=now) continue;
+        var h=t.getHours(), h12=h%12||12, ap=h>=12?'pm':'am';
+        var pop=d.hourly.precipitation_probability[i];
+        html+='<div class="wx-hr"><span class="wx-hr-t">'+h12+ap+'</span>'
+          +'<span class="wx-hr-i">'+(WMO_I[d.hourly.weather_code[i]]||'🌡️')+'</span>'
+          +'<span class="wx-hr-c">'+Math.round(d.hourly.temperature_2m[i])+'°</span>'
+          +(pop>0?'<span class="wx-hr-p">'+pop+'%</span>':'')
+          +'</div>'; shown++;
+      }
+      hEl.innerHTML=html||'<span style="color:#333;font-family:monospace;font-size:.75em">—</span>';
+    }
+    // Daily — 3 days
+    var dEl=document.getElementById('wxp-daily');
+    if (dEl && d.daily) {
+      var days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], dhtml='';
+      for (var j=0;j<Math.min(3,d.daily.time.length);j++) {
+        var dd=new Date(d.daily.time[j]+'T12:00');
+        dhtml+='<div class="wx-day"><span class="wx-dl">'+(j===0?'Today':days[dd.getDay()])+'</span>'
+          +'<span class="wx-di">'+(WMO_I[d.daily.weather_code[j]]||'🌡️')+'</span>'
+          +'<span class="wx-dh">'+Math.round(d.daily.temperature_2m_max[j])+'°</span>'
+          +'<span class="wx-do">'+Math.round(d.daily.temperature_2m_min[j])+'°</span>'
+          +'</div>';
+      }
+      dEl.innerHTML=dhtml;
+    }
+  }
+
+  // Open/close weather panel
+  window.cpOpenWeather = function() {
+    var p=document.getElementById('wx-panel'),b=document.getElementById('wx-bd');
+    if (!p) return;
+    p.classList.add('open'); if (b) b.classList.add('open');
+    if (window._portlandWx && window._portlandWxFull) populatePanel(window._portlandWx, window._portlandWxFull);
+  };
+  window.cpCloseWeather = function() {
+    var p=document.getElementById('wx-panel'),b=document.getElementById('wx-bd');
+    if (p) p.classList.remove('open'); if (b) b.classList.remove('open');
+  };
+  document.addEventListener('click', function(e) {
+    var b=document.getElementById('wx-bd');
+    if (b && b.classList.contains('open') && e.target===b) window.cpCloseWeather();
+  });
+
   document.addEventListener('turbo:load', function(){
     if (window._portlandWx) applyWx(window._portlandWx);
   });
   if (window._cpWxLoaded) { if (window._portlandWx) applyWx(window._portlandWx); return; }
   window._cpWxLoaded = true;
-  var wmoCodes={0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌧️',63:'🌧️',65:'🌧️',71:'🌨️',73:'🌨️',75:'❄️',77:'🌨️',80:'🌦️',81:'🌦️',82:'⛈️',85:'🌨️',86:'❄️',95:'⛈️',96:'⛈️',99:'⛈️'};
-  var wmoLabels={0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Foggy',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',80:'Showers',81:'Showers',82:'Heavy showers',85:'Snow showers',86:'Heavy snow',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
-  var wxUrl = 'https://api.open-meteo.com/v1/forecast?latitude=45.5051&longitude=-122.6750&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles';
+
+  var wxUrl = 'https://api.open-meteo.com/v1/forecast?latitude=45.5051&longitude=-122.6750'
+    +'&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code,relative_humidity_2m,uv_index'
+    +'&hourly=temperature_2m,weather_code,precipitation_probability'
+    +'&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max'
+    +'&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=3';
   var aqUrl = 'https://air-quality-api.open-meteo.com/v1/air-quality?latitude=45.5051&longitude=-122.6750&current=pm2_5&timezone=America%2FLos_Angeles';
   Promise.all([
     fetch(wxUrl).then(function(r){return r.json();}),
@@ -1130,14 +1336,97 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
     var pm25=(aq&&aq.current)?aq.current.pm2_5:null;
     var code=c.weather_code, tempF=c.temperature_2m, apparentF=c.apparent_temperature;
     var wx={
-      icon:wmoCodes[code]||'🌡️', temp:Math.round(tempF)+'°F',
-      cond:wmoLabels[code]||'', wind:'💨 '+Math.round(c.wind_speed_10m)+' mph',
+      icon:WMO_I[code]||'🌡️', temp:Math.round(tempF)+'°F',
+      cond:WMO_L[code]||'', wind:'💨 '+Math.round(c.wind_speed_10m)+' mph',
       feel:'feels '+Math.round(apparentF)+'°',
       _tempF:tempF, _pm25:pm25, _apparentF:apparentF
     };
     window._portlandWx = wx;
+    window._portlandWxFull = d;
     applyWx(wx);
+    populatePanel(wx, d);
   }).catch(function(){});
+})();
+</script>
+
+<!-- ── i18n / language system ── -->
+<script>
+(function(){
+  var LANGS = ['en','es','ja'];
+  var STRINGS = {
+    en:{
+      'nav.artists':'Artists','nav.crews':'Crews','nav.venues':'Venues',
+      'nav.shop':'Shop','nav.calendar':'Calendar','nav.features':'Features',
+      'nav.board':'Board','nav.freetrade':'Free/Trade','nav.hoods':'Hoods',
+      'cat.music':'Music','cat.arts':'Arts','cat.bike':'Bike',
+      'cat.food':'Food','cat.fund':'Support','cat.hybrid':'Hybrid',
+      'free':'FREE','happening_now':'Happening now',
+      'search_ph':'Search events, artists, crews…',
+    },
+    es:{
+      'nav.artists':'Artistas','nav.crews':'Equipos','nav.venues':'Lugares',
+      'nav.shop':'Tienda','nav.calendar':'Calendario','nav.features':'Destacados',
+      'nav.board':'Tablón','nav.freetrade':'Gratis','nav.hoods':'Barrios',
+      'cat.music':'Música','cat.arts':'Arte','cat.bike':'Bici',
+      'cat.food':'Comida','cat.fund':'Apoyo','cat.hybrid':'Mixto',
+      'free':'GRATIS','happening_now':'Ahora mismo',
+      'search_ph':'Busca eventos, artistas…',
+    },
+    ja:{
+      'nav.artists':'アーティスト',
+      'nav.crews':'クルー',
+      'nav.venues':'会場',
+      'nav.shop':'店',
+      'nav.calendar':'カレンダー',
+      'nav.features':'特集',
+      'nav.board':'掲示板',
+      'nav.freetrade':'無料',
+      'nav.hoods':'地区',
+      'cat.music':'音楽',
+      'cat.arts':'芸術',
+      'cat.bike':'自転車',
+      'cat.food':'食べ物',
+      'cat.fund':'支援',
+      'cat.hybrid':'複合',
+      'free':'無料','happening_now':'今すぐ',
+      'search_ph':'イベントを検索…',
+    }
+  };
+  var LABELS = {en:'EN',es:'ES',ja:'日'};
+
+  function applyLang(lang) {
+    if (!STRINGS[lang]) lang = 'en';
+    var s = STRINGS[lang];
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      var k = el.getAttribute('data-i18n'); if (s[k]) el.textContent = s[k];
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function(el) {
+      var k = el.getAttribute('data-i18n-ph'); if (s[k]) el.placeholder = s[k];
+    });
+    var btn = document.getElementById('cp-lang-btn');
+    if (btn) btn.textContent = LABELS[lang] || lang.toUpperCase();
+    document.documentElement.setAttribute('lang', lang === 'ja' ? 'ja' : lang === 'es' ? 'es' : 'en');
+    localStorage.setItem('cpLang', lang);
+    window._cpLang = lang;
+  }
+
+  window.cpCycleLang = function() {
+    var cur = window._cpLang || localStorage.getItem('cpLang') || 'en';
+    var idx = LANGS.indexOf(cur);
+    applyLang(LANGS[(idx + 1) % LANGS.length]);
+  };
+
+  function init() {
+    var lang = localStorage.getItem('cpLang') || 'en';
+    applyLang(lang);
+  }
+
+  document.addEventListener('turbo:load', init);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 

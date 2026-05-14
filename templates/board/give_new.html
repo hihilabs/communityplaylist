@@ -76,7 +76,7 @@ h1{color:#ff6b35;font-size:1.4em;margin-bottom:6px}
 <form method="post" enctype="multipart/form-data">
   {% csrf_token %}
   {{ form.website }}
-  {{ form._t }}
+  {{ form.form_ts }}
 
   <div class="card">
     <div class="card-title">What &amp; Why</div>

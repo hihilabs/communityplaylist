@@ -7,22 +7,34 @@
   </div>
 </div>
 
-{% comment %}Mini bar — terminal aesthetic, fixed in left sidebar{% endcomment %}
+{% comment %}Mini bar — event card aesthetic, fixed at bottom of left sidebar{% endcomment %}
 <div id="cp-bar" class="cp-bar" style="display:none" data-turbo-permanent aria-label="Now playing">
   <div class="cp-bar-main">
-    <span class="cp-bar-dot" id="cp-bar-dot"></span>
+    <div class="cp-bar-thumb" id="cp-bar-thumb">
+      <div class="cp-bar-thumb-grad" id="cp-bar-thumb-grad"></div>
+      <img class="cp-bar-thumb-img" id="cp-bar-thumb-img" alt="" style="display:none">
+    </div>
     <div class="cp-bar-info">
-      <span class="cp-bar-label">NOW PLAYING</span>
+      <div class="cp-bar-hdr">
+        <span class="cp-bar-badge">
+          <span class="cp-bar-dot" id="cp-bar-dot"></span>
+          <span class="cp-bar-label">NOW PLAYING</span>
+        </span>
+        <div class="cp-bar-btns">
+          <button id="cp-bar-play" class="cp-bar-btn" title="Play/Pause">▶</button>
+          <button id="cp-bar-next" class="cp-bar-btn" title="Next">⏭</button>
+          <button id="cp-bar-heart" class="cp-bar-btn cp-bar-heart" title="Save">♥</button>
+          <button id="cp-bar-chevron" class="cp-bar-chevron" title="Expand">▾</button>
+        </div>
+      </div>
       <div class="cp-bar-title" id="cp-bar-title">—</div>
-      <div class="cp-bar-artist" id="cp-bar-artist"></div>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <div class="cp-bar-artist" id="cp-bar-artist" style="flex:1;min-width:0"></div>
+        <span class="cp-bar-qcount" id="cp-bar-qcount"></span>
+      </div>
     </div>
-    <div class="cp-bar-btns">
-      <button id="cp-bar-play" class="cp-bar-btn" title="Play/Pause">▶</button>
-      <button id="cp-bar-next" class="cp-bar-btn" title="Next">⏭</button>
-      <button id="cp-bar-heart" class="cp-bar-btn cp-bar-heart" title="Save">♥</button>
-    </div>
-    <button id="cp-bar-chevron" class="cp-bar-chevron" title="Expand">▾</button>
   </div>
+  <div class="cp-bar-prog-line"><div class="cp-bar-prog-fill" id="cp-bar-prog-fill"></div></div>
   <div class="cp-bar-drop" id="cp-bar-drop">
     <div class="cp-bar-art-wrap" id="cp-bar-art-wrap">
       <div class="cp-bar-art-grad" id="cp-bar-art-grad"></div>
@@ -98,6 +110,7 @@
     </button>
     <button class="cp-panel-sec" id="cp-panel-popout-sec" title="Standalone app">⬡</button>
     <button class="cp-panel-sec" id="cp-panel-chat-btn" title="Comments">💬</button>
+    <button class="cp-panel-sec" id="cp-panel-vis-btn" title="Visualizer: Bars">▮▮▮</button>
   </div>
 
   <div class="cp-panel-ch-strip" id="cp-panel-ch-strip"></div>
@@ -117,7 +130,7 @@
   </div>
 </div>
 
-<audio id="cp-audio" preload="none" data-turbo-permanent></audio>
+<audio id="cp-audio" preload="none" data-turbo-permanent crossorigin="anonymous"></audio>
 
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -137,6 +150,14 @@ function _cpGenreColors(g) {
   var k = (g || '').toLowerCase();
   for (var kk in p) { if (k.indexOf(kk) >= 0) return p[kk]; }
   return ['#1a1a2e','#0a0a1a'];
+}
+function _cpGenreAccent(g) {
+  var k = (g || '').toLowerCase();
+  if (k.indexOf('drum') >= 0 || k.indexOf('dnb') >= 0 || k.indexOf('jungle') >= 0) return '#55dd55';
+  if (k.indexOf('ambient') >= 0 || k.indexOf('experimental') >= 0) return '#66bbff';
+  if (k.indexOf('hip') >= 0 || k.indexOf('soul') >= 0 || k.indexOf('funk') >= 0) return '#ddaa33';
+  if (k.indexOf('metal') >= 0 || k.indexOf('punk') >= 0 || k.indexOf('rock') >= 0) return '#ff4466';
+  return '#cc88ff';
 }
 
 // ── Audio Engine ─────────────────────────────────────────────────────────────
@@ -174,9 +195,13 @@ function _cpGenreColors(g) {
   var barCur     = document.getElementById('cp-bar-cur');
   var barDur     = document.getElementById('cp-bar-dur');
   var barGenre   = document.getElementById('cp-bar-genre');
-  var barArtGrad = document.getElementById('cp-bar-art-grad');
-  var barArtImg  = document.getElementById('cp-bar-art-img');
-  var barDrop    = document.getElementById('cp-bar-drop');
+  var barArtGrad   = document.getElementById('cp-bar-art-grad');
+  var barArtImg    = document.getElementById('cp-bar-art-img');
+  var barThumbGrad = document.getElementById('cp-bar-thumb-grad');
+  var barThumbImg  = document.getElementById('cp-bar-thumb-img');
+  var barDrop      = document.getElementById('cp-bar-drop');
+  var barProgFill  = document.getElementById('cp-bar-prog-fill');
+  var barQCount    = document.getElementById('cp-bar-qcount');
 
   // ── Show / position bar ──
   function show() {
@@ -187,8 +212,8 @@ function _cpGenreColors(g) {
   }
 
   function _positionBar() {
-    // Align bar with the left event-list sidebar
-    var ref = document.querySelector('.cp-list-col, .event-list-sidebar, .sh-panel-left, [data-player-anchor]');
+    // Align bar with the left event-list sidebar (hybrid) or full-width on other pages
+    var ref = document.querySelector('#events-list, .cp-list-col, .event-list-sidebar, .sh-panel-left, [data-player-anchor]');
     if (ref) {
       var r = ref.getBoundingClientRect();
       bar.style.left  = r.left + 'px';
@@ -206,6 +231,7 @@ function _cpGenreColors(g) {
   function updateProgress() {
     var pct = _pct();
     if (barSeekFill) barSeekFill.style.width = pct + '%';
+    if (barProgFill) barProgFill.style.width = pct + '%';
     if (barCur)    barCur.textContent    = _cpFmt(audio.currentTime);
     if (barDur)    barDur.textContent    = (audio.duration && !isNaN(audio.duration)) ? _cpFmt(audio.duration) : '—';
     // Row highlight
@@ -240,20 +266,31 @@ function _cpGenreColors(g) {
     if (barTitle)  barTitle.innerHTML  = titleHtml;
     if (barArtist) barArtist.innerHTML = artistHtml;
     if (barGenre)  barGenre.textContent  = genreStr ? genreStr.toUpperCase() : '';
+    if (barQCount) {
+      var rem = tracks.length - 1;
+      barQCount.textContent = rem > 0 ? (current + 1) + '/' + tracks.length : '';
+      barQCount.classList.toggle('loaded', rem > 1);
+    }
     _updateBarArt(artUrl || '', genreStr, artist);
     if (window.cpPanel) window.cpPanel.onTrackMeta(title, artist, genreStr, artUrl, trackId, track);
   }
 
   function _updateBarArt(artUrl, genreStr, artist) {
     var colors = _cpGenreColors(genreStr || artist || '');
-    if (barArtGrad) barArtGrad.style.background = 'linear-gradient(135deg,' + colors[0] + ' 0%,' + colors[1] + ' 100%)';
+    var grad = 'linear-gradient(135deg,' + colors[0] + ' 0%,' + colors[1] + ' 100%)';
+    if (barArtGrad)   barArtGrad.style.background   = grad;
+    if (barThumbGrad) barThumbGrad.style.background = grad;
+    // Shift left-border accent and progress fill to match genre
+    var accent = _cpGenreAccent(genreStr || artist || '');
+    if (bar) bar.style.borderLeftColor = accent;
+    if (barProgFill) barProgFill.style.background = accent;
     if (barArtImg) {
-      if (artUrl) {
-        barArtImg.src = artUrl;
-        barArtImg.style.display = 'block';
-      } else {
-        barArtImg.style.display = 'none';
-      }
+      if (artUrl) { barArtImg.src = artUrl; barArtImg.style.display = 'block'; }
+      else { barArtImg.style.display = 'none'; }
+    }
+    if (barThumbImg) {
+      if (artUrl) { barThumbImg.src = artUrl; barThumbImg.style.display = 'block'; }
+      else { barThumbImg.style.display = 'none'; }
     }
   }
 
@@ -439,6 +476,8 @@ function _cpGenreColors(g) {
   var _barPhs = (function(){ var a=new Float32Array(_BB); for(var i=0;i<_BB;i++) a[i]=i*0.53; return a; })();
   var _barT   = 0;
 
+  var _barLogMin = Math.log(30), _barLogMax = Math.log(16000), _barNyquist = 22050;
+
   function _drawBarVis() {
     _barVisRaf = requestAnimationFrame(_drawBarVis);
     if (!bar.classList.contains('drop-open') || !barVis) return;
@@ -450,20 +489,37 @@ function _cpGenreColors(g) {
     var ctx = barVis.getContext('2d');
     ctx.clearRect(0, 0, W, H);
     var bw = W / _BB - 1;
+
+    var an = window._cpAnalyser;
+    var freqData = null;
+    if (an && playing) {
+      var rf = new Uint8Array(an.frequencyBinCount);
+      an.getByteFrequencyData(rf);
+      for (var s = 0; s < rf.length; s += 4) { if (rf[s] > 2) { freqData = rf; break; } }
+    }
+
     for (var i = 0; i < _BB; i++) {
-      if (playing) {
+      var amp;
+      if (freqData) {
+        var freq = Math.exp(_barLogMin + (_barLogMax - _barLogMin) * i / (_BB - 1));
+        var bin  = Math.min(freqData.length - 1, Math.round(freq / _barNyquist * freqData.length));
+        amp = freqData[bin] / 255;
+      } else if (playing) {
         var pos = i / _BB;
         var wave = Math.sin(_barT*2.1 + _barPhs[i])     * 0.32
                  + Math.sin(_barT*4.8 + _barPhs[i]*1.7) * 0.22
                  + Math.sin(_barT*7.3 + _barPhs[i]*0.9) * 0.14
                  + Math.random() * 0.1;
         _barTgt[i] = Math.max(0.02, Math.min(1, (wave + 0.5) * (1.1 - pos*0.55)));
+        _barLvl[i] += (_barTgt[i] - _barLvl[i]) * 0.28;
+        amp = _barLvl[i];
       } else {
-        _barTgt[i] = 0;
+        _barTgt[i] = Math.max(0.02, Math.sin(_barT*0.9 + _barPhs[i]*0.7) * 0.05 + 0.06);
+        _barLvl[i] += (_barTgt[i] - _barLvl[i]) * 0.04;
+        amp = _barLvl[i];
       }
-      _barLvl[i] += (_barTgt[i] - _barLvl[i]) * (playing ? 0.28 : 0.07);
-      var amp = _barLvl[i];
-      ctx.fillStyle = 'rgba(255,107,53,' + (0.1 + amp*0.72) + ')';
+      var _bHue = Math.round(i * 270 / (_BB - 1));
+      ctx.fillStyle = 'hsla(' + _bHue + ',85%,58%,' + (0.12 + amp*0.75) + ')';
       ctx.fillRect(i * (bw+1), H - amp*H*0.82, Math.max(1,bw), amp*H*0.82);
     }
   }
@@ -494,7 +550,19 @@ function _cpGenreColors(g) {
   // ── Audio events ──
   audio.addEventListener('ended', function(){
     if (repeatMode === 1) { audio.currentTime = 0; audio.play(); return; }
-    loadTrack(getNextIdx()); _playCurrentTrack();
+    var nextIdx = getNextIdx();
+    // If the next track is a video type and the panel isn't open, skip forward
+    // to the next audio track so the queue doesn't stall silently
+    if (tracks[nextIdx] && tracks[nextIdx].type && tracks[nextIdx].type !== 'audio') {
+      var panelOpen = window.cpPanel && window.cpPanel.isOpen();
+      if (!panelOpen) {
+        for (var _s = 1; _s < tracks.length; _s++) {
+          var _ti = (nextIdx + _s) % tracks.length;
+          if (!tracks[_ti].type || tracks[_ti].type === 'audio') { nextIdx = _ti; break; }
+        }
+      }
+    }
+    loadTrack(nextIdx); _playCurrentTrack();
   });
   audio.addEventListener('timeupdate', updateProgress);
   audio.addEventListener('play',  function(){ syncPlayBtn(true); });
@@ -506,6 +574,14 @@ function _cpGenreColors(g) {
   });
   document.addEventListener('turbo:load', function(){
     if (bar.style.display !== 'none') { document.body.classList.add('has-player'); _positionBar(); }
+    // Re-populate queue if reduced to 1 track (e.g., after cpLoad on another page)
+    if (tracks.length <= 1) {
+      var _cl = tracks.length ? tracks[0].stream_url : null;
+      fetch('/api/queue/').then(function(r){ return r.json(); }).then(function(data){
+        var rest = (data.tracks || []).filter(function(t){ return t.stream_url !== _cl; });
+        if (rest.length) { tracks = tracks.concat(rest); window._cpTracks = tracks; }
+      }).catch(function(){});
+    }
   });
 
   // ── Public API ──
@@ -513,14 +589,24 @@ function _cpGenreColors(g) {
     if (window.cpVideo && window.cpVideo.leave) window.cpVideo.leave();
     show();
     audio.src = url;
-    tracks  = [{stream_url:url, title:title, artist:artist, source_url:sourceUrl||'', art_url:artUrl||'', id:null}];
+    tracks  = [{type:'audio', stream_url:url, title:title, artist:artist, source_url:sourceUrl||'', art_url:artUrl||'', id:null}];
     current = 0;
     window._cpTracks  = tracks;
     window._cpCurrent = current;
     setTrackDisplay(title, artist, '', artUrl || '');
     audio.volume = 0.8;
     audio.play().then(function(){ syncPlayBtn(true); }).catch(function(){});
-    try { sessionStorage.setItem(STORE, JSON.stringify({url,title,artist,genre,idx:0,time:0})); } catch(e){}
+    try { sessionStorage.setItem(STORE, JSON.stringify({url:url,title:title,artist:artist,genre:genre,idx:0,time:0})); } catch(e){}
+    // Fetch full queue in background and append after the current track
+    fetch('/api/queue/').then(function(r){ return r.json(); }).then(function(data){
+      var rest = (data.tracks || []).filter(function(t){ return t.stream_url !== url; });
+      tracks = tracks.concat(rest);
+      window._cpTracks = tracks;
+      if (window.cpPanel) {
+        if (window.cpPanel.buildGenreStrip) window.cpPanel.buildGenreStrip(data.genres || [], genre, data.live_now || []);
+        if (window.cpPanel.isOpen && window.cpPanel.isOpen()) window.cpPanel.onTrackMeta && window.cpPanel.onTrackMeta(title, artist, '', artUrl || '', null, tracks[0]);
+      }
+    }).catch(function(){});
   };
   window.cpLoadQueue = function(trackList, startIdx) {
     if (!trackList || !trackList.length) return;
@@ -925,13 +1011,82 @@ function _cpGenreColors(g) {
     try { sessionStorage.removeItem('cp_panel_open'); } catch(e){}
   }
 
-  // ── Visualizer (simulated — avoids Web Audio capture which silences output) ──
-  var _visCtx = null, _visRaf = null;
-  var _VB = 48;
+  // ── Visualizer (Web Audio w/ simulated fallback — matches standalone player) ──
+  var _visCtx = null, _visRaf = null, _visAnalyser = null, _visAcInit = false;
+  var _VB = 200;
   var _visLvl = new Float32Array(_VB);
   var _visTgt = new Float32Array(_VB);
   var _visPhs = (function(){ var a=new Float32Array(_VB); for(var i=0;i<_VB;i++) a[i]=i*0.41; return a; })();
-  var _visT   = 0;
+  var _visLogMin = Math.log(30), _visLogMax = Math.log(16000), _visNyquist = 22050;
+  var _visT = 0;
+  var _visMode = 0; // 0=bars 1=mirror 2=scope
+  var _visModeLabels = ['▮▮▮','◈','〰'];
+  var _visModeNames  = ['Bars','Mirror','Scope'];
+
+  function _initVisAudio() {
+    if (_visAcInit) return; _visAcInit = true;
+    try {
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      ac.resume();
+      var src = ac.createMediaElementSource(window.cpAudio);
+      _visAnalyser = ac.createAnalyser();
+      _visAnalyser.fftSize = 512;
+      _visAnalyser.smoothingTimeConstant = 0.8;
+      src.connect(_visAnalyser);
+      _visAnalyser.connect(ac.destination);
+      window._cpAnalyser = _visAnalyser;
+    } catch(e) {
+      _visAnalyser = null;
+    }
+  }
+
+  function _drawFrame(freqData, waveData, amps, numBars) {
+    if (!_visCtx || !canvas) return;
+    var W = canvas.offsetWidth, H = canvas.offsetHeight;
+    if (!W || !H) return;
+    canvas.width = W; canvas.height = H;
+    _visCtx.clearRect(0, 0, W, H);
+    var nb = numBars || amps.length;
+    if (_visMode === 0) {
+      var bw = W / nb - 1;
+      for (var i = 0; i < nb; i++) {
+        var a = amps[i];
+        var _ph = Math.round(i * 270 / (nb - 1));
+        _visCtx.fillStyle = 'hsla(' + _ph + ',85%,58%,' + (0.1 + a*0.78) + ')';
+        _visCtx.fillRect(i * (bw+1), H - a*H, Math.max(1, bw), a*H);
+      }
+    } else if (_visMode === 1) {
+      var bw = W / nb - 1, cy = H / 2;
+      for (var i = 0; i < nb; i++) {
+        var a = amps[i], bh = a * cy * 0.9;
+        var _ph = Math.round(i * 270 / (nb - 1));
+        _visCtx.fillStyle = 'hsla(' + _ph + ',85%,58%,' + (0.1 + a*0.75) + ')';
+        _visCtx.fillRect(i * (bw+1), cy - bh, Math.max(1, bw), bh * 2);
+      }
+    } else {
+      var playing = !!(window.cpAudio && !window.cpAudio.paused);
+      _visCtx.lineWidth = 2;
+      var _sg = _visCtx.createLinearGradient(0, 0, W, 0);
+      _sg.addColorStop(0,    'hsla(0,85%,58%,.85)');
+      _sg.addColorStop(0.33, 'hsla(90,85%,58%,.85)');
+      _sg.addColorStop(0.66, 'hsla(180,85%,58%,.85)');
+      _sg.addColorStop(1,    'hsla(270,85%,58%,.85)');
+      _visCtx.strokeStyle = _sg;
+      _visCtx.shadowColor = '#58d8ff'; _visCtx.shadowBlur = 8;
+      _visCtx.beginPath();
+      var pts = waveData ? waveData.length : 256;
+      for (var i = 0; i < pts; i++) {
+        var x = i / pts * W;
+        var v = waveData ? (waveData[i] / 128 - 1) * 0.42
+              : playing ? (Math.sin(_visT*3.1+i*0.045)*0.22+Math.sin(_visT*7.4+i*0.019)*0.12)*0.7
+              : Math.sin(_visT*0.8+i*0.06)*0.025;
+        var y = H / 2 + v * H;
+        if (i === 0) _visCtx.moveTo(x, y); else _visCtx.lineTo(x, y);
+      }
+      _visCtx.stroke();
+      _visCtx.shadowBlur = 0;
+    }
+  }
 
   function _startVisualizer() {
     if (!canvas) return;
@@ -944,29 +1099,51 @@ function _cpGenreColors(g) {
     _visRaf = requestAnimationFrame(_drawVis);
     var aud = window.cpAudio;
     var playing = aud && !aud.paused;
-    _visT += playing ? 0.055 : 0.008;
-    if (!_visCtx || !canvas) return;
-    var W = canvas.offsetWidth, H = canvas.offsetHeight;
-    if (!W || !H) return;
-    canvas.width = W; canvas.height = H;
-    _visCtx.clearRect(0, 0, W, H);
-    var bw = W / _VB - 1;
-    for (var i = 0; i < _VB; i++) {
-      if (playing) {
-        var pos = i / _VB;
-        var wave = Math.sin(_visT*2.1 + _visPhs[i])      * 0.32
-                 + Math.sin(_visT*4.8 + _visPhs[i]*1.7)  * 0.22
-                 + Math.sin(_visT*7.3 + _visPhs[i]*0.9)  * 0.14
-                 + Math.random() * 0.1;
-        _visTgt[i] = Math.max(0.02, Math.min(1, (wave + 0.5) * (1.1 - pos*0.55)));
-      } else {
-        _visTgt[i] = 0;
+    _visT += playing ? 0.055 : 0.012;
+
+    var freqData = null, waveData = null;
+    if (_visAnalyser && playing) {
+      var rf = new Uint8Array(_visAnalyser.frequencyBinCount);
+      _visAnalyser.getByteFrequencyData(rf);
+      for (var s = 0; s < rf.length; s += 4) { if (rf[s] > 2) { freqData = rf; break; } }
+      if (_visMode === 2) {
+        waveData = new Uint8Array(_visAnalyser.fftSize);
+        _visAnalyser.getByteTimeDomainData(waveData);
       }
-      _visLvl[i] += (_visTgt[i] - _visLvl[i]) * (playing ? 0.28 : 0.07);
-      var amp = _visLvl[i];
-      _visCtx.fillStyle = 'rgba(255,107,53,' + (0.1 + amp*0.72) + ')';
-      _visCtx.fillRect(i * (bw+1), H - amp*H*0.82, Math.max(1,bw), amp*H*0.82);
     }
+
+    var cW = canvas ? (canvas.offsetWidth || 300) : 300;
+    var numBars = Math.min(_VB, Math.max(20, Math.floor(cW / 9)));
+    var amps = new Float32Array(numBars);
+
+    if (_visMode !== 2) {
+      for (var i = 0; i < numBars; i++) {
+        var raw;
+        if (freqData) {
+          var freq = Math.exp(_visLogMin + (_visLogMax - _visLogMin) * i / (numBars - 1));
+          var bin  = Math.min(freqData.length - 1, Math.round(freq / _visNyquist * freqData.length));
+          raw = freqData[bin] / 255;
+        } else if (playing) {
+          var fw = Math.sin(_visT*2.1+_visPhs[i])*0.32
+                 + Math.sin(_visT*4.8+_visPhs[i]*1.7)*0.22
+                 + Math.sin(_visT*7.3+_visPhs[i]*0.9)*0.14
+                 + Math.random()*0.1;
+          _visTgt[i] = Math.max(0.02, Math.min(1, (fw+0.5)*(1.1-i/numBars*0.55)));
+          raw = -1;
+        } else {
+          _visTgt[i] = Math.max(0.02, Math.sin(_visT*0.9+_visPhs[i]*0.7)*0.05+0.06);
+          raw = -1;
+        }
+        if (raw < 0) {
+          _visLvl[i] += (_visTgt[i] - _visLvl[i]) * (playing ? 0.28 : 0.04);
+          amps[i] = _visLvl[i];
+        } else {
+          amps[i] = raw;
+        }
+      }
+    }
+
+    _drawFrame(freqData, waveData, amps, numBars);
   }
 
   function _stopVisualizer() {
@@ -1226,6 +1403,13 @@ function _cpGenreColors(g) {
   if (popout1) popout1.addEventListener('click', _openPopout);
   if (popout2) popout2.addEventListener('click', _openPopout);
 
+  var _visModeBtn = document.getElementById('cp-panel-vis-btn');
+  if (_visModeBtn) _visModeBtn.addEventListener('click', function() {
+    _visMode = (_visMode + 1) % 3;
+    _visModeBtn.textContent = _visModeLabels[_visMode];
+    _visModeBtn.title = 'Visualizer: ' + _visModeNames[_visMode];
+  });
+
   // Escape
   document.addEventListener('keydown', function(e){ if (e.key==='Escape' && isOpen) close(); });
 
@@ -1406,8 +1590,8 @@ function _cpGenreColors(g) {
     },
     onPlayState: function(playing) {
       if (playBtn) playBtn.textContent = playing ? '⏸' : '▶';
+      if (playing) _initVisAudio();
       if (playing && isOpen && !window.cpVideo?.isActive()) _startVisualizer();
-      else if (!playing) _stopVisualizer();
     },
     onProgress: function(cur, dur) {
       if (!isOpen) return;
@@ -1463,6 +1647,14 @@ function _cpGenreColors(g) {
       if (audio && !audio.paused) _startVisualizer();
     },
   };
+
+  // ── Turbo hooks — re-apply has-panel across navigations ──
+  document.addEventListener('turbo:before-render', function(e){
+    if (isOpen) e.detail.newBody.classList.add('has-panel');
+  });
+  document.addEventListener('turbo:load', function(){
+    if (isOpen) document.body.classList.add('has-panel');
+  });
 
   // Restore open state
   try { if (sessionStorage.getItem('cp_panel_open') === '1') setTimeout(open, 200); } catch(e){}
