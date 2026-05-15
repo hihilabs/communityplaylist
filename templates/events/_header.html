@@ -61,7 +61,7 @@
     </div>
 
     <!-- Mobile: icon drawer toggle -->
-    <button id="sh-menu-toggle" class="sh-menu-toggle" aria-label="Open menu" aria-expanded="false">⊕</button>
+    <button id="sh-menu-toggle" class="sh-menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
 
     <a href="/submit/" class="sh-btn sh-primary">+ Submit</a>
 
@@ -138,7 +138,7 @@
   function closeDrawer() {
     drawer.classList.remove('open');
     drawer.setAttribute('aria-hidden', 'true');
-    toggle.textContent = '⊕';
+    toggle.textContent = '☰';
     toggle.setAttribute('aria-expanded', 'false');
     updateFilterSticky();
   }

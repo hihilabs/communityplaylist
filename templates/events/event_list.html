@@ -19,7 +19,13 @@ body{background:#111;color:#eee;font-family:sans-serif}
   .fb-search-wrap{display:none!important}
   .fb-search-row{justify-content:flex-end;padding:4px 10px 2px}
 }
-/* Mobile: keep filter-bar search visible (header search is in the drawer) */
+/* Mobile: remove the orphaned filter button row; surface WHEN/HOOD/Free controls directly */
+@media(max-width:768px){
+  .fb-search-row{display:none!important}
+  .fb-expanded{max-height:400px!important;transition:none!important}
+  .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
+  .view-float{display:none!important}
+}
 /* Happening now strip */
 .now-strip{background:#1a1a0f;border-bottom:1px solid #2a2a10}
 .now-toggle{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;user-select:none;font-size:.8em;color:#ddaa33;font-weight:600;letter-spacing:.03em}
