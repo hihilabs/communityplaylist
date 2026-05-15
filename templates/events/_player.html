@@ -250,10 +250,12 @@ function _cpGenreAccent(g) {
   function _drawProgCanvas(pct) {
     if (!progCanvas) return;
     if (!_progCtx) _progCtx = progCanvas.getContext('2d');
-    var W = progCanvas.offsetWidth, H = progCanvas.offsetHeight || 4;
+    var dpr = window.devicePixelRatio || 1;
+    var W = progCanvas.offsetWidth, H = progCanvas.offsetHeight || 6;
     if (!W) return;
-    progCanvas.width = W; progCanvas.height = H;
+    progCanvas.width = Math.round(W * dpr); progCanvas.height = Math.round(H * dpr);
     var ctx = _progCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     var playedX = Math.round((pct || 0) / 100 * W);
     var playing = !!(audio && !audio.paused);
@@ -1091,9 +1093,11 @@ function _cpGenreAccent(g) {
 
   function _drawFrame(freqData, waveData, amps, numBars) {
     if (!_visCtx || !canvas) return;
+    var dpr = window.devicePixelRatio || 1;
     var W = canvas.offsetWidth, H = canvas.offsetHeight;
     if (!W || !H) return;
-    canvas.width = W; canvas.height = H;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    _visCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     _visCtx.clearRect(0, 0, W, H);
     var nb = numBars || amps.length;
     if (_visMode === 0) {
@@ -1162,7 +1166,7 @@ function _cpGenreAccent(g) {
     }
 
     var cW = canvas ? (canvas.offsetWidth || 300) : 300;
-    var numBars = Math.min(_VB, Math.max(20, Math.floor(cW / 9)));
+    var numBars = Math.min(_VB, Math.max(40, Math.floor(cW / 5)));
     var amps = new Float32Array(numBars);
 
     if (_visMode !== 2) {
