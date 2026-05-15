@@ -25,6 +25,7 @@ urlpatterns = [
     path('cp-manage/', admin.site.urls),
     path('api/worker/', include('events.worker_urls')),
     path('board/', include('board.urls')),
+    path('wiki/', include('wiki.urls', namespace='wiki')),
     path('', include('events.urls')),
     path('sitemap.xml', sitemap, {'sitemaps': SITEMAPS}, name='django.contrib.sitemaps.views.sitemap'),
     path('robots.txt', TemplateView.as_view(template_name='robots.txt', content_type='text/plain')),

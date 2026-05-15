@@ -27,13 +27,22 @@ services:
       - "traefik.http.routers.cp-local.entrypoints=websecure"
       - "traefik.http.routers.cp-local.tls=true"
       - "traefik.http.services.cp-local.loadbalancer.server.port=8000"
-      # wiki.communityplaylist.com — genre wiki (prefix /wiki before forwarding)
+      # wiki.communityplaylist.com — genre wiki (host middleware switches urlconf to root)
       - "traefik.http.routers.cp-wiki.rule=Host(`wiki.communityplaylist.com`)"
       - "traefik.http.routers.cp-wiki.entrypoints=websecure"
       - "traefik.http.routers.cp-wiki.tls=true"
       - "traefik.http.routers.cp-wiki.service=cp-local"
-      - "traefik.http.routers.cp-wiki.middlewares=wiki-prefix"
-      - "traefik.http.middlewares.wiki-prefix.addprefix.prefix=/wiki"
+    networks:
+      - traefik
+
+  vite:
+    image: node:22-alpine
+    working_dir: /app/frontend
+    command: npm run dev -- --host
+    volumes:
+      - .:/app
+    ports:
+      - "5174:5173"
     networks:
       - traefik
 

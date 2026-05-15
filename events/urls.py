@@ -21,6 +21,7 @@ urlpatterns = [
     path('api/search/', views.api_global_search, name='api_global_search'),
     path('api/toggle-comments/', views.toggle_comments_api, name='toggle_comments_api'),
     path('api/route/', views.api_route_proxy, name='api_route_proxy'),
+    path('api/events/', views.api_events, name='api_events'),
     path('api/events/<slug:slug>/', views.api_event_detail, name='api_event_detail'),
     path('api/shelters/', views.api_shelters, name='api_shelters'),
     path('api/upcoming-events/', views.api_upcoming_events, name='api_upcoming_events'),

@@ -118,12 +118,12 @@
 <body>
 
 <header>
-  <a href="/wiki/" class="logo">Genre Wiki</a>
+  <a href="{% url 'wiki:token_list' %}" class="logo">Genre Wiki</a>
   <nav>
-    <a href="/wiki/">Tokens</a>
+    <a href="{% url 'wiki:token_list' %}">Tokens</a>
     <a href="https://communityplaylist.com">← Community Playlist</a>
   </nav>
-  <form class="search-form" action="/wiki/" method="get">
+  <form class="search-form" action="{% url 'wiki:token_list' %}" method="get">
     <input name="q" value="{{ q|default:'' }}" placeholder="Search tokens, genres…" autocomplete="off">
   </form>
 </header>

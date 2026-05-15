@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/leaflet/leaflet.css" data-turbo-eval="false"/>
 <link rel="stylesheet" href="/static/leaflet/MarkerCluster.css" data-turbo-eval="false"/>
 <link rel="stylesheet" href="/static/leaflet/MarkerCluster.Default.css" data-turbo-eval="false"/>
+<link rel="stylesheet" href="/static/js/events.css">
 {% endblock %}
 {% block styles %}
 <style>
@@ -259,87 +260,7 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 {% endblock %}
 {% block body %}
 
-<form method="get" action="/" id="filter-form">
-  {# preserve ?q= from nav search when other filters are applied #}
-  {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
-<div class="filter-bar" id="filter-body">
-  <div class="filter-search-row">
-
-    {# ⊕ Filters toggle pill #}
-    <button type="button"
-            class="filter-toggle-btn {% if selected_genre or selected_category or selected_neighborhood or selected_event_type or free_only or selected_radius %}open has-active{% endif %}"
-            id="filter-toggle-btn"
-            onclick="toggleFilterExpand()"
-            title="Filters">
-      ⊕ Filters{% if selected_genre or selected_category or selected_neighborhood or selected_event_type or free_only or selected_radius %} ●{% endif %}
-    </button>
-
-    <div class="filter-sep"></div>
-
-    {# Tool pills — always visible #}
-    <button type="button" class="cp-near-pill" id="cp-near-pill" onclick="cpNearPillClick(this)" title="Set starting point">
-      <span class="cp-near-label" id="cp-near-label">📍 Near</span>
-      <span class="cp-near-x" id="cp-near-x" style="display:none" onclick="event.stopPropagation();cpHomeClear()" title="Clear">✕</span>
-    </button>
-    <button type="button" class="cp-nb-btn" id="cp-nb-btn" onclick="cpNightBuilderToggle()" title="Night Builder GPS mode">🧭 <span class="cp-nb-text">Night Builder</span></button>
-    <button type="button" class="cp-nb-btn" id="radar-btn" onclick="cpRadarToggle()" title="Live precipitation radar">🌧 <span class="cp-nb-text">Radar</span></button>
-
-  </div>
-
-  {# Expandable filter dropdowns #}
-  <div class="filter-extras {% if selected_genre or selected_category or selected_neighborhood or selected_event_type or free_only or selected_radius %}open{% endif %}" id="filter-extras">
-    <div class="filter-extras-inner">
-      <select name="genre" id="desk-genre">
-        <option value="">All genres</option>
-        {% for g in genres %}
-        <option value="{{ g.id }}" {% if selected_genre == g.id|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
-        {% endfor %}
-      </select>
-      <select name="category" id="desk-category">
-        <option value="" {% if not selected_category %}selected{% endif %}>All types</option>
-        <option value="music"   {% if selected_category == 'music'   %}selected{% endif %}>🎵 Music</option>
-        <option value="bike"    {% if selected_category == 'bike'    %}selected{% endif %}>🚲 Bike</option>
-        <option value="fund"    {% if selected_category == 'fund'    %}selected{% endif %}>💛 Fundraiser</option>
-        <option value="food"    {% if selected_category == 'food'    %}selected{% endif %}>🍜 Food</option>
-        <option value="hybrid"  {% if selected_category == 'hybrid'  %}selected{% endif %}>✨ Hybrid</option>
-        <option value="artists">🎤 Artists</option>
-      </select>
-      <select name="event_type">
-        <option value="" {% if not selected_event_type %}selected{% endif %}>Online &amp; Local</option>
-        <option value="local"   {% if selected_event_type == 'local'   %}selected{% endif %}>Local</option>
-        <option value="online"  {% if selected_event_type == 'online'  %}selected{% endif %}>Online</option>
-      </select>
-      <select name="neighborhood">
-        <option value="">All neighborhoods</option>
-        {% for n in neighborhoods %}
-        <option value="{{ n }}" {% if selected_neighborhood == n %}selected{% endif %}>{{ n }}</option>
-        {% endfor %}
-      </select>
-      <select name="radius" id="desk-radius">
-        <option value="">Any distance</option>
-        <option value="1">Within 1 mi</option>
-        <option value="5">Within 5 mi</option>
-        <option value="10">Within 10 mi</option>
-        <option value="15">Within 15 mi</option>
-        <option value="30">Within 30 mi</option>
-        <option value="60">Within 60 mi</option>
-      </select>
-      <select name="date">
-        <option value="today"  {% if selected_date == 'today'  %}selected{% endif %}>Today</option>
-        <option value="week"   {% if selected_date == 'week'   %}selected{% endif %}>This Week</option>
-        <option value="month"  {% if selected_date == 'month'  %}selected{% endif %}>This Month</option>
-        <option value="future" {% if selected_date == 'future' or not selected_date %}selected{% endif %}>Any Future</option>
-        <option value="past"   {% if selected_date == 'past'   %}selected{% endif %}>Past</option>
-      </select>
-      <label class="free-label">
-        <input type="checkbox" name="free" value="1" {% if free_only %}checked{% endif %}> Free
-      </label>
-      <button type="submit" class="filter-btn">Apply</button>
-      <a href="/" class="clear-btn">Clear</a>
-    </div>
-  </div>
-</div>
-</form>
+{# Filter bar + event list rendered by React — see frontend/src/events/ #}
 
 <!-- Floating view toggle — sits at top-right, overlays content -->
 <div class="view-float" id="view-float" aria-label="View mode">
@@ -380,31 +301,7 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
     </div>
     {% endif %}
 
-    <div class="events-grid">
-    {% if events %}
-    {% for event in events %}
-    <a href="/events/{{ event.slug }}/" class="event" data-slug="{{ event.slug }}" data-lat="{{ event.latitude|default:'' }}" data-lng="{{ event.longitude|default:'' }}" data-cat="{{ event.category }}"{% if event.approved_photos %} style="background-image:linear-gradient(to right,#121212 48%,rgba(18,18,18,.12)),url('{{ event.approved_photos.0.image.url }}');background-size:cover;background-position:right center"{% elif event.photo %} style="background-image:linear-gradient(to right,#121212 48%,rgba(18,18,18,.12)),url('{{ event.photo.url }}');background-size:cover;background-position:right center"{% endif %}>
-      <div class="ev-hdr">
-        {% if event.category %}<span class="cat-badge cat-{{ event.category }}" data-cat="{{ event.category }}" data-i18n="cat.{{ event.category }}" onclick="filterByCategory(event,this)">{{ event.get_category_display }}</span>{% else %}<span></span>{% endif %}
-        <span class="ev-time">{{ event.start_date|date:"D · M j · g:i A" }}</span>
-      </div>
-      <h2>{{ event.title }}</h2>
-      <div class="meta">
-        {% if event.neighborhood %}<span class="hood-tag" data-hood="{{ event.neighborhood }}">📍 {{ event.neighborhood }}</span>{% else %}<span class="ev-loc">{{ event.location|truncatechars:28 }}</span>{% endif %}
-        {% if event.is_free %}<span class="free" data-i18n="free">FREE</span>{% endif %}
-        {% if event.genres.all %}{% for g in event.genres.all %}<span class="genre-tag">{{ g.name }}</span>{% endfor %}{% endif %}
-      </div>
-    </a>
-    {% endfor %}
-    {% else %}
-    <div class="empty"><p>No events found — try adjusting your filters or <a href="/submit/" style="color:#ff6b35">submit one!</a></p></div>
-    {% endif %}
-    </div>
-    {% if search_all_time %}
-    <p style="color:#444;font-size:.78em;padding:4px 0 8px">Searching all events — past and upcoming. <a href="/?date=future&q={{ search_query|urlencode }}" style="color:#555">Upcoming only →</a></p>
-    {% endif %}
-    <div class="archive-link"><a href="/archive/">← Browse past events</a></div>
-    {% if cp_version %}<p style="color:#222;font-size:.65em;text-align:center;padding:4px 0 12px">v{{ cp_version }}</p>{% endif %}
+    <div id="cp-events-root" data-events-url="/api/events/"></div>
   </div>
 
   <div id="map"></div>
@@ -412,6 +309,7 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 
 <script src="/static/leaflet/leaflet.js" data-turbo-eval="false"></script>
 <script src="/static/leaflet/leaflet.markercluster.js" data-turbo-eval="false"></script>
+<script type="module" src="/static/js/events.js"></script>
 <script>
 var mapEvents = {{ map_events|safe }};
 window.cpEventsList = mapEvents;
@@ -419,6 +317,7 @@ var mapInitialized = false;
 var map;
 var tileLayer;
 var clusterGroup;
+var useCluster = false;
 var markersBySlug = {};
 var categoryBySlug = {};
 
@@ -510,7 +409,7 @@ function initMap() {
     attribution: '© CARTO', crossOrigin: true,
   }).addTo(map);
 
-  var useCluster = (typeof L.markerClusterGroup === 'function');
+  useCluster = (typeof L.markerClusterGroup === 'function');
   if (useCluster) {
     clusterGroup = L.markerClusterGroup({
       maxClusterRadius: 48,
@@ -573,6 +472,30 @@ function initMap() {
     map.invalidateSize({animate: false});
   }, 1500);
 }
+
+// ── React filter bridge — update map markers when React filters events ────────
+function _setMapMarkers(events) {
+  if (!mapInitialized || !map) return;
+  if (clusterGroup) {
+    clusterGroup.clearLayers();
+  } else {
+    Object.values(markersBySlug).forEach(function(m) { try { m.remove(); } catch(e) {} });
+  }
+  markersBySlug = {};
+  categoryBySlug = {};
+  events.forEach(function(e) {
+    if (!e.latitude || !e.longitude) return;
+    var marker = L.marker([e.latitude, e.longitude], { icon: makeIcon(false, e.category) });
+    var flyerHtml = e.flyer_url ? '<img src="' + e.flyer_url + '" style="width:36px;height:64px;object-fit:cover;border-radius:4px;flex-shrink:0">' : '';
+    marker.bindPopup('<div style="display:flex;gap:10px;align-items:flex-start;min-width:160px">' + flyerHtml + '<div><strong style="color:#ff6b35">' + e.title + '</strong><br><span style="font-size:.82em;color:#888">' + e.start_date + '</span><br><span style="font-size:.85em">' + e.location + '</span><br><a href="/events/' + e.slug + '/" style="color:#ff6b35;font-size:.85em">View event →</a></div></div>');
+    marker.on('click', function() { highlightCard(e.slug); });
+    markersBySlug[e.slug] = marker;
+    categoryBySlug[e.slug] = e.category;
+    if (clusterGroup) clusterGroup.addLayer(marker); else marker.addTo(map);
+  });
+  if (clusterGroup) map.addLayer(clusterGroup);
+}
+window.addEventListener('cp:events-filtered', function(e) { _setMapMarkers(e.detail.events); });
 
 // ── Precipitation radar ──────────────────────────────────────────────────────
 (function(){

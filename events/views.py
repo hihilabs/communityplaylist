@@ -210,6 +210,71 @@ def event_list(request):
     return response
 
 
+def api_events(request):
+    """JSON feed for the React event list — returns upcoming approved events."""
+    now = timezone.now()
+    today = localtime(now).date()
+    tomorrow = today + timedelta(days=1)
+
+    qs = (
+        Event.objects
+        .filter(status='approved', start_date__gte=now)
+        .prefetch_related('genres', 'artists', 'photos')
+        .order_by('start_date')[:400]
+    )
+
+    def _flyer(e):
+        photos = list(e.photos.filter(approved=True).order_by('created_at')[:1])
+        if photos:
+            return photos[0].image.url
+        if e.photo:
+            return e.photo.url
+        return ''
+
+    def _serialize(e):
+        ld = localtime(e.start_date)
+        edate = ld.date()
+        if edate == today:
+            day_label = 'Today'
+        elif edate == tomorrow:
+            day_label = 'Tomorrow'
+        else:
+            day_label = ld.strftime('%a %b %-d')
+        hour = ld.hour
+        minute = ld.minute
+        time_label = ld.strftime('%I:%M %p').lstrip('0') if minute else ld.strftime('%I %p').lstrip('0')
+        return {
+            'id': e.id,
+            'title': e.title,
+            'slug': e.slug,
+            'start_date': e.start_date.isoformat(),
+            'end_date': e.end_date.isoformat() if e.end_date else None,
+            'location': e.location or '',
+            'neighborhood': e.neighborhood or '',
+            'category': e.category or '',
+            'is_free': bool(e.is_free),
+            'price_info': e.price_info or '',
+            'genres': [g.name for g in e.genres.all()],
+            'artists': [a.name for a in e.artists.all()],
+            'website': e.website or '',
+            'latitude': float(e.latitude) if e.latitude else None,
+            'longitude': float(e.longitude) if e.longitude else None,
+            'flyer_url': _flyer(e),
+            'day_label': day_label,
+            'time_label': time_label,
+        }
+
+    events = [_serialize(e) for e in qs]
+    neighborhoods = sorted(set(e['neighborhood'] for e in events if e['neighborhood']))
+    genres = sorted(set(g for e in events for g in e['genres']))
+
+    return JsonResponse({
+        'events': events,
+        'neighborhoods': neighborhoods,
+        'genres': genres,
+    }, headers={'Cache-Control': 'no-store'})
+
+
 def api_genre_filter(request):
     """Return genres for events matching current filters (excluding genre), for live dropdown updates."""
     from django.db.models import Q

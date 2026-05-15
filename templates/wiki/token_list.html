@@ -13,7 +13,7 @@
   </p>
   {% if q %}
     <p>Showing results for <strong style="color:var(--text)">{{ q }}</strong> —
-      <a href="/wiki/">clear</a></p>
+      <a href="{% url 'wiki:token_list' %}">clear</a></p>
   {% endif %}
 </div>
 

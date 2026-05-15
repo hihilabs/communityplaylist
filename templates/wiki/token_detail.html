@@ -6,7 +6,7 @@
 {% block content %}
 
 <div style="margin-bottom: 8px; font-size: 12px; color: var(--muted);">
-  <a href="/wiki/">← Token Index</a>
+  <a href="{% url 'wiki:token_list' %}">← Token Index</a>
 </div>
 
 <h1>{{ token.name }}</h1>
