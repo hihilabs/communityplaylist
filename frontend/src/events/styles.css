@@ -22,7 +22,7 @@
   background: #151515;
   border-bottom: 1px solid #1c1c1c;
   position: sticky;
-  top: 50px;
+  top: 50px; /* updated dynamically by updateFilterSticky() */
   z-index: 900;
 }
 
@@ -437,6 +437,9 @@
 .ev-footer { text-align: center; padding: 24px 0 40px; }
 .ev-archive-link { color: var(--orange); font-size: .85em; text-decoration: none; }
 .ev-archive-link:hover { text-decoration: underline; }
+
+/* ── Player bar clearance — keep last card above mini player ── */
+body.has-player .ev-list { padding-bottom: 80px; }
 
 /* ── Desktop ───────────────────────────────────────────── */
 @media (min-width: 900px) {

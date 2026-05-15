@@ -10,6 +10,14 @@ interface Props {
 export function EventsApp({ apiUrl }: Props) {
   const { filtered, all, neighborhoods, loading, error, filters, patch, clear, hasActive } = useEvents(apiUrl)
 
+  // Re-trigger layout functions after React mounts
+  useEffect(() => {
+    window.dispatchEvent(new Event('resize'))
+    if (typeof (window as any).cpUpdateFilterSticky === 'function') {
+      (window as any).cpUpdateFilterSticky()
+    }
+  }, [])
+
   // Notify vanilla Leaflet map when filtered events change
   useEffect(() => {
     if (loading) return

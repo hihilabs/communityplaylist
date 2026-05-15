@@ -41,7 +41,7 @@ export function EventList({ events, loading, error, onCategoryClick, onNeighborh
   )
 
   return (
-    <div className="ev-list" id="events-list">
+    <div className="ev-list">
       {groups.map(([day, evs]) => (
         <section key={day} className="ev-day-group">
           <div className="ev-day-label">

@@ -212,8 +212,8 @@ function _cpGenreAccent(g) {
   }
 
   function _positionBar() {
-    // Align bar with the left event-list sidebar (hybrid) or full-width on other pages
-    var ref = document.querySelector('#events-list, .cp-list-col, .event-list-sidebar, .sh-panel-left, [data-player-anchor]');
+    // Prefer .ev-list (React event column, max-width centered) over full-width wrappers
+    var ref = document.querySelector('.ev-list, #events-list, .cp-list-col, .event-list-sidebar, .sh-panel-left, [data-player-anchor]');
     if (ref) {
       var r = ref.getBoundingClientRect();
       bar.style.left  = r.left + 'px';

@@ -1,12 +1,15 @@
-{% comment %}Nav strip: scrolling announcement banner + welcome modal + page tour{% endcomment %}
+{% comment %}Community ticker: label + scrolling card chips{% endcomment %}
 <div class="aid-marquee-wrap aid-marquee-always">
-  <div class="aid-marquee-inner">
-    <span class="aid-marquee-soft">Portland events · by the people, for the people</span><span class="aid-marquee-sep">✦</span>
-    {% for b in banners %}<a href="/board/aid/">🌹 {{ b.text }}</a><span class="aid-marquee-sep">✦</span>{% endfor %}
-    {% if featured_record %}<a href="/shop/" style="color:#ff6b35">🛒 {{ featured_record.artist }} — {{ featured_record.title }} · {{ featured_record.price_display }}</a><span class="aid-marquee-sep">✦</span>{% endif %}
-    <span class="aid-marquee-soft">Portland events · by the people, for the people</span><span class="aid-marquee-sep">✦</span>
-    {% for b in banners %}<a href="/board/aid/">🌹 {{ b.text }}</a><span class="aid-marquee-sep">✦</span>{% endfor %}
-    {% if featured_record %}<a href="/shop/" style="color:#ff6b35">🛒 {{ featured_record.artist }} — {{ featured_record.title }} · {{ featured_record.price_display }}</a><span class="aid-marquee-sep">✦</span>{% endif %}
+  <div class="aid-ticker-label">Community</div>
+  <div class="aid-marquee-track">
+    <div class="aid-marquee-inner">
+      {% for b in banners %}<a href="/board/aid/">🌹 {{ b.text }}</a><span class="aid-marquee-sep">·</span>{% endfor %}
+      {% if featured_record %}<a href="/shop/">🛒 {{ featured_record.artist }} — {{ featured_record.title }} · {{ featured_record.price_display }}</a><span class="aid-marquee-sep">·</span>{% endif %}
+      <span class="aid-marquee-soft">Portland events · by the people, for the people</span><span class="aid-marquee-sep">·</span>
+      {% for b in banners %}<a href="/board/aid/">🌹 {{ b.text }}</a><span class="aid-marquee-sep">·</span>{% endfor %}
+      {% if featured_record %}<a href="/shop/">🛒 {{ featured_record.artist }} — {{ featured_record.title }} · {{ featured_record.price_display }}</a><span class="aid-marquee-sep">·</span>{% endif %}
+      <span class="aid-marquee-soft">Portland events · by the people, for the people</span><span class="aid-marquee-sep">·</span>
+    </div>
   </div>
 </div>
 <script>
