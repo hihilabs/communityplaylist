@@ -14,8 +14,12 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#111;color:#eee;font-family:sans-serif}
-/* Header search is universal — hide the redundant filter-bar text input */
-.fb-search-wrap{display:none!important}
+/* Desktop: header search is universal — hide redundant filter-bar input, compact the row */
+@media(min-width:769px){
+  .fb-search-wrap{display:none!important}
+  .fb-search-row{justify-content:flex-end;padding:4px 10px 2px}
+}
+/* Mobile: keep filter-bar search visible (header search is in the drawer) */
 /* Happening now strip */
 .now-strip{background:#1a1a0f;border-bottom:1px solid #2a2a10}
 .now-toggle{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;user-select:none;font-size:.8em;color:#ddaa33;font-weight:600;letter-spacing:.03em}
