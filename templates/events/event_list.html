@@ -113,9 +113,14 @@ body{background:#111;color:#eee;font-family:sans-serif}
 .filter-extras .filter-btn{background:#ff6b35;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:.78em;flex-shrink:0}
 .filter-extras .clear-btn{background:transparent;color:#666;border:1px solid #2a2a2a;padding:5px 9px;border-radius:6px;cursor:pointer;font-size:.78em;text-decoration:none;flex-shrink:0}
 /* ── Floating view toggle ── */
-.view-float{position:fixed;top:57px;right:10px;z-index:910;display:flex;gap:2px;background:rgba(18,18,18,.9);border:1px solid #252525;border-radius:8px;padding:3px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.view-float{position:fixed;top:57px;right:10px;z-index:910;display:flex;align-items:center;gap:2px;background:rgba(18,18,18,.9);border:1px solid #252525;border-radius:8px;padding:3px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .view-float .view-btn{padding:5px 8px;font-size:.74em;border-color:transparent;border-radius:5px;letter-spacing:.01em}
 .view-float .view-btn.active{background:#ff6b35;color:#111;border-color:#ff6b35}
+/* Collapsed: only show active btn until tapped */
+.view-float .view-btn:not(.active){display:none}
+.view-float.open .view-btn{display:inline-flex}
+.view-float-caret{background:none;border:none;color:#555;cursor:pointer;padding:2px 5px;font-size:.7em;line-height:1;transition:color .15s,transform .15s;flex-shrink:0}
+.view-float.open .view-float-caret{color:#ff6b35;transform:rotate(180deg)}
 @media(max-width:640px){
   .filter-search-row{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .filter-search-row::-webkit-scrollbar{display:none}
@@ -125,6 +130,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
   .filter-extras .clear-btn{padding:9px 14px;font-size:.85em}
   .view-float{top:58px;right:8px;padding:2px}
   .view-float .view-btn{padding:4px 7px;font-size:.7em}
+  .view-float-caret{padding:1px 4px;font-size:.65em}
 }
 /* Weather cycle mode (autopilot): hide wind/feel from global header */
 .sh-weather.cycle-mode .wsep,
@@ -260,9 +266,10 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 
 <!-- Floating view toggle — sits at top-right, overlays content -->
 <div class="view-float" id="view-float" aria-label="View mode">
-  <button type="button" class="view-btn" data-view="list"   onclick="setView('list')"   title="List">≡ List</button>
-  <button type="button" class="view-btn" data-view="map"    onclick="setView('map')"    title="Map">⊙ Map</button>
-  <button type="button" class="view-btn" data-view="hybrid" onclick="setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
+  <button type="button" class="view-btn active" data-view="list"   onclick="setView('list')"   title="List">≡ List</button>
+  <button type="button" class="view-btn"         data-view="map"    onclick="setView('map')"    title="Map">⊙ Map</button>
+  <button type="button" class="view-btn"         data-view="hybrid" onclick="setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
+  <button type="button" class="view-float-caret" onclick="document.getElementById('view-float').classList.toggle('open')" aria-label="Show view options">▾</button>
 </div>
 
 <!-- Location status pill — shown when geo filter is active -->
@@ -1124,6 +1131,9 @@ function setView(v, persist) {
   document.querySelectorAll('.view-btn[data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === v)
   );
+  // Collapse view float after selection
+  var _vf = document.getElementById('view-float');
+  if (_vf) _vf.classList.remove('open');
 
   // Update burger label to show current view name
   const icon = document.getElementById('view-icon');
