@@ -1,4 +1,15 @@
-{% comment %}Community ticker: label + scrolling card chips{% endcomment %}
+{% comment %}Extreme weather alert ticker — shown by JS when active alerts fire{% endcomment %}
+<div id="cp-wx-ticker" class="cp-wx-ticker" style="display:none" role="alert" aria-live="assertive">
+  <div class="cp-wx-ticker-inner">
+    <span class="cp-wx-ticker-icon" id="cp-wx-ticker-icon"></span>
+    <span class="cp-wx-ticker-msgs" id="cp-wx-ticker-msgs"></span>
+    <button class="cp-wx-ticker-cta" onclick="window.cpOpenResourceHub && window.cpOpenResourceHub()">
+      🌹 Emergency Shelters →
+    </button>
+  </div>
+</div>
+
+{% comment %}Community aid ticker (hidden — aid posts shown as cards in event feed){% endcomment %}
 <div class="aid-marquee-wrap aid-marquee-always">
   <div class="aid-ticker-label">Community</div>
   <div class="aid-marquee-track">

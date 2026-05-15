@@ -498,6 +498,14 @@ body.has-panel .cp-bar{transform:translateY(110%);opacity:0;pointer-events:none}
 @media(min-width:769px){.sh-search-mobile{display:none}}
 /* aid ticker hidden — community posts shown as cards in event feed instead */
 .aid-marquee-wrap{display:none}
+/* ── Extreme weather alert ticker ── */
+.cp-wx-ticker{background:#1a0400;border-bottom:1px solid #5a1000;display:flex;align-items:stretch}
+.cp-wx-ticker-inner{display:flex;align-items:center;gap:10px;padding:5px 14px;width:100%;min-height:32px}
+.cp-wx-ticker-icon{font-size:.95em;flex-shrink:0;line-height:1}
+.cp-wx-ticker-msgs{flex:1;font-size:.73em;color:#ffaa55;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-wx-ticker-cta{flex-shrink:0;background:#5a1000;border:1px solid #992200;border-radius:4px;color:#ffbbaa;font-size:.68em;font-weight:700;letter-spacing:.03em;padding:3px 10px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s;line-height:1}
+.cp-wx-ticker-cta:hover{background:#881800;color:#fff}
+@media(max-width:480px){.cp-wx-ticker-msgs{font-size:.68em}.cp-wx-ticker-inner{gap:7px;padding:5px 10px}}
 
 /* ── CP Right Panel — immersive right sidebar ── */
 .cp-panel{
@@ -1227,6 +1235,9 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
     var alertEl   = document.getElementById('hw-alert');
     var weatherEl = document.getElementById('header-weather');
     var resourceBtn = document.getElementById('sh-resource-btn');
+    var wxTicker  = document.getElementById('cp-wx-ticker');
+    var wxTickerIcon = document.getElementById('cp-wx-ticker-icon');
+    var wxTickerMsgs = document.getElementById('cp-wx-ticker-msgs');
 
     if (activeAlerts.length > 0) {
       var icon = activeAlerts.indexOf('cold') >= 0 ? '❄️' : (activeAlerts.indexOf('hot') >= 0 ? '🧊' : '😷');
@@ -1236,6 +1247,11 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
       if (alertBanner) {
         alertBanner.innerHTML = messages.map(function(m){ return '<div>' + m + '</div>'; }).join('');
         alertBanner.classList.add('visible');
+      }
+      if (wxTicker) {
+        if (wxTickerIcon) wxTickerIcon.textContent = icon;
+        if (wxTickerMsgs) wxTickerMsgs.textContent = messages.join(' · ');
+        wxTicker.style.display = '';
       }
       // Auto-filter the relevant tab when hub is opened
       var autoFilter = activeAlerts.indexOf('cold') >= 0 ? 'warming' : (activeAlerts.indexOf('hot') >= 0 ? 'cooling' : '');
@@ -1248,6 +1264,7 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
       if (weatherEl) weatherEl.classList.remove('wx-alert');
       if (resourceBtn) resourceBtn.classList.remove('wx-alert');
       if (alertBanner) alertBanner.classList.remove('visible');
+      if (wxTicker) wxTicker.style.display = 'none';
     }
   };
 })();
