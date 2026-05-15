@@ -32,3 +32,12 @@ export interface FilterState {
 }
 
 export type ViewMode = 'list' | 'map' | 'hybrid'
+
+export interface CommunityItem {
+  type: 'aid' | 'record'
+  text?: string
+  artist?: string
+  title?: string
+  price?: string
+  url: string
+}

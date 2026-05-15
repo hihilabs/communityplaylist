@@ -166,8 +166,22 @@ def event_list(request):
     visit_count = f"{visit_count:,}"
     daily_count = f"{daily_count:,}"
 
+    import json as _json
     from board.models import BannerMessage
     banners = list(BannerMessage.objects.filter(active=True).order_by('created_at'))
+    community_items = [{'type': 'aid', 'text': b.text, 'url': '/board/aid/'} for b in banners]
+    try:
+        from events.models import RecordListing
+        rec = RecordListing.objects.filter(is_available=True).order_by('?').first()
+        if rec:
+            community_items.append({
+                'type': 'record', 'artist': rec.artist,
+                'title': rec.title, 'price': getattr(rec, 'price_display', ''),
+                'url': '/shop/',
+            })
+    except Exception:
+        pass
+    community_json = _json.dumps(community_items)
 
     # {name_lower: slug} for neighborhood page links in event cards
     neighborhood_pages = {
@@ -201,6 +215,7 @@ def event_list(request):
         'search_all_time': bool(search_query and not date_explicitly_set),
         'cp_version': CP_VERSION,
         'banners': banners,
+        'community_json': community_json,
         'happening_now': happening_now,
         'selected_radius': radius,
         'neighborhood_pages': neighborhood_pages,

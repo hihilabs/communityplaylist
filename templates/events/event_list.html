@@ -71,12 +71,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
 .event[data-cat="fund"]:hover{box-shadow:-4px 0 18px rgba(102,153,255,.12)}
 .event[data-cat="food"]:hover{box-shadow:-4px 0 18px rgba(221,170,51,.12)}
 .event[data-cat="hybrid"]:hover{box-shadow:-4px 0 18px rgba(255,153,68,.12)}
-.event[data-cat="community"]{border-left-color:#ff6b35}
-.event[data-cat="record"]{border-left-color:#ddaa33}
-.event[data-cat="community"]:hover{box-shadow:-4px 0 18px rgba(255,107,53,.12)}
-.event[data-cat="record"]:hover{box-shadow:-4px 0 18px rgba(221,170,51,.12)}
-.cat-community{background:#1a0c06;color:#ff6b35}
-.cat-record{background:#252210;color:#ddaa33}
+/* community card styles live in events.css (React) */
 /* Card header row: badge left, time right */
 .ev-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
 .ev-time{font-family:monospace;font-size:.68em;color:#3a3a3a;letter-spacing:.04em;white-space:nowrap;flex-shrink:0}
@@ -300,37 +295,7 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
     </div>
     {% endif %}
 
-    {% if banners or featured_record %}
-    <div style="max-width:860px;margin:0 auto;padding:12px 12px 0">
-      <div class="ev-day-group">
-        <div class="ev-day-label">
-          Community
-          <span class="ev-day-count">{% if featured_record %}{{ banners|length|add:1 }}{% else %}{{ banners|length }}{% endif %}</span>
-        </div>
-        <div class="ev-cards">
-          {% for b in banners %}
-          <a href="/board/aid/" class="event" data-cat="community">
-            <div class="ev-hdr">
-              <span class="cat-badge cat-community">🌹 Aid</span>
-            </div>
-            <h2>{{ b.text|truncatechars:90 }}</h2>
-          </a>
-          {% endfor %}
-          {% if featured_record %}
-          <a href="/shop/" class="event" data-cat="record">
-            <div class="ev-hdr">
-              <span class="cat-badge cat-record">🛒 Record Shop</span>
-              <span class="ev-time">{{ featured_record.price_display }}</span>
-            </div>
-            <h2>{{ featured_record.artist }} — {{ featured_record.title }}</h2>
-          </a>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <div id="cp-events-root" data-events-url="/api/events/"></div>
+    <div id="cp-events-root" data-events-url="/api/events/" data-community="{{ community_json }}"></div>
   </div>
 
   <div id="map"></div>

@@ -2,12 +2,14 @@ import { useCallback, useEffect } from 'react'
 import { FilterBar } from './FilterBar'
 import { EventList } from './EventList'
 import { useEvents } from './useEvents'
+import type { CommunityItem } from './types'
 
 interface Props {
   apiUrl: string
+  community: CommunityItem[]
 }
 
-export function EventsApp({ apiUrl }: Props) {
+export function EventsApp({ apiUrl, community }: Props) {
   const { filtered, all, neighborhoods, loading, error, filters, patch, clear, hasActive } = useEvents(apiUrl)
 
   // Re-trigger layout functions after React mounts
@@ -63,6 +65,7 @@ export function EventsApp({ apiUrl }: Props) {
         error={error}
         onCategoryClick={handleCategoryClick}
         onNeighborhoodClick={handleNeighborhoodClick}
+        community={community}
       />
     </>
   )

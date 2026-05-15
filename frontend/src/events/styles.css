@@ -433,6 +433,14 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Community cards (Aid + Record Shop) ───────────────── */
+.ev-cat-community { border-left-color: #ff6b35; }
+.ev-cat-record    { border-left-color: var(--food); }
+.ev-cat-community:hover { box-shadow: -3px 0 16px rgba(255,107,53,.12); }
+.ev-cat-record:hover    { box-shadow: -3px 0 16px rgba(221,170,51,.12); }
+.cat-community { background: #1a0c06; color: #ff6b35; }
+.cat-record    { background: #252210; color: var(--food); }
+
 /* ── Footer ────────────────────────────────────────────── */
 .ev-footer { text-align: center; padding: 24px 0 40px; }
 .ev-archive-link { color: var(--orange); font-size: .85em; text-decoration: none; }
