@@ -34,7 +34,7 @@
       </div>
     </div>
   </div>
-  <div class="cp-bar-prog-line"><div class="cp-bar-prog-fill" id="cp-bar-prog-fill"></div></div>
+  <canvas class="cp-bar-prog-line" id="cp-bar-prog-canvas"></canvas>
   <div class="cp-bar-drop" id="cp-bar-drop">
     <div class="cp-bar-art-wrap" id="cp-bar-art-wrap">
       <div class="cp-bar-art-grad" id="cp-bar-art-grad"></div>
@@ -200,7 +200,9 @@ function _cpGenreAccent(g) {
   var barThumbGrad = document.getElementById('cp-bar-thumb-grad');
   var barThumbImg  = document.getElementById('cp-bar-thumb-img');
   var barDrop      = document.getElementById('cp-bar-drop');
-  var barProgFill  = document.getElementById('cp-bar-prog-fill');
+  var barProgFill  = document.getElementById('cp-bar-prog-fill'); // null after canvas swap
+  var progCanvas   = document.getElementById('cp-bar-prog-canvas');
+  var _progCtx     = null;
   var barQCount    = document.getElementById('cp-bar-qcount');
 
   // ── Show / position bar ──
@@ -231,9 +233,9 @@ function _cpGenreAccent(g) {
   function updateProgress() {
     var pct = _pct();
     if (barSeekFill) barSeekFill.style.width = pct + '%';
-    if (barProgFill) barProgFill.style.width = pct + '%';
     if (barCur)    barCur.textContent    = _cpFmt(audio.currentTime);
     if (barDur)    barDur.textContent    = (audio.duration && !isNaN(audio.duration)) ? _cpFmt(audio.duration) : '—';
+    _drawProgCanvas(pct);
     // Row highlight
     var row = document.querySelector('.track-row.playing');
     if (row) {
@@ -243,6 +245,50 @@ function _cpGenreAccent(g) {
     }
     // Panel
     if (window.cpPanel) window.cpPanel.onProgress(audio.currentTime, audio.duration || 0);
+  }
+
+  function _drawProgCanvas(pct) {
+    if (!progCanvas) return;
+    if (!_progCtx) _progCtx = progCanvas.getContext('2d');
+    var W = progCanvas.offsetWidth, H = progCanvas.offsetHeight || 4;
+    if (!W) return;
+    progCanvas.width = W; progCanvas.height = H;
+    var ctx = _progCtx;
+    ctx.clearRect(0, 0, W, H);
+    var playedX = Math.round((pct || 0) / 100 * W);
+    var playing = !!(audio && !audio.paused);
+    var an = window._cpAnalyser;
+    var nb = Math.max(24, Math.min(140, Math.floor(W / 3)));
+    if (an && playing) {
+      var rf = new Uint8Array(an.frequencyBinCount);
+      an.getByteFrequencyData(rf);
+      var logMin = Math.log(30), logMax = Math.log(16000);
+      for (var i = 0; i < nb; i++) {
+        var x = Math.round(i * W / nb);
+        var bw = Math.max(1, Math.ceil(W / nb));
+        var freq = Math.exp(logMin + (logMax - logMin) * i / (nb - 1));
+        var bin = Math.min(rf.length - 1, Math.round(freq / 22050 * rf.length));
+        var amp = rf[bin] / 255;
+        var hue = Math.round(i * 270 / (nb - 1));
+        var alpha = x < playedX ? (0.4 + amp * 0.55) : (0.06 + amp * 0.1);
+        ctx.fillStyle = 'hsla(' + hue + ',85%,62%,' + alpha + ')';
+        ctx.fillRect(x, 0, bw, H);
+      }
+    } else {
+      var accent = _cpGenreAccent((tracks[current] && (tracks[current].genre || tracks[current].recorded_at)) || '');
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, W, H);
+      if (playedX > 0) {
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = accent;
+        ctx.fillRect(0, 0, playedX, H);
+        ctx.globalAlpha = 1;
+      }
+    }
+    if (playedX > 1 && playedX < W - 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.fillRect(playedX - 1, 0, 2, H);
+    }
   }
 
   function clearRowProgress() {
@@ -565,7 +611,7 @@ function _cpGenreAccent(g) {
     loadTrack(nextIdx); _playCurrentTrack();
   });
   audio.addEventListener('timeupdate', updateProgress);
-  audio.addEventListener('play',  function(){ syncPlayBtn(true); });
+  audio.addEventListener('play',  function(){ syncPlayBtn(true); if (window.cpInitVis) window.cpInitVis(); });
   audio.addEventListener('pause', function(){ syncPlayBtn(false); });
 
   // ── Turbo hooks ──
@@ -627,6 +673,20 @@ function _cpGenreAccent(g) {
   window.cpSetChannel  = setChannel;
   window.cpAudio       = audio;
   window.cpAudioShow   = show;
+
+  // Global AudioContext init — called on first play from any context (mini bar OR panel)
+  window.cpInitVis = function() {
+    if (window._cpVisInit) return; window._cpVisInit = true;
+    try {
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      ac.resume();
+      var src = ac.createMediaElementSource(audio);
+      var an  = ac.createAnalyser();
+      an.fftSize = 512; an.smoothingTimeConstant = 0.8;
+      src.connect(an); an.connect(ac.destination);
+      window._cpAnalyser = an;
+    } catch(e) { window._cpAnalyser = null; }
+  };
   window._cpTracks     = tracks;
   window._cpCurrent    = current;
   window._cpShuffleMode = shuffleMode;
@@ -1025,19 +1085,8 @@ function _cpGenreAccent(g) {
 
   function _initVisAudio() {
     if (_visAcInit) return; _visAcInit = true;
-    try {
-      var ac = new (window.AudioContext || window.webkitAudioContext)();
-      ac.resume();
-      var src = ac.createMediaElementSource(window.cpAudio);
-      _visAnalyser = ac.createAnalyser();
-      _visAnalyser.fftSize = 512;
-      _visAnalyser.smoothingTimeConstant = 0.8;
-      src.connect(_visAnalyser);
-      _visAnalyser.connect(ac.destination);
-      window._cpAnalyser = _visAnalyser;
-    } catch(e) {
-      _visAnalyser = null;
-    }
+    if (window.cpInitVis) window.cpInitVis();
+    _visAnalyser = window._cpAnalyser || null;
   }
 
   function _drawFrame(freqData, waveData, amps, numBars) {

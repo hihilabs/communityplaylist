@@ -47,15 +47,8 @@ body.has-panel .cp-bar{transform:translateY(110%);opacity:0;pointer-events:none}
   flex-shrink:0;overflow:hidden;position:relative;
   background:#1a1a1a;outline:1px solid rgba(255,255,255,.06);
 }
-/* Always-visible thin progress line anchored above the drop zone */
-.cp-bar-prog-line{
-  height:2px;background:#1a1a1a;position:relative;flex-shrink:0;
-}
-.cp-bar-prog-fill{
-  position:absolute;left:0;top:0;height:100%;width:0%;
-  background:#cc88ff;opacity:.55;
-  transition:width .08s linear,background .4s;pointer-events:none;
-}
+/* Always-visible spectrum progress canvas */
+.cp-bar-prog-line{display:block;width:100%;height:4px;flex-shrink:0;background:#0a0a0a}
 .cp-bar-thumb-grad{
   position:absolute;inset:0;
   background:linear-gradient(135deg,#1a1a2e,#0a0a1a);
