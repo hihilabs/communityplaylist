@@ -106,6 +106,19 @@
   border: 2px solid #151515;
 }
 
+/* ── Filter controls reveal ────────────────────────────── */
+.fb-controls {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.22s ease;
+  opacity: 0;
+}
+.fb-controls.open {
+  max-height: 300px;
+  opacity: 1;
+}
+
 /* ── Category pills ────────────────────────────────────── */
 .fb-cats {
   display: flex;

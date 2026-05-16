@@ -21,6 +21,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
 /* Mobile: filter-bar search row is the only search; keep it. Hide expanded section toggle
    (filters are always open on mobile) and hide the view switcher */
 @media(max-width:768px){
+  .fb-controls{max-height:500px!important;opacity:1!important;overflow:visible!important;transition:none!important}
   .fb-expanded{max-height:400px!important;transition:none!important}
   .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
   .fb-filter-pill{display:none!important}
@@ -43,7 +44,8 @@ body{background:#111;color:#eee;font-family:sans-serif}
 .view-btn.active{background:#ff6b35;color:#111;border-color:#ff6b35}
 
 /* Layout container */
-.hybrid-wrap{display:block}
+.hybrid-wrap{display:block;transition:opacity 0.2s ease}
+body.view-leaving .hybrid-wrap{opacity:0}
 #map{display:none;background:#111}
 .leaflet-container{background:#111!important}
 .radar-tiles{filter:blur(14px);mix-blend-mode:screen}
@@ -1087,58 +1089,55 @@ document.addEventListener('click', function(e) {
 // ── View switching ──
 var VIEW_LABELS = {list: '≡ List', map: '⊙ Map', hybrid: '⊟ Hybrid'};
 function setView(v, persist) {
-  // Close dropdown if open
-  var _vdd = document.getElementById('view-dropdown');
-  if (_vdd) _vdd.classList.remove('open');
+  if (document.body.classList.contains('view-' + v)) return;
 
-  // Update body/html classes
-  document.body.classList.remove('view-list', 'view-map', 'view-hybrid');
-  document.body.classList.add('view-' + v);
-  document.documentElement.classList.toggle('is-hybrid', v === 'hybrid');
-
-  // Update all view-btn active states (desktop inline + mobile dropdown)
+  // Immediate: button/label feedback + persist
   document.querySelectorAll('.view-btn[data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === v)
   );
-  // Collapse view float after selection
   var _vf = document.getElementById('view-float');
-  if (_vf) _vf.classList.remove('open');
-
-  // Update burger label to show current view name
+  if (_vf) { _vf.classList.remove('open'); document.getElementById('view-dropdown')?.classList.remove('open'); }
   const icon = document.getElementById('view-icon');
   if (icon) icon.textContent = VIEW_LABELS[v];
   var _vb = document.getElementById('view-burger');
   if (_vb) _vb.classList.add('has-active');
+  if (persist !== false) localStorage.setItem('cp_view', v);
 
-  // Init map if needed
-  if (v === 'map' || v === 'hybrid') {
-    if (v === 'map') {
-      // Scroll to top first so the sticky filter bar is in its natural position —
-      // getBoundingClientRect() is viewport-relative and gives wrong values when scrolled.
-      window.scrollTo({top: 0, behavior: 'instant'});
-      const top = document.getElementById('map').getBoundingClientRect().top;
-      document.documentElement.style.setProperty('--top-h', top + 'px');
-    }
-    initMap();
-    // Follow-up invalidateSize handles any layout shift (player bar, CSS settle)
-    setTimeout(function() {
+  // Fade out, swap layout, fade back in
+  document.body.classList.add('view-leaving');
+  setTimeout(function() {
+    document.body.classList.remove('view-list', 'view-map', 'view-hybrid');
+    document.body.classList.add('view-' + v);
+    document.documentElement.classList.toggle('is-hybrid', v === 'hybrid');
+
+    if (v === 'map' || v === 'hybrid') {
       if (v === 'map') {
+        window.scrollTo({top: 0, behavior: 'instant'});
         const top = document.getElementById('map').getBoundingClientRect().top;
         document.documentElement.style.setProperty('--top-h', top + 'px');
       }
-      if (map) map.invalidateSize({animate: false});
-      // On mobile: if autopilot is running, snap map to current highlighted event
-      if (map && window._cpCycling) {
-        var hi = document.querySelector('.event.highlighted');
-        if (hi && window.markersBySlug) {
-          var hm = window.markersBySlug[hi.dataset.slug];
-          if (hm) map.setView(hm.getLatLng(), 15, {animate: false});
+      initMap();
+      setTimeout(function() {
+        if (v === 'map') {
+          const top = document.getElementById('map').getBoundingClientRect().top;
+          document.documentElement.style.setProperty('--top-h', top + 'px');
         }
-      }
-    }, 200);
-  }
+        if (map) map.invalidateSize({animate: false});
+        if (map && window._cpCycling) {
+          var hi = document.querySelector('.event.highlighted');
+          if (hi && window.markersBySlug) {
+            var hm = window.markersBySlug[hi.dataset.slug];
+            if (hm) map.setView(hm.getLatLng(), 15, {animate: false});
+          }
+        }
+      }, 220);
+    }
 
-  if (persist !== false) localStorage.setItem('cp_view', v);
+    // One frame delay so display:block settles before opacity fades in
+    requestAnimationFrame(function() {
+      document.body.classList.remove('view-leaving');
+    });
+  }, 180);
 }
 
 // ── Default view by screen size (respects saved preference) ──
