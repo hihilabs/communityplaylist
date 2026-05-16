@@ -107,13 +107,13 @@ body{background:#111;color:#eee;font-family:sans-serif}
 .filter-extras .filter-btn{background:#ff6b35;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:.78em;flex-shrink:0}
 .filter-extras .clear-btn{background:transparent;color:#666;border:1px solid #2a2a2a;padding:5px 9px;border-radius:6px;cursor:pointer;font-size:.78em;text-decoration:none;flex-shrink:0}
 /* ── Floating view toggle ── */
-.view-float{position:fixed;top:57px;right:10px;z-index:910;display:flex;align-items:center;gap:2px;background:rgba(18,18,18,.9);border:1px solid #252525;border-radius:8px;padding:3px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-.view-float .view-btn{padding:5px 8px;font-size:.74em;border-color:transparent;border-radius:5px;letter-spacing:.01em}
+.view-float{position:fixed;top:57px;right:10px;z-index:910;display:flex;align-items:stretch;gap:0;background:rgba(18,18,18,.9);border:1px solid #252525;border-radius:8px;padding:0;overflow:hidden;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.view-float .view-btn{padding:10px 16px;font-size:.78em;border-color:transparent;border-radius:0;letter-spacing:.01em;min-height:40px;display:flex;align-items:center}
 .view-float .view-btn.active{background:#ff6b35;color:#111;border-color:#ff6b35}
 /* Collapsed: only show active btn until tapped */
 .view-float .view-btn:not(.active){display:none}
 .view-float.open .view-btn{display:inline-flex}
-.view-float-caret{background:none;border:none;color:#555;cursor:pointer;padding:2px 5px;font-size:.7em;line-height:1;transition:color .15s,transform .15s;flex-shrink:0}
+.view-float-caret{background:none;border:none;border-left:1px solid #2a2a2a;color:#555;cursor:pointer;padding:0 12px;font-size:.8em;line-height:1;transition:color .15s,transform .15s;flex-shrink:0;display:flex;align-items:center}
 .view-float.open .view-float-caret{color:#ff6b35;transform:rotate(180deg)}
 @media(max-width:640px){
   .filter-search-row{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -122,9 +122,9 @@ body{background:#111;color:#eee;font-family:sans-serif}
   .filter-extras select{max-width:none;flex:1;min-width:calc(50% - 4px);padding:8px 6px;font-size:.82em}
   .filter-extras .filter-btn{flex:1;padding:9px;font-size:.85em}
   .filter-extras .clear-btn{padding:9px 14px;font-size:.85em}
-  .view-float{top:58px;right:8px;padding:2px}
-  .view-float .view-btn{padding:4px 7px;font-size:.7em}
-  .view-float-caret{padding:1px 4px;font-size:.65em}
+  .view-float{top:58px;right:8px}
+  .view-float .view-btn{padding:10px 14px;font-size:.74em}
+  .view-float-caret{padding:0 10px;font-size:.76em}
 }
 /* Weather cycle mode (autopilot): hide wind/feel from global header */
 .sh-weather.cycle-mode .wsep,
@@ -153,6 +153,8 @@ html.is-hybrid #events-list::-webkit-scrollbar-track{background:#111}
 html.is-hybrid #events-list::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
 html.is-hybrid #events-list::-webkit-scrollbar-thumb:hover{background:#ff6b35}
 html.is-hybrid .events-grid{max-width:none;margin:0;padding:14px}
+html.is-hybrid .ev-list{padding:10px}
+html.is-hybrid .ev-cards{grid-template-columns:1fr!important}
 /* Pad bottom of scrollable lists so last card isn't hidden behind player corner */
 body.has-player #events-list,
 body.has-player .events-grid{padding-bottom:220px}
