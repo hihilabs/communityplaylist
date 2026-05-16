@@ -16,7 +16,7 @@ export function EventCard({ event: ev, onCategoryClick, onNeighborhoodClick }: P
   const href = `/events/${ev.slug}/`
 
   return (
-    <a className={`ev-card ev-cat-${cat}`} href={href} data-cat={cat}>
+    <a className={`ev-card ev-cat-${cat}${ev.is_happening_now ? ' ev-now' : ''}`} href={href} data-cat={cat}>
       <div className="ev-hdr">
         {cat && (
           <span
@@ -26,7 +26,12 @@ export function EventCard({ event: ev, onCategoryClick, onNeighborhoodClick }: P
             {CAT_LABEL[cat] ?? cat}
           </span>
         )}
-        <span className="ev-time">{ev.day_label} · {ev.time_label}</span>
+        <span className="ev-time">
+          {ev.is_happening_now
+            ? <><span className="ev-now-dot"></span>NOW</>
+            : <>{ev.day_label} · {ev.time_label}</>
+          }
+        </span>
       </div>
 
       <h2>{ev.title}</h2>

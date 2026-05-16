@@ -26,23 +26,7 @@ body{background:#111;color:#eee;font-family:sans-serif}
   .fb-filter-pill{display:none!important}
   .view-float{display:none!important}
 }
-/* Happening now strip */
-.now-strip{background:#1a1a0f;border-bottom:1px solid #2a2a10}
-.now-toggle{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;user-select:none;font-size:.8em;color:#ddaa33;font-weight:600;letter-spacing:.03em}
-.now-toggle:hover{color:#ffcc44}
-.now-dot{width:7px;height:7px;background:#ddaa33;border-radius:50%;animation:nowpulse 1.4s ease-in-out infinite;flex-shrink:0}
-@keyframes nowpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
-.now-arrow{margin-left:auto;transition:transform .2s;font-size:.85em;color:#666}
-.now-strip.open .now-arrow{transform:rotate(180deg)}
-.now-list{display:none;padding:0 14px 10px}
-.now-strip.open .now-list{display:block}
-.now-event{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #2a2a10;text-decoration:none;gap:8px;cursor:pointer}
-.now-event:last-child{border-bottom:none}
-.now-event:hover .now-title{color:#ffcc44}
-.now-title{color:#ddaa33;font-size:.85em;font-weight:600;transition:color .15s;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.now-meta{color:#666;font-size:.75em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.now-arr{color:#555;font-size:.9em;flex-shrink:0;transition:color .15s}
-.now-event:hover .now-arr{color:#ff6b35}
+/* Happening now — cards glow gold in the main list (no strip needed) */
 /* Category badges */
 .cat-music {background:#1e1228;color:#cc88ff}
 .cat-arts  {background:#1a1a2a;color:#66bbff}
@@ -292,27 +276,6 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 
 <div class="hybrid-wrap">
   <div id="events-list">
-
-    {% if happening_now %}
-    <div class="now-strip" id="now-strip">
-      <div class="now-toggle" onclick="document.getElementById('now-strip').classList.toggle('open')">
-        <span class="now-dot"></span>
-        <span data-i18n="happening_now">Happening now</span> &nbsp;<span style="color:#666;font-weight:400">({{ happening_now|length }})</span>
-        <span class="now-arrow">▼</span>
-      </div>
-      <div class="now-list">
-        {% for e in happening_now %}
-        <a href="/events/{{ e.slug }}/" class="now-event" data-end="{{ e.end_date|date:'U'|default:'' }}" data-start="{{ e.start_date|date:'U' }}">
-          <div style="min-width:0">
-            <div class="now-title">{{ e.title }}</div>
-            <div class="now-meta">📍 {{ e.location|truncatechars:45 }}</div>
-          </div>
-          <span class="now-arr">→</span>
-        </a>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
 
     <div id="cp-events-root" data-events-url="/api/events/" data-community="{{ community_json }}"></div>
   </div>
@@ -1131,12 +1094,6 @@ function setView(v, persist) {
   document.body.classList.add('view-' + v);
   document.documentElement.classList.toggle('is-hybrid', v === 'hybrid');
 
-  // Collapse "Happening Now" when switching to hybrid — save vertical space
-  if (v === 'hybrid') {
-    var _ns = document.getElementById('now-strip');
-    if (_ns) _ns.classList.remove('open');
-  }
-
   // Update all view-btn active states (desktop inline + mobile dropdown)
   document.querySelectorAll('.view-btn[data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === v)
@@ -1368,25 +1325,6 @@ if (!window._cpPrewarmBound) {
   });
 }
 
-// ── Happening-now client-side expiry ──
-(function(){
-  function checkNowEvents(){
-    var strip=document.getElementById('now-strip');
-    if(!strip)return;
-    var nowTs=Math.floor(Date.now()/1000);
-    var items=strip.querySelectorAll('.now-event');
-    items.forEach(function(el){
-      var endTs=parseInt(el.dataset.end,10);
-      var startTs=parseInt(el.dataset.start,10);
-      var expiresAt=endTs?endTs:(startTs+3*3600);
-      if(nowTs>expiresAt)el.style.display='none';
-    });
-    var visible=strip.querySelectorAll('.now-event:not([style*="display: none"])');
-    if(!visible.length)strip.style.display='none';
-  }
-  checkNowEvents();
-  setInterval(checkNowEvents,60000);
-})();
 </script>
 <script>
 // Neighborhood page links — wrap .hood-tag text in an <a> if a page exists

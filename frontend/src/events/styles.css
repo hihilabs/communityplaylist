@@ -421,6 +421,24 @@
 }
 .ev-more { color: #555; }
 
+/* ── Happening now ─────────────────────────────────────── */
+.ev-now {
+  border-left-color: #ddaa33 !important;
+  background: #131208;
+  box-shadow: -3px 0 18px rgba(221,170,51,.18);
+}
+.ev-now:hover { background: #191508; box-shadow: -3px 0 22px rgba(221,170,51,.32); }
+.ev-now-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  background: #ddaa33;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  animation: nowpulse 1.4s ease-in-out infinite;
+}
+@keyframes nowpulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+
 /* ── States ────────────────────────────────────────────── */
 .ev-state {
   text-align: center;
