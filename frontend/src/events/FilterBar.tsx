@@ -58,7 +58,7 @@ export function FilterBar({ filters, neighborhoods, count, total, hasActive, onP
 
   return (
     <div className="fb-root">
-      {/* ── Search row ── */}
+      {/* ── Mobile search row (hidden on desktop via CSS) ── */}
       <div className="fb-search-row">
         <div className="fb-search-wrap">
           <span className="fb-search-icon">⌕</span>
@@ -77,17 +77,9 @@ export function FilterBar({ filters, neighborhoods, count, total, hasActive, onP
             }}>✕</button>
           )}
         </div>
-        <button
-          className={`fb-more-btn ${expanded ? 'open' : ''} ${hasActive && !expanded ? 'has-active' : ''}`}
-          onClick={() => setExpanded(x => !x)}
-          aria-label="More filters"
-        >
-          <span className="fb-more-icon">⊕</span>
-          {hasActive && !expanded && <span className="fb-dot" />}
-        </button>
       </div>
 
-      {/* ── Category pills ── */}
+      {/* ── Category pills + filter toggle ── */}
       <div className="fb-cats">
         {CATS.map(c => (
           <button
@@ -98,6 +90,13 @@ export function FilterBar({ filters, neighborhoods, count, total, hasActive, onP
             {c.label}
           </button>
         ))}
+        <button
+          className={`fb-cat-pill fb-filter-pill ${expanded ? 'active' : ''} ${hasActive && !expanded ? 'has-active' : ''}`}
+          onClick={() => setExpanded(x => !x)}
+          aria-label="More filters"
+        >
+          Filters {hasActive && !expanded && <span className="fb-dot" />}
+        </button>
       </div>
 
       {/* ── Expanded filters ── */}

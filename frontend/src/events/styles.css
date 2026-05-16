@@ -114,7 +114,15 @@
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  align-items: center;
 }
+/* Filters pill — sits at the end of the category strip */
+.fb-filter-pill {
+  margin-left: auto;
+  border-color: #333;
+  position: relative;
+}
+.fb-filter-pill.has-active { border-color: var(--orange); color: var(--orange); }
 .fb-cats::-webkit-scrollbar { display: none; }
 
 .fb-cat-pill {

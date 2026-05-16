@@ -14,16 +14,16 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#111;color:#eee;font-family:sans-serif}
-/* Desktop: header search is universal — hide redundant filter-bar input, compact the row */
+/* Desktop: header search is universal — hide the entire filter-bar search row */
 @media(min-width:769px){
-  .fb-search-wrap{display:none!important}
-  .fb-search-row{justify-content:flex-end;padding:4px 10px 2px}
-}
-/* Mobile: remove the orphaned filter button row; surface WHEN/HOOD/Free controls directly */
-@media(max-width:768px){
   .fb-search-row{display:none!important}
+}
+/* Mobile: filter-bar search row is the only search; keep it. Hide expanded section toggle
+   (filters are always open on mobile) and hide the view switcher */
+@media(max-width:768px){
   .fb-expanded{max-height:400px!important;transition:none!important}
   .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
+  .fb-filter-pill{display:none!important}
   .view-float{display:none!important}
 }
 /* Happening now strip */
