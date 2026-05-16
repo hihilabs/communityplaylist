@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/static/leaflet/leaflet.css" data-turbo-eval="false"/>
 <link rel="stylesheet" href="/static/leaflet/MarkerCluster.css" data-turbo-eval="false"/>
 <link rel="stylesheet" href="/static/leaflet/MarkerCluster.Default.css" data-turbo-eval="false"/>
-<link rel="stylesheet" href="/static/js/events.css">
+<link rel="stylesheet" href="/static/js/events.css?v={% now "U" %}">
 {% endblock %}
 {% block styles %}
 <style>
@@ -285,7 +285,7 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 
 <script src="/static/leaflet/leaflet.js" data-turbo-eval="false"></script>
 <script src="/static/leaflet/leaflet.markercluster.js" data-turbo-eval="false"></script>
-<script type="module" src="/static/js/events.js"></script>
+<script type="module" src="/static/js/events.js?v={% now "U" %}"></script>
 <script>
 var mapEvents = {{ map_events|safe }};
 window.cpEventsList = mapEvents;
