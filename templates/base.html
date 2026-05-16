@@ -34,6 +34,8 @@
 }
 .cp-bar:hover{box-shadow:-4px 0 18px rgba(204,136,255,.1)}
 body.has-player .cp-bar{display:flex}
+/* Ensure all pages can scroll past the fixed mini player */
+body.has-player{padding-bottom:88px}
 /* Hide mini bar when full panel is open — slide it down out of view */
 body.has-panel .cp-bar{transform:translateY(110%);opacity:0;pointer-events:none}
 .cp-bar-main{
@@ -94,8 +96,8 @@ body.has-panel .cp-bar{transform:translateY(110%);opacity:0;pointer-events:none}
 .cp-bar-btns{display:flex;gap:0;flex-shrink:0;align-items:center}
 .cp-bar-btn{
   background:transparent;border:none;color:#4a3360;cursor:pointer;
-  font-size:.8em;
-  width:20px;height:20px;
+  font-size:1.15em;
+  width:28px;height:28px;
   display:flex;align-items:center;justify-content:center;
   border-radius:3px;transition:color .12s;padding:0;
 }
