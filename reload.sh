@@ -10,4 +10,7 @@ cd "$FRONTEND_DIR" && npm run build
 echo "==> Collecting static files..."
 docker exec "$CONTAINER" python manage.py collectstatic --noinput --clear
 
-echo "==> Done. Hard-refresh the browser to see changes."
+echo "==> Reloading gunicorn workers..."
+docker exec "$CONTAINER" pkill -HUP -f gunicorn
+
+echo "==> Done. Hard-refresh the browser (Ctrl+Shift+R) to see changes."
