@@ -1062,7 +1062,7 @@ document.addEventListener('turbo:load', function(){
   if (burger) { burger.classList.remove('open'); burger.textContent = '☰'; burger.setAttribute('aria-expanded','false'); }
   // Safety net: if inline setView failed (e.g. L not yet defined), retry here
   if (document.getElementById('map') && typeof L !== 'undefined' && !mapInitialized) {
-    setView(getDefaultView(), false);
+    setView(getDefaultView(), false, true);
   }
 });
 
@@ -1088,7 +1088,7 @@ document.addEventListener('click', function(e) {
 
 // ── View switching ──
 var VIEW_LABELS = {list: '≡ List', map: '⊙ Map', hybrid: '⊟ Hybrid'};
-function setView(v, persist) {
+function setView(v, persist, instant) {
   if (document.body.classList.contains('view-' + v)) return;
 
   // Immediate: button/label feedback + persist
@@ -1103,9 +1103,7 @@ function setView(v, persist) {
   if (_vb) _vb.classList.add('has-active');
   if (persist !== false) localStorage.setItem('cp_view', v);
 
-  // Fade out, swap layout, fade back in
-  document.body.classList.add('view-leaving');
-  setTimeout(function() {
+  function _applyView() {
     document.body.classList.remove('view-list', 'view-map', 'view-hybrid');
     document.body.classList.add('view-' + v);
     document.documentElement.classList.toggle('is-hybrid', v === 'hybrid');
@@ -1133,11 +1131,20 @@ function setView(v, persist) {
       }, 220);
     }
 
-    // One frame delay so display:block settles before opacity fades in
-    requestAnimationFrame(function() {
-      document.body.classList.remove('view-leaving');
-    });
-  }, 180);
+    if (!instant) {
+      requestAnimationFrame(function() {
+        document.body.classList.remove('view-leaving');
+      });
+    }
+  }
+
+  if (instant) {
+    _applyView();
+  } else {
+    // Fade out, swap layout, fade back in
+    document.body.classList.add('view-leaving');
+    setTimeout(_applyView, 180);
+  }
 }
 
 // ── Default view by screen size (respects saved preference) ──
@@ -1155,7 +1162,7 @@ function getDefaultView() {
   return 'list';
 }
 
-setView(getDefaultView(), false);  // auto-default: don't overwrite user's saved choice
+setView(getDefaultView(), false, true);  // instant on load — no flash of wrong view
 
 // ── bfcache: destroy BEFORE the browser freezes the page ─────────────────────
 // pagehide fires before bfcache snapshot — guarantees a clean element when thawed.
@@ -1167,7 +1174,7 @@ window.addEventListener('pagehide', _destroyMap);
 window.addEventListener('pageshow', function(e) {
   if (!e.persisted) return;
   _destroyMap();
-  setView(getDefaultView(), false);
+  setView(getDefaultView(), false, true);
   setTimeout(function() {
     if (map) {
       map.invalidateSize({animate: false});
