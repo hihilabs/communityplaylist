@@ -31,6 +31,9 @@ class GenreToken(models.Model):
     related = models.ManyToManyField('self', blank=True, symmetrical=True,
                                      help_text='Tokens that share sonic or cultural DNA')
 
+    track_count = models.PositiveIntegerField(default=0,
+                                              help_text='Tracks in library carrying this token (updated by sync)')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -124,6 +127,8 @@ class CompoundGenre(models.Model):
     slug      = models.SlugField(max_length=220, unique=True)
     tokens    = models.ManyToManyField(GenreToken, related_name='compound_genres')
     description = models.TextField(blank=True)
+    track_count = models.PositiveIntegerField(default=0,
+                                              help_text='Tracks in library with this exact compound (updated by sync)')
 
     # Platform-native equivalents (may differ from our canonical name)
     mb_id         = models.CharField(max_length=40, blank=True, verbose_name='MusicBrainz ID')
