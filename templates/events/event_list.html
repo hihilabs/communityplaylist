@@ -1151,15 +1151,14 @@ function setView(v, persist, instant) {
 function getDefaultView() {
   const saved = localStorage.getItem('cp_view');
   const w = window.innerWidth;
+  const isMobile = w < 768;
   if (saved) {
-    // Never show map/hybrid on phones — saved desktop prefs shouldn't carry over
-    if (w < 640 && (saved === 'map' || saved === 'hybrid')) return 'list';
-    if (w < 900 && saved === 'hybrid') return 'map';
+    // Phones never get map/hybrid even if saved on a desktop
+    if (isMobile && (saved === 'map' || saved === 'hybrid')) return 'list';
     return saved;
   }
-  if (w >= 900) return 'hybrid';
-  if (w >= 768) return 'map';
-  return 'list';
+  // No saved preference: hybrid for desktop/tablet, list for phones
+  return isMobile ? 'list' : 'hybrid';
 }
 
 setView(getDefaultView(), false, true);  // instant on load — no flash of wrong view
