@@ -19,6 +19,7 @@ services:
       - ./board:/app/board
       - ./social:/app/social
       - ./wiki:/app/wiki
+      - ./ops:/app/ops
       - ./manage.py:/app/manage.py
     labels:
       - "traefik.enable=true"

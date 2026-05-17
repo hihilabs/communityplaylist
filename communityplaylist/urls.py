@@ -24,6 +24,7 @@ urlpatterns = [
     path('cp-manage/compress-images/', admin_compress_images, name='admin_compress_images'),
     path('cp-manage/', admin.site.urls),
     path('api/worker/', include('events.worker_urls')),
+    path('ops/', include('ops.urls')),
     path('board/', include('board.urls')),
     path('wiki/', include('wiki.urls', namespace='wiki')),
     path('', include('events.urls')),

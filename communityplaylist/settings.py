@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'board',
     'social',
     'wiki',
+    'ops',
 ]
 
 MIDDLEWARE = [
