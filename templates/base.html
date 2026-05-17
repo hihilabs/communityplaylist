@@ -32,8 +32,11 @@
   opacity:1;
   transition:box-shadow .2s,border-left-color .4s,transform .28s cubic-bezier(.4,0,.2,1),opacity .22s ease;
 }
-.cp-bar:hover{box-shadow:-4px 0 18px rgba(204,136,255,.1)}
+.cp-bar{box-shadow:0 -2px 16px rgba(0,0,0,.7)}
+.cp-bar:hover{box-shadow:-4px 0 18px rgba(204,136,255,.2),0 -2px 16px rgba(0,0,0,.7)}
 body.has-player .cp-bar{display:flex}
+/* Always visible over map tiles */
+body.view-map .cp-bar,body.view-hybrid .cp-bar{z-index:10000}
 /* Ensure all pages can scroll past the fixed mini player */
 body.has-player{padding-bottom:88px}
 /* Hide mini bar when full panel is open — slide it down out of view */

@@ -1183,7 +1183,25 @@ window.addEventListener('pageshow', function(e) {
   }, 300);
 });
 
-// Player is now a floating corner widget — no map resize needed when it appears
+// ── Recalculate map dimensions on resize / fullscreen change ──────────────────
+(function() {
+  function _syncMapSize() {
+    if (!document.body.classList.contains('view-map') && !document.documentElement.classList.contains('is-hybrid')) return;
+    var mapEl = document.getElementById('map');
+    if (!mapEl) return;
+    // Recalculate --top-h for map-only view
+    if (document.body.classList.contains('view-map')) {
+      var top = mapEl.getBoundingClientRect().top;
+      document.documentElement.style.setProperty('--top-h', top + 'px');
+    }
+    if (map) {
+      setTimeout(function() { map.invalidateSize({animate: false}); }, 50);
+    }
+  }
+  window.addEventListener('resize', _syncMapSize);
+  document.addEventListener('fullscreenchange', _syncMapSize);
+  document.addEventListener('webkitfullscreenchange', _syncMapSize);
+})();
 
 // ── Distance filter using browser geolocation ──────────────────────────────
 // Coords stay in JS memory only — never sent to the server, never stored.
