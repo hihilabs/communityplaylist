@@ -264,9 +264,9 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 
 <!-- Floating view toggle — sits at top-right, overlays content -->
 <div class="view-float" id="view-float" aria-label="View mode">
-  <button type="button" class="view-btn active" data-view="list"   onclick="setView('list')"   title="List">≡ List</button>
-  <button type="button" class="view-btn"         data-view="map"    onclick="setView('map')"    title="Map">⊙ Map</button>
-  <button type="button" class="view-btn"         data-view="hybrid" onclick="setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
+  <button type="button" class="view-btn active" data-view="list"   onclick="document.body.classList.contains('view-list') ? document.getElementById('view-float').classList.toggle('open') : setView('list')"   title="List">≡ List</button>
+  <button type="button" class="view-btn"         data-view="map"    onclick="document.body.classList.contains('view-map') ? document.getElementById('view-float').classList.toggle('open') : setView('map')"    title="Map">⊙ Map</button>
+  <button type="button" class="view-btn"         data-view="hybrid" onclick="document.body.classList.contains('view-hybrid') ? document.getElementById('view-float').classList.toggle('open') : setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
   <button type="button" class="view-float-caret" onclick="document.getElementById('view-float').classList.toggle('open')" aria-label="Show view options">▾</button>
 </div>
 
