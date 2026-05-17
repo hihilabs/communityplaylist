@@ -5,14 +5,24 @@ Calls GET /api/genres/cooccurrence on the edit.music server, which returns:
   tokens:       [{ name, count }]   — genre tags as they appear in files
   cooccurrence: [{ a, b, count }]   — pairs that share the same file
 
-Wiki-level tokenization is more aggressive than edit.music's file tagger:
-  "Drum & Bass" → ["Drum", "Bass"]   (& splits even protected phrases)
-  "Hip"         → ["Hip"]
-  "G-Funk"      → ["G-Funk"]         (hyphens kept intact)
+Wiki-level tokenization is MORE aggressive than edit.music's file tagger.
+edit.music keeps display-friendly tags; the wiki cares about atomic cross-search tokens.
 
-Compound genres are built from actual file tags — if a tag resolves to
-more than one wiki token, that group of tokens forms a compound genre.
-Co-occurrence pairs are wired as token.related edges.
+Splitting rules (applied in order):
+  1. Protected phrases stay whole:  "R&B", "J-R&B", "Lo-Fi", "G-Funk"
+  2. Separators  & , ; / |  are word boundaries
+  3. Spaces are word boundaries  →  "Gangsta Rap" → ["Gangsta", "Rap"]
+  4. Hyphens are kept (not word boundaries) →  "Post-Rock" stays "Post-Rock"
+
+Examples:
+  "Drum & Bass"       → ["Drum", "Bass"]
+  "Gangsta Rap"       → ["Gangsta", "Rap"]
+  "Death Metal"       → ["Death", "Metal"]
+  "Progressive Rock"  → ["Progressive", "Rock"]
+  "R&B"               → ["R&B"]   (protected)
+  "G-Funk"            → ["G-Funk"] (protected)
+  "Lo-Fi"             → ["Lo-Fi"] (protected)
+  "Hip"               → ["Hip"]
 """
 import re
 import urllib.request
@@ -25,13 +35,27 @@ from django.utils.text import slugify
 from wiki.models import GenreToken, CompoundGenre
 
 
-_SEP = re.compile(r'\s*[&,;/|]\s*')
+# Tags that must never be split — single-concept genre names containing separators
+WIKI_PHRASES = {"R&B", "J-R&B", "Lo-Fi", "Hi-Fi", "G-Funk", "K-Pop", "J-Pop", "J-Rock"}
+
+# Splits on & , ; / | and whitespace
+_SEP = re.compile(r'[&,;/|\s]+')
 
 
 def wiki_tokenize(tag: str) -> list[str]:
     """Split an edit.music genre tag into atomic wiki tokens."""
-    parts = _SEP.split(tag.strip())
-    return [p.strip() for p in parts if p.strip()]
+    tag = tag.strip()
+    if tag in WIKI_PHRASES:
+        return [tag]
+    parts = _SEP.split(tag)
+    result = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        # Re-check parts against protected phrases (e.g. "J-R&B" inside a compound)
+        result.append(p if p in WIKI_PHRASES else p)
+    return result
 
 
 class Command(BaseCommand):
