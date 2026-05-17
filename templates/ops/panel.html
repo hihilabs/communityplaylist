@@ -1,0 +1,337 @@
+{% extends 'base.html' %}
+{% block title %}Ops Panel — {{ project_name }}{% endblock %}
+{% block styles %}
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d0d;color:#ddd;font-family:system-ui,sans-serif;font-size:14px}
+.ops-wrap{max-width:1200px;margin:0 auto;padding:20px 16px 100px}
+h1{color:#ff6b35;font-size:1.6em;margin-bottom:4px}
+.ops-sub{color:#555;font-size:.82em;margin-bottom:28px}
+.ops-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:860px){.ops-grid{grid-template-columns:1fr}}
+.ops-card{background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:20px;overflow:hidden}
+.ops-card-full{grid-column:1/-1}
+.ops-card h2{color:#ff6b35;font-size:.9em;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.ops-card h2 .badge{background:#1a1a1a;color:#555;border:1px solid #2a2a2a;border-radius:10px;padding:1px 8px;font-size:.75em;text-transform:none;letter-spacing:0}
+/* Stats */
+.stat-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.stat-chip{background:#0d0d0d;border:1px solid #1e1e1e;border-radius:8px;padding:10px 16px;min-width:110px;text-align:center}
+.stat-chip .n{font-size:1.6em;font-weight:700;color:#ff6b35;display:block}
+.stat-chip .l{font-size:.72em;color:#555;text-transform:uppercase;letter-spacing:.06em}
+.top-events{display:flex;flex-direction:column;gap:4px}
+.top-ev-row{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:6px;background:#0d0d0d;font-size:.8em}
+.top-ev-row a{color:#ccc;text-decoration:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top-ev-row a:hover{color:#ff6b35}
+.top-ev-row .views{color:#555;font-size:.88em;margin-left:8px;flex-shrink:0}
+/* Git */
+.git-branch{display:inline-flex;align-items:center;gap:6px;background:#1a2a1a;border:1px solid #2a4a2a;color:#88cc88;border-radius:6px;padding:3px 10px;font-size:.8em;margin-bottom:10px}
+.git-commit{font-size:.82em;color:#888;margin-bottom:12px;font-family:monospace}
+.git-log{background:#0a0a0a;border-radius:8px;padding:12px;font-family:monospace;font-size:.76em;color:#666;line-height:1.7;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.git-log .sha{color:#cc88ff}.git-log .ref{color:#ff6b35}.git-log .msg{color:#bbb}
+/* Server */
+.kv-table{width:100%;border-collapse:collapse}
+.kv-table td{padding:5px 8px;border-bottom:1px solid #141414;font-size:.82em}
+.kv-table td:first-child{color:#555;width:110px}
+.kv-table td:last-child{color:#ccc;font-family:monospace;word-break:break-all}
+/* Buttons */
+.ops-btn{display:inline-flex;align-items:center;gap:6px;background:#1a1a1a;border:1px solid #2a2a2a;color:#aaa;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:.8em;transition:all .15s;font-family:inherit}
+.ops-btn:hover{border-color:#ff6b35;color:#ff6b35}
+.ops-btn.primary{background:#ff6b35;border-color:#ff6b35;color:#111;font-weight:600}
+.ops-btn.primary:hover{background:#e55a25}
+.ops-btn.success{background:#1a3a1a;border-color:#2a5a2a;color:#88cc88}
+.ops-btn.success:hover{background:#1e4a1e;color:#aaffaa}
+.ops-btn.danger{background:#2a1a1a;border-color:#4a2a2a;color:#cc8888}
+.ops-btn.danger:hover{color:#ffaaaa}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+/* Output */
+.cmd-output{background:#050505;border:1px solid #1a1a1a;border-radius:8px;padding:12px;font-family:monospace;font-size:.76em;color:#88cc88;max-height:220px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;display:none;margin-top:10px}
+.cmd-output.show{display:block}
+.cmd-output.error{color:#cc8888}
+/* Tickets */
+.ticket-list{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.ticket-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:8px}
+.ticket-row.done{opacity:.45}
+.t-type{font-size:.68em;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:4px;flex-shrink:0}
+.t-type-bug{background:#2a1010;color:#cc5555}
+.t-type-feature{background:#1a2a1a;color:#55cc55}
+.t-type-task{background:#1a1a2a;color:#5588cc}
+.t-type-infra{background:#2a2a10;color:#ccaa44}
+.t-pri{font-size:.68em;color:#555;flex-shrink:0}
+.t-pri-urgent{color:#cc4444}.t-pri-high{color:#cc8844}.t-pri-medium{color:#888}.t-pri-low{color:#444}
+.t-title{flex:1;font-size:.85em;color:#ccc;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-status select{background:#111;border:1px solid #2a2a2a;color:#666;font-size:.75em;padding:2px 6px;border-radius:4px;cursor:pointer}
+/* New ticket form */
+.ticket-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.ticket-form .full{grid-column:1/-1}
+.ticket-form input,.ticket-form textarea,.ticket-form select{width:100%;background:#0d0d0d;border:1px solid #222;border-radius:6px;padding:8px 10px;color:#eee;font-size:.82em;font-family:inherit}
+.ticket-form input:focus,.ticket-form textarea:focus,.ticket-form select:focus{outline:none;border-color:#ff6b35}
+.ticket-form textarea{resize:vertical;min-height:70px}
+/* Ops log */
+.ops-log{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto}
+.log-row{display:flex;align-items:flex-start;gap:8px;padding:6px 10px;border-radius:6px;background:#0a0a0a;font-size:.78em}
+.log-row.fail{border-left:2px solid #cc5555}
+.log-row.ok{border-left:2px solid #55aa55}
+.log-action{color:#888;white-space:nowrap;min-width:110px}
+.log-output{color:#555;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace}
+.log-time{color:#333;white-space:nowrap;font-family:monospace;font-size:.9em}
+/* Admin log */
+.admin-log{display:flex;flex-direction:column;gap:3px;max-height:200px;overflow-y:auto}
+.alog-row{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:5px;font-size:.78em}
+.alog-row:hover{background:#111}
+.alog-flag-1{color:#55cc55}.alog-flag-2{color:#cc8844}.alog-flag-3{color:#cc5555}
+.alog-model{color:#555;min-width:70px;font-size:.88em}
+.alog-user{color:#888;min-width:60px}
+.alog-obj{color:#bbb;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alog-time{color:#333;font-family:monospace;font-size:.88em}
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinning{display:inline-block;animation:spin .8s linear infinite}
+</style>
+{% endblock %}
+{% block body %}
+<div class="ops-wrap">
+  <a href="/" style="color:#ff6b35;text-decoration:none;font-size:.82em">← Back to site</a>
+  <h1 style="margin-top:12px">⚙ Ops Panel</h1>
+  <p class="ops-sub">{{ project_name }} &nbsp;·&nbsp; {{ server.python }} &nbsp;·&nbsp; Django {{ server.django }} &nbsp;·&nbsp; {% if server.debug %}<span style="color:#cc8844">DEBUG ON</span>{% else %}<span style="color:#55aa55">Production</span>{% endif %}</p>
+
+  {% if messages %}
+  <div style="margin-bottom:16px">
+    {% for msg in messages %}
+    <div style="background:{% if msg.tags == 'error' %}#2a1010{% else %}#0d2010{% endif %};border:1px solid {% if msg.tags == 'error' %}#4a2020{% else %}#1a4a2a{% endif %};border-radius:8px;padding:10px 14px;font-size:.82em;font-family:monospace;white-space:pre-wrap">{{ msg }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="ops-grid">
+
+    {# ── Site Stats ── #}
+    <div class="ops-card ops-card-full">
+      <h2>📊 Site Stats</h2>
+      {% if stats.events_total is not None %}
+      <div class="stat-row">
+        <div class="stat-chip"><span class="n">{{ stats.events_total }}</span><span class="l">Total Events</span></div>
+        <div class="stat-chip"><span class="n">{{ stats.events_week }}</span><span class="l">This Week</span></div>
+        <div class="stat-chip"><span class="n">{{ stats.events_month }}</span><span class="l">This Month</span></div>
+        <div class="stat-chip"><span class="n">{{ stats.artists_total }}</span><span class="l">Artists</span></div>
+      </div>
+      {% if stats.top_events %}
+      <div style="color:#555;font-size:.72em;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Top by views</div>
+      <div class="top-events">
+        {% for ev in stats.top_events %}
+        <div class="top-ev-row">
+          <a href="/events/{{ ev.slug }}/" target="_blank">{{ ev.title }}</a>
+          <span class="views">👁 {{ ev.view_count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p style="color:#444;font-size:.82em">No stats available for this project.</p>
+      {% endif %}
+    </div>
+
+    {# ── Git ── #}
+    <div class="ops-card">
+      <h2>🌿 Git <span class="badge">{{ git.branch|default:"unknown" }}</span></h2>
+      {% if git.error %}
+      <p style="color:#cc5555;font-size:.8em">{{ git.error }}</p>
+      {% else %}
+      <div class="git-commit">{{ git.commit }}</div>
+      {% if git.dirty %}<div style="color:#cc8844;font-size:.78em;margin-bottom:8px">⚠ Uncommitted changes</div>{% endif %}
+      <div class="git-log" id="git-log-out">{{ git.log }}</div>
+      {% endif %}
+      <div class="btn-row">
+        <button class="ops-btn" onclick="runCmd('git_status','git-out')">📋 Status</button>
+        <button class="ops-btn" onclick="runCmd('git_log','git-out')">📜 Log</button>
+        <button class="ops-btn primary" onclick="runCmd('git_pull','git-out')">⬇ Pull</button>
+      </div>
+      <pre class="cmd-output" id="git-out"></pre>
+    </div>
+
+    {# ── Server / Deploy ── #}
+    <div class="ops-card">
+      <h2>🖥 Server &amp; Deploy</h2>
+      <table class="kv-table">
+        <tr><td>Project</td><td>{{ server.project }}</td></tr>
+        <tr><td>Python</td><td>{{ server.python }}</td></tr>
+        <tr><td>Django</td><td>{{ server.django }}</td></tr>
+        <tr><td>Root</td><td>{{ server.root }}</td></tr>
+        <tr><td>Debug</td><td>{% if server.debug %}<span style="color:#cc8844">True</span>{% else %}<span style="color:#55aa55">False</span>{% endif %}</td></tr>
+        {% if server.os %}<tr><td>OS</td><td>{{ server.os }}</td></tr>{% endif %}
+      </table>
+      <div class="btn-row">
+        <button class="ops-btn success" onclick="runCmd('reload','srv-out')">🔄 Reload Workers</button>
+        <button class="ops-btn" onclick="runCmd('collectstatic','srv-out')">📦 Collect Static</button>
+      </div>
+      <pre class="cmd-output" id="srv-out"></pre>
+    </div>
+
+    {# ── Genre Wiki ── #}
+    <div class="ops-card ops-card-full">
+      <h2>🎵 Genre Wiki Sync</h2>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;margin-bottom:14px">
+        <a href="http://10.0.0.124:3001" target="_blank" class="ops-btn" style="text-decoration:none">
+          ↗ edit.music
+        </a>
+        <span style="color:#333;padding:0 6px;font-size:1.1em">→</span>
+        <span class="ops-btn" style="cursor:default;opacity:.5">1 · Scan</span>
+        <span style="color:#333;padding:0 6px;font-size:1.1em">→</span>
+        <span class="ops-btn" style="cursor:default;opacity:.5">2 · Normalize</span>
+        <span style="color:#333;padding:0 6px;font-size:1.1em">→</span>
+        <span class="ops-btn" style="cursor:default;opacity:.5">3 · Split</span>
+        <span style="color:#333;padding:0 6px;font-size:1.1em">→</span>
+        <span class="ops-btn" style="cursor:default;opacity:.5">4 · Prune dormant</span>
+        <span style="color:#333;padding:0 6px;font-size:1.1em">→</span>
+        <button class="ops-btn primary" onclick="runCmd('sync_genre_wiki','wiki-out')">↻ Sync Wiki</button>
+      </div>
+      <pre class="cmd-output" id="wiki-out"></pre>
+    </div>
+
+    {# ── Tickets ── #}
+    <div class="ops-card ops-card-full">
+      <h2>🎟 Tickets <span class="badge">{{ tickets_open|length }} open</span></h2>
+
+      {% if tickets_open %}
+      <div class="ticket-list" id="ticket-list">
+        {% for t in tickets_open %}
+        <div class="ticket-row{% if t.status == 'done' %} done{% endif %}" id="ticket-{{ t.pk }}">
+          <span class="t-type t-type-{{ t.ticket_type }}">{{ t.get_ticket_type_display }}</span>
+          <span class="t-pri t-pri-{{ t.priority }}" title="{{ t.get_priority_display }}">{{ t.priority|upper|slice:":3" }}</span>
+          <span class="t-title" title="{{ t.description }}">{{ t.title }}</span>
+          {% if t.project %}<span style="color:#444;font-size:.72em;flex-shrink:0">{{ t.project }}</span>{% endif %}
+          <div class="t-status">
+            <select onchange="updateTicket({{ t.pk }}, this.value, this.closest('.ticket-row'))">
+              {% for val, label in ticket_types|slice:":0" %}{% endfor %}
+              <option value="open"        {% if t.status == 'open' %}selected{% endif %}>Open</option>
+              <option value="in_progress" {% if t.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+              <option value="done"        {% if t.status == 'done' %}selected{% endif %}>Done ✓</option>
+              <option value="closed"      {% if t.status == 'closed' %}selected{% endif %}>Closed</option>
+            </select>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:#444;font-size:.82em;margin-bottom:14px">No open tickets.</p>
+      {% endif %}
+
+      <details style="margin-top:4px">
+        <summary style="cursor:pointer;color:#ff6b35;font-size:.82em;user-select:none">+ New ticket</summary>
+        <form method="post" action="{% url 'ops:create_ticket' %}" class="ticket-form" style="margin-top:10px">
+          {% csrf_token %}
+          <div class="full">
+            <input name="title" placeholder="Title *" required>
+          </div>
+          <div class="full">
+            <textarea name="description" placeholder="Description (optional)"></textarea>
+          </div>
+          <div>
+            <select name="ticket_type">
+              {% for val, label in ticket_types %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <select name="priority">
+              {% for val, label in ticket_priorities %}
+              <option value="{{ val }}" {% if val == 'medium' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <input name="project" value="{{ server.project }}" placeholder="Project">
+          </div>
+          <div>
+            <button type="submit" class="ops-btn primary" style="width:100%;justify-content:center">Submit Ticket</button>
+          </div>
+        </form>
+      </details>
+    </div>
+
+    {# ── Ops Log ── #}
+    <div class="ops-card">
+      <h2>📋 Ops Log</h2>
+      <div class="ops-log">
+        {% for ev in ops_log %}
+        <div class="log-row {% if ev.success %}ok{% else %}fail{% endif %}">
+          <span class="log-action">{{ ev.action }}</span>
+          <span class="log-output" title="{{ ev.output }}">{{ ev.output|truncatechars:80 }}</span>
+          <span class="log-time">{{ ev.created_at|date:"m/d H:i" }}</span>
+        </div>
+        {% empty %}
+        <p style="color:#333;font-size:.8em">No actions logged yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ── Admin Activity ── #}
+    <div class="ops-card">
+      <h2>🛂 Admin Activity</h2>
+      {% if stats.recent_admin %}
+      <div class="admin-log">
+        {% for entry in stats.recent_admin %}
+        <div class="alog-row">
+          <span class="alog-flag-{{ entry.action_flag }}">{% if entry.action_flag == 1 %}+{% elif entry.action_flag == 2 %}✎{% else %}✕{% endif %}</span>
+          <span class="alog-model">{{ entry.content_type__model }}</span>
+          <span class="alog-user">{{ entry.user__username }}</span>
+          <span class="alog-obj">{{ entry.object_repr }}</span>
+          <span class="alog-time">{{ entry.action_time|date:"m/d H:i" }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:#333;font-size:.8em">No admin activity.</p>
+      {% endif %}
+    </div>
+
+  </div>{# /ops-grid #}
+</div>{# /ops-wrap #}
+
+<script>
+const CSRF = (function(){ var v=document.cookie.match('(^|;) ?csrftoken=([^;]*)(;|$)'); return v?v[2]:''; })();
+
+function runCmd(cmd, outId) {
+  var out = document.getElementById(outId);
+  out.textContent = '⏳ Running…';
+  out.className = 'cmd-output show';
+  out.classList.remove('error');
+  fetch('{% url "ops:run_cmd" %}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+    body: 'cmd=' + encodeURIComponent(cmd)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    out.textContent = d.output || '(no output)';
+    if (!d.success) out.classList.add('error');
+    // Refresh git log display if pull succeeded
+    if (cmd === 'git_pull' && d.success) setTimeout(function(){ location.reload(); }, 1200);
+  })
+  .catch(function(e){ out.textContent = 'Error: ' + e; out.classList.add('error'); });
+}
+
+function updateTicket(pk, status, rowEl) {
+  fetch('{% url "ops:panel" %}'.replace(/\/$/, '') + '/ticket/' + pk + '/update/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+    body: 'status=' + encodeURIComponent(status)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if (status === 'done' || status === 'closed') rowEl.classList.add('done');
+    else rowEl.classList.remove('done');
+  });
+}
+
+// Color git log output
+document.addEventListener('DOMContentLoaded', function(){
+  var el = document.getElementById('git-log-out');
+  if (!el) return;
+  el.innerHTML = el.textContent.split('\n').map(function(line){
+    return line.replace(/^([0-9a-f]{7,})/i, '<span class="sha">$1</span>')
+               .replace(/(\(.*?\))/g, '<span class="ref">$1</span>');
+  }).join('\n');
+});
+</script>
+{% endblock %}
