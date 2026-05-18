@@ -117,6 +117,9 @@ body.view-leaving .hybrid-wrap{opacity:0}
 .view-float.open .view-btn{display:inline-flex}
 .view-float-caret{background:none;border:none;border-left:1px solid #2a2a2a;color:#555;cursor:pointer;padding:0 12px;font-size:.8em;line-height:1;transition:color .15s,transform .15s;flex-shrink:0;display:flex;align-items:center}
 .view-float.open .view-float-caret{color:#ff6b35;transform:rotate(180deg)}
+#view-fs-btn{background:none;border:none;border-left:1px solid #2a2a2a;color:#555;cursor:pointer;padding:0 10px;font-size:.9em;display:flex;align-items:center;min-height:40px;transition:color .15s;flex-shrink:0}
+#view-fs-btn:hover,#view-fs-btn.active{color:#ff6b35}
+@media(display-mode:standalone),(display-mode:fullscreen){#view-fs-btn{display:none!important}}
 @media(max-width:640px){
   .filter-search-row{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .filter-search-row::-webkit-scrollbar{display:none}
@@ -268,6 +271,7 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
   <button type="button" class="view-btn"         data-view="map"    onclick="document.body.classList.contains('view-map') ? document.getElementById('view-float').classList.toggle('open') : setView('map')"    title="Map">⊙ Map</button>
   <button type="button" class="view-btn"         data-view="hybrid" onclick="document.body.classList.contains('view-hybrid') ? document.getElementById('view-float').classList.toggle('open') : setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
   <button type="button" class="view-float-caret" onclick="document.getElementById('view-float').classList.toggle('open')" aria-label="Show view options">▾</button>
+  <button type="button" id="view-fs-btn" onclick="cpToggleFullscreen()" title="Fullscreen">⛶</button>
 </div>
 
 <!-- Location status pill — shown when geo filter is active -->
@@ -1101,7 +1105,10 @@ function setView(v, persist, instant) {
   if (icon) icon.textContent = VIEW_LABELS[v];
   var _vb = document.getElementById('view-burger');
   if (_vb) _vb.classList.add('has-active');
-  if (persist !== false) localStorage.setItem('cp_view', v);
+  if (persist !== false) {
+    localStorage.setItem('cp_view', v);
+    localStorage.setItem('cp_view_w', String(window.innerWidth));
+  }
 
   function _applyView() {
     document.body.classList.remove('view-list', 'view-map', 'view-hybrid');
@@ -1150,11 +1157,15 @@ function setView(v, persist, instant) {
 // ── Default view by screen size (respects saved preference) ──
 function getDefaultView() {
   const saved = localStorage.getItem('cp_view');
+  const savedW = parseInt(localStorage.getItem('cp_view_w') || '0');
   const w = window.innerWidth;
   const isMobile = w < 768;
   if (saved) {
     // Phones never get map/hybrid even if saved on a desktop
     if (isMobile && (saved === 'map' || saved === 'hybrid')) return 'list';
+    // 'list' preference saved on a much wider screen (e.g. desktop) — reset to
+    // hybrid on a narrower landscape device like a car head unit
+    if (saved === 'list' && savedW > w + 300) return 'hybrid';
     return saved;
   }
   // No saved preference: hybrid for desktop/tablet, list for phones
@@ -1201,6 +1212,27 @@ window.addEventListener('pageshow', function(e) {
   document.addEventListener('fullscreenchange', _syncMapSize);
   document.addEventListener('webkitfullscreenchange', _syncMapSize);
 })();
+
+// ── Fullscreen toggle (⛶ button — useful on car head units / kiosks) ────────
+function cpToggleFullscreen() {
+  var el = document.documentElement;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+  }
+}
+function _syncFsBtn() {
+  var btn = document.getElementById('view-fs-btn');
+  if (!btn) return;
+  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  btn.textContent = isFs ? '⊡' : '⛶';
+  btn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
+  btn.classList.toggle('active', isFs);
+  if (isFs) { document.getElementById('view-float')?.classList.remove('open'); }
+}
+document.addEventListener('fullscreenchange', _syncFsBtn);
+document.addEventListener('webkitfullscreenchange', _syncFsBtn);
 
 // ── Distance filter using browser geolocation ──────────────────────────────
 // Coords stay in JS memory only — never sent to the server, never stored.
