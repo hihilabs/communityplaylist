@@ -476,7 +476,7 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
           var badge = sourceBadge[o.source] || '';
           var extra = o.city ? ' <span style="color:#555;font-size:.8em">'+o.city+'</span>' : '';
           var mbNote = o.mb_id ? ' <span style="color:#666;font-size:.72em" title="MusicBrainz ID">✓MB</span>' : '';
-          return '<div onclick="pickArtist('+JSON.stringify(o)+')" style="cursor:pointer;display:flex;align-items:center;padding:6px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;margin-bottom:4px">'
+          return '<div onclick="pickArtist('+JSON.stringify(o).replace(/"/g,'&quot;')+')" style="cursor:pointer;display:flex;align-items:center;padding:6px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;margin-bottom:4px">'
             + badge+'<span style="color:#ddd;font-size:.83em">'+o.name+'</span>'+extra+mbNote
             + '<span style="margin-left:auto;color:#4caf50;font-size:.75em">Add →</span></div>';
         }).join('');
