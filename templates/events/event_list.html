@@ -22,7 +22,10 @@ body{background:#111;color:#eee;font-family:sans-serif}
 @media(max-width:768px){
   .fb-controls{max-height:500px!important;opacity:1!important;overflow:visible!important;transition:none!important}
   .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
-  /* view-float stays visible on mobile — collapsed to active-btn + caret so it's compact */
+  /* Move view-float to bottom-right so it doesn't overlap the sticky filter bar */
+  .view-float{top:auto!important;bottom:96px;right:10px}
+  /* When player active, stay above 88px bar */
+  body.has-player .view-float{bottom:96px}
 }
 /* Happening now — cards glow gold in the main list (no strip needed) */
 /* Category badges */
@@ -127,7 +130,6 @@ body.view-car #view-fs-btn{display:flex!important}
   .filter-extras select{max-width:none;flex:1;min-width:calc(50% - 4px);padding:8px 6px;font-size:.82em}
   .filter-extras .filter-btn{flex:1;padding:9px;font-size:.85em}
   .filter-extras .clear-btn{padding:9px 14px;font-size:.85em}
-  .view-float{top:58px;right:8px}
   .view-float .view-btn{padding:10px 14px;font-size:.74em}
   .view-float-caret{padding:0 10px;font-size:.76em}
 }
