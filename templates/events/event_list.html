@@ -1160,17 +1160,16 @@ function getDefaultView() {
   const saved = localStorage.getItem('cp_view');
   const savedW = parseInt(localStorage.getItem('cp_view_w') || '0');
   const w = window.innerWidth;
-  const isMobile = w < 768;
+  const isPhone = w < 600;   // phones only; head units (700–1024px) get hybrid
   if (saved) {
-    // Phones never get map/hybrid even if saved on a desktop
-    if (isMobile && (saved === 'map' || saved === 'hybrid')) return 'list';
-    // 'list' preference saved on a much wider screen (e.g. desktop) — reset to
-    // hybrid on a narrower landscape device like a car head unit
+    // Only block hybrid on true phones, not tablets or head units
+    if (isPhone && (saved === 'map' || saved === 'hybrid')) return 'list';
+    // 'list' saved on a much wider screen — reset to hybrid on landscape head unit
     if (saved === 'list' && savedW > w + 300) return 'hybrid';
     return saved;
   }
-  // No saved preference: hybrid for desktop/tablet, list for phones
-  return isMobile ? 'list' : 'hybrid';
+  // No saved preference: hybrid for anything wider than a phone
+  return isPhone ? 'list' : 'hybrid';
 }
 
 setView(getDefaultView(), false, true);  // instant on load — no flash of wrong view

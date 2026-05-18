@@ -29,30 +29,34 @@
       background:#0d0d0d;height:42px;overflow:hidden;
     }
     .pl-logo img{height:26px;width:auto;display:block;flex-shrink:0}
-    /* Green ticker */
-    .pl-ticker{
-      flex:1;overflow:hidden;position:relative;
-      background:#0a160a;border:1px solid #1a3a1a;border-radius:4px;
-      height:24px;display:flex;align-items:center;
-      mask-image:linear-gradient(to right,transparent 0%,black 5%,black 95%,transparent 100%);
-    }
-    .pl-ticker-inner{
-      display:inline-flex;align-items:center;white-space:nowrap;gap:0;
-      animation:pl-marquee 50s linear infinite;
-    }
-    .pl-ticker-inner:hover{animation-play-state:paused}
-    @keyframes pl-marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-    .pl-tick-item{color:#4caf50;font-size:.7em;font-weight:600;letter-spacing:.03em;text-decoration:none}
-    .pl-tick-item:hover{text-decoration:underline;color:#6fcf6f}
-    .pl-tick-soft{color:#2a4a2a;font-size:.7em}
-    .pl-tick-sep{color:#1a3a1a;margin:0 16px;font-size:.7em;user-select:none}
-    .pl-header-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+    .pl-header-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+    /* Fullscreen + car-mode toggle button */
+    #pl-fs-btn{background:none;border:none;color:#555;cursor:pointer;font-size:1em;padding:3px 7px;border-radius:4px;transition:color .15s;line-height:1}
+    #pl-fs-btn:hover,#pl-fs-btn.active{color:#ff6b35}
+    @media(display-mode:standalone),(display-mode:fullscreen){#pl-fs-btn{display:none!important}}
+
+    /* ── Car mode ── big controls for head unit / tablet fullscreen ── */
+    .pl-wrap.car-mode .pl-header{height:36px;padding:0 10px}
+    .pl-wrap.car-mode .pl-stage{width:min(62vw,680px)}
+    .pl-wrap.car-mode .pl-info{padding:12px 20px 6px}
+    .pl-wrap.car-mode .pl-title{font-size:1.28em}
+    .pl-wrap.car-mode .pl-artist{font-size:.96em}
+    .pl-wrap.car-mode .pl-controls{gap:22px;padding:14px 20px 8px}
+    .pl-wrap.car-mode .pl-btn{font-size:1.3em;padding:6px}
+    .pl-wrap.car-mode #pl-play{width:70px;height:70px;font-size:1.65em}
+    .pl-wrap.car-mode .pl-seek-row{padding:8px 20px 4px}
+    .pl-wrap.car-mode .pl-seek{height:7px}
+    .pl-wrap.car-mode .pl-secondary{padding:6px 20px 14px}
+    .pl-wrap.car-mode .pl-q-item{padding:10px 10px}
+    .pl-wrap.car-mode .pl-q-art{width:44px;height:44px}
+    .pl-wrap.car-mode .pl-q-title{font-size:.92em}
+    .pl-wrap.car-mode .pl-q-artist{font-size:.78em}
+    .pl-wrap.car-mode .pl-ch{padding:6px 16px;font-size:.83em}
     .pl-header a{color:#555;font-size:.8em;text-decoration:none}
     .pl-header a:hover{color:#ff6b35}
     #pl-install-btn:hover{color:#ff6b35}
     /* Hide back link when opened as popup or standalone */
     @media(display-mode:standalone){#pl-back-link{display:none}}
-    @media(max-width:620px){.pl-ticker{display:none}}
     .pl-body{display:flex;flex:1;overflow:hidden;position:relative}
 
     /* ── Stage (left) ── */
@@ -227,20 +231,10 @@
     <a href="/" class="pl-logo" title="Community Playlist">
       <img src="https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png" alt="CP">
     </a>
-    <div class="pl-ticker">
-      <div class="pl-ticker-inner">
-        {% with items=ticker_banners %}
-        <span class="pl-tick-soft">Portland events · by the people, for the people</span><span class="pl-tick-sep">✦</span>
-        {% if visit_count %}<span class="pl-tick-soft">👁 {{ visit_count }} unique visitors</span><span class="pl-tick-sep">✦</span>{% endif %}
-        {% for b in items %}<a class="pl-tick-item" href="/board/aid/">🌹 {{ b }}</a><span class="pl-tick-sep">✦</span>{% endfor %}
-        <span class="pl-tick-soft">Portland events · by the people, for the people</span><span class="pl-tick-sep">✦</span>
-        {% if visit_count %}<span class="pl-tick-soft">👁 {{ visit_count }} unique visitors</span><span class="pl-tick-sep">✦</span>{% endif %}
-        {% for b in items %}<a class="pl-tick-item" href="/board/aid/">🌹 {{ b }}</a><span class="pl-tick-sep">✦</span>{% endfor %}
-        {% endwith %}
-      </div>
-    </div>
+    <span style="flex:1"></span>
     <span class="pl-header-right">
       <button id="pl-install-btn" title="Install app" style="display:none;background:none;border:none;color:#555;cursor:pointer;font-size:.8em;padding:2px 6px;border-radius:4px;transition:color .15s">⊕ Install</button>
+      <button id="pl-fs-btn" title="Fullscreen">⛶</button>
       <a href="/" id="pl-back-link">← Events</a>
     </span>
   </header>
@@ -1599,6 +1593,36 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     var backLink = document.getElementById('pl-back-link');
     if (backLink) backLink.style.display = 'none';
   }
+
+  /* ── Fullscreen + car mode ── */
+  var _plWrap = document.querySelector('.pl-wrap');
+  var _plFsBtn = document.getElementById('pl-fs-btn');
+
+  function plToggleFs() {
+    var el = document.documentElement;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+  }
+  if (_plFsBtn) _plFsBtn.addEventListener('click', plToggleFs);
+
+  function _syncPlCarMode() {
+    var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    var isSmall = window.innerWidth < 1100;
+    var on = isFs || isSmall;
+    if (_plWrap) _plWrap.classList.toggle('car-mode', on);
+    if (_plFsBtn) {
+      _plFsBtn.textContent = isFs ? '⊡' : '⛶';
+      _plFsBtn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
+      _plFsBtn.classList.toggle('active', isFs);
+    }
+  }
+  document.addEventListener('fullscreenchange', _syncPlCarMode);
+  document.addEventListener('webkitfullscreenchange', _syncPlCarMode);
+  window.addEventListener('resize', _syncPlCarMode);
+  _syncPlCarMode();
 })();
 </script>
 </body>
