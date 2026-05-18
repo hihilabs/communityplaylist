@@ -93,7 +93,7 @@
   card.innerHTML = [
     '<div id="cp-welcome-card">',
     '<button id="cp-welcome-again" title="Close">✕</button>',
-    '<img class="wlc-logo" src="https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png" alt="Community Playlist">',
+    '<img class="wlc-logo" src="/static/img/cp_logo_face.png" alt="Community Playlist">',
     '<div class="wlc-tagline">Welcome to Community Playlist</div>',
     '<div class="wlc-sub">A free, community-run event calendar for Portland, Oregon.<br>No ads. No algorithms. No tracking.</div>',
     '<div class="wlc-section">What the icons do</div>',
@@ -144,9 +144,12 @@
 
   window.cpShowWelcome = function(){ card.classList.add('open'); };
 
-  try{
-    if(!localStorage.getItem(SEEN_KEY)) card.classList.add('open');
-  }catch(e){ /* storage blocked — show anyway */ card.classList.add('open'); }
+  // Defer open so inline page scripts (setView etc.) run first — avoids flash of list view
+  setTimeout(function(){
+    try{
+      if(!localStorage.getItem(SEEN_KEY)) card.classList.add('open');
+    }catch(e){ card.classList.add('open'); }
+  }, 0);
 })();
 </script>
 
