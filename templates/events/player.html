@@ -980,6 +980,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   }
   function _drawVis() {
     visRaf = requestAnimationFrame(_drawVis);
+    if (_plWrap && _plWrap.classList.contains('car-mode')) return;
     _visT += _visPlaying ? 0.055 : 0.008;
 
     /* collect audio data once per frame */

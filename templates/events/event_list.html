@@ -1202,9 +1202,10 @@ var _carWatch = null, _carUserMkr = null, _carHdgEl = null;
 var _carLat = null, _carLng = null;
 
 function _initCarView() {
+  // Force reflow so the browser computes map container dimensions before Leaflet reads them
+  void document.getElementById('map').offsetHeight;
   initMap();
-  // Force Leaflet to re-read container dimensions — repeat in case of slow paint
-  [100, 350, 800, 1600].forEach(function(ms) {
+  [150, 700].forEach(function(ms) {
     setTimeout(function() { if (map) map.invalidateSize({animate:false}); }, ms);
   });
   if (!navigator.geolocation) return;
@@ -1229,10 +1230,14 @@ function _initCarView() {
     }
   }, function(){}, {enableHighAccuracy:true, maximumAge:3000});
 
-  // Compass heading — rotate the arrow
+  // Compass heading — rotate the arrow (throttled to ~10fps to reduce CPU)
   var _hdgEvt = 'deviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+  var _lastHdg = 0;
   function _onHdg(e) {
     if (!document.body.classList.contains('view-car')) { window.removeEventListener(_hdgEvt, _onHdg); return; }
+    var now = Date.now();
+    if (now - _lastHdg < 100) return;
+    _lastHdg = now;
     var hdg = (e.webkitCompassHeading != null) ? e.webkitCompassHeading : (e.alpha != null ? (360 - e.alpha) : null);
     if (hdg == null || !_carHdgEl) return;
     _carHdgEl.style.transform = 'translateX(-50%) rotate(' + hdg + 'deg)';
