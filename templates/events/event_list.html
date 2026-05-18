@@ -110,6 +110,7 @@ body.view-leaving .hybrid-wrap{opacity:0}
 .filter-extras .clear-btn{background:transparent;color:#666;border:1px solid #2a2a2a;padding:5px 9px;border-radius:6px;cursor:pointer;font-size:.78em;text-decoration:none;flex-shrink:0}
 /* ── Floating view toggle ── */
 .view-float{position:fixed;top:57px;right:10px;z-index:910;display:flex;align-items:stretch;gap:0;background:rgba(18,18,18,.9);border:1px solid #252525;border-radius:8px;padding:0;overflow:hidden;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+body.has-panel .view-float{opacity:0;pointer-events:none;transition:opacity .2s}
 .view-float .view-btn{padding:10px 16px;font-size:.78em;border-color:transparent;border-radius:0;letter-spacing:.01em;min-height:40px;display:flex;align-items:center}
 .view-float .view-btn.active{background:#ff6b35;color:#111;border-color:#ff6b35}
 /* Collapsed: only show active btn until tapped */
@@ -472,7 +473,7 @@ function _setMapMarkers(events) {
     var marker = L.marker([e.latitude, e.longitude], { icon: makeIcon(false, e.category) });
     var flyerHtml = e.flyer_url ? '<img src="' + e.flyer_url + '" style="width:36px;height:64px;object-fit:cover;border-radius:4px;flex-shrink:0">' : '';
     marker.bindPopup('<div style="display:flex;gap:10px;align-items:flex-start;min-width:160px">' + flyerHtml + '<div><strong style="color:#ff6b35">' + e.title + '</strong><br><span style="font-size:.82em;color:#888">' + e.start_date + '</span><br><span style="font-size:.85em">' + e.location + '</span><br><a href="/events/' + e.slug + '/" style="color:#ff6b35;font-size:.85em">View event →</a></div></div>');
-    marker.on('click', function() { highlightCard(e.slug); });
+    marker.on('click', function() { highlightCard(e.slug); if (window.cpEventPanel) window.cpEventPanel.open(e.slug); });
     markersBySlug[e.slug] = marker;
     categoryBySlug[e.slug] = e.category;
     if (clusterGroup) clusterGroup.addLayer(marker); else marker.addTo(map);
@@ -1230,6 +1231,8 @@ function _syncFsBtn() {
   btn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
   btn.classList.toggle('active', isFs);
   if (isFs) { document.getElementById('view-float')?.classList.remove('open'); }
+  // Car mode: fullscreen on tablet/head-unit sized screens
+  document.body.classList.toggle('car-mode', isFs && window.innerWidth < 1200);
 }
 document.addEventListener('fullscreenchange', _syncFsBtn);
 document.addEventListener('webkitfullscreenchange', _syncFsBtn);

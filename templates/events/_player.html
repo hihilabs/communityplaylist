@@ -669,6 +669,7 @@ function _cpGenreAccent(g) {
   };
   window.cpSetShuffle  = function(on){ shuffleMode = on; if (on) buildShuffleOrder(); window._cpShuffleMode = on; localStorage.setItem('cp_shuffle', on ? '1' : '0'); };
   window.cpSetRepeat   = function(m){ repeatMode = m; window._cpRepeatMode = m; };
+  window.cpSetChannel  = function(g){ fetchTracks(g); };
   window.cpPlayIdx     = function(idx){ loadTrack(idx); _playCurrentTrack(); };
   window.cpPlayCurrent = function(){ _playCurrentTrack(); };
   window.cpGetNextIdx  = getNextIdx;

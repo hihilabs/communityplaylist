@@ -218,6 +218,18 @@ body.has-panel .cp-bar{transform:translateY(110%);opacity:0;pointer-events:none}
   .cp-bar-thumb{width:28px;height:40px}
 }
 
+/* ── Car / tablet mode (fullscreen on <1200px screen) ── */
+body.car-mode .cp-bar{width:100%;border-radius:0;border-right:none;min-height:100px;border-left-width:0;border-top:2px solid #3a1a50}
+body.car-mode .cp-bar-main{padding:16px 14px;gap:14px}
+body.car-mode .cp-bar-thumb{width:64px;height:80px;border-radius:6px}
+body.car-mode .cp-bar-title{font-size:1.15em}
+body.car-mode .cp-bar-artist{font-size:.9em}
+body.car-mode .cp-bar-btn{width:48px;height:48px;font-size:1.5em}
+body.car-mode .cp-bar-btns{gap:4px}
+body.car-mode .cp-bar-prog-line{height:8px}
+body.car-mode .cp-bar-badge{font-size:.75em;padding:3px 9px}
+body.car-mode.has-player{padding-bottom:108px}
+
 /* ── Event info corner panel (for map / artist clicks) ── */
 #cp-event-panel{
   position:fixed;
@@ -923,7 +935,10 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
   function openPanel(slug) {
     fetch('/api/events/' + slug + '/')
       .then(function(r){ return r.json(); })
-      .then(function(d){ populate(d); updateOffset(); panel.classList.add('open'); })
+      .then(function(d){
+        populate(d); updateOffset(); panel.classList.add('open');
+        if (d.genres && d.genres.length && window.cpSetChannel) window.cpSetChannel(d.genres[0]);
+      })
       .catch(function(){});
   }
 
