@@ -368,9 +368,169 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   /* log-scale freq mapping: 30Hz–16kHz caps at MP3 cutoff */
   var _visLogMin = Math.log(30), _visLogMax = Math.log(16000), _visNyquist = 22050;
   var _visT = 0, _visPlaying = false;
-  var _visMode = 0; // 0=bars 1=mirror 2=scope
-  var _visModeLabels = ['▮▮▮','◈','〰'];
-  var _visModeNames  = ['Bars','Mirror','Scope'];
+  var _visMode = 0; // 0=bars 1=mirror 2=scope 3=oregon
+  var _visModeLabels = ['▮▮▮','◈','〰','⛰'];
+  var _visModeNames  = ['Bars','Mirror','Scope','Oregon'];
+
+  /* ── Oregon landscape ── */
+  var _oBass = 0, _oMid = 0, _oHigh = 0;
+  var _oSeed = Math.floor(Math.random() * 9999);
+  var _oBirds = (function() {
+    var a = [];
+    for (var i = 0; i < 10; i++)
+      a.push({x: Math.random(), y: 0.05 + Math.random() * 0.2,
+              vx: 3e-4 + Math.random() * 4e-4, ph: Math.random() * 6.28});
+    return a;
+  })();
+  function _oHash(n) { var s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+  function _oNoise(x) {
+    var i = Math.floor(x), f = x - i; f = f * f * (3 - 2 * f);
+    return _oHash(i) + (_oHash(i + 1) - _oHash(i)) * f;
+  }
+  function _oFbm(x, off) {
+    off = off || 0;
+    return (_oNoise(x + off) * 0.5 + _oNoise(x * 2.1 + off * 1.7 + 13.4) * 0.25
+          + _oNoise(x * 4.3 + off * 3.1 + 27.9) * 0.125
+          + _oNoise(x * 8.9 + off * 6.3 + 51.2) * 0.0625) - 0.46;
+  }
+  function _drawFir(ctx, x, baseY, h) {
+    ctx.fillStyle = 'rgba(18,10,6,0.85)';
+    ctx.fillRect(x - 1, baseY - h * 0.18, 2, h * 0.18);
+    for (var i = 0; i < 5; i++) {
+      var fi = i / 4, ty = (baseY - h) + h * 0.85 * fi;
+      var tw = h * (0.07 + fi * 0.24), fth = h / 5 * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, ty); ctx.lineTo(x - tw, ty + fth); ctx.lineTo(x + tw, ty + fth);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(12,' + ((30 + fi * 12) | 0) + ',16,0.95)';
+      ctx.fill();
+    }
+  }
+  function _drawOregon(ctx, W, H, freqData, t) {
+    var rb = 0, rm = 0, rh = 0;
+    if (freqData) {
+      for (var i = 0; i < 8;   i++) rb += freqData[i] / 255;
+      for (var i = 8; i < 60;  i++) rm += freqData[i] / 255;
+      for (var i = 60; i < 180; i++) rh += freqData[i] / 255;
+      rb /= 8; rm /= 52; rh /= 120;
+    } else {
+      rb = 0.05 + Math.sin(t * 0.7) * 0.03;
+      rm = 0.03 + Math.sin(t * 1.1 + 1) * 0.02;
+      rh = 0.02 + Math.sin(t * 1.8 + 2) * 0.01;
+    }
+    _oBass += (rb - _oBass) * 0.22;
+    _oMid  += (rm - _oMid)  * 0.18;
+    _oHigh += (rh - _oHigh) * 0.28;
+    var bass = _oBass, mid = _oMid, high = _oHigh;
+    var hz = H * 0.44, sd = _oSeed;
+
+    /* sky */
+    var sky = ctx.createLinearGradient(0, 0, 0, hz);
+    sky.addColorStop(0, 'rgb(8,15,28)'); sky.addColorStop(1, 'rgb(18,32,52)');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, hz + 2);
+
+    /* stars — pulse with highs */
+    for (var i = 0; i < 60; i++) {
+      var sx = _oHash(i * 31.7 + sd) * W;
+      var sy = _oHash(i * 17.3 + sd + 500) * hz * 0.85;
+      var br = _oHash(i * 9.1 + sd + 1000);
+      var pulse = Math.min(1, (Math.sin(t * (1 + br * 3) + i) * 0.3 + 0.7) * (0.4 + high * 1.2));
+      var sz = 0.5 + br * 1.2;
+      ctx.fillStyle = 'rgba(200,215,240,' + pulse.toFixed(2) + ')';
+      ctx.fillRect(sx - sz / 2, sy - sz / 2, sz, sz);
+    }
+
+    /* horizon glow on bass hits */
+    if (bass > 0.05) {
+      var hg = ctx.createRadialGradient(W * 0.62, hz, 0, W * 0.62, hz, W * 0.45);
+      hg.addColorStop(0, 'rgba(180,80,30,' + (bass * 0.35).toFixed(2) + ')');
+      hg.addColorStop(1, 'rgba(180,80,30,0)');
+      ctx.fillStyle = hg; ctx.fillRect(0, 0, W, hz + 20);
+    }
+
+    /* far Cascades — Mt Hood prominent at 62% */
+    var bp = bass * H * 0.09;
+    ctx.beginPath();
+    for (var x = 0; x <= W; x += 2) {
+      var nx = x / W * 3.5 + sd * 0.01;
+      var r = _oFbm(nx, sd * 0.01) * 0.55 + 0.55;
+      var hood = Math.max(0, 1 - Math.pow((x / W - 0.62) / 0.11, 2));
+      r += hood * 0.32;
+      var py = hz - r * H * 0.48 - bp * hood;
+      x === 0 ? ctx.moveTo(x, py) : ctx.lineTo(x, py);
+    }
+    ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+    ctx.fillStyle = 'rgba(55,78,108,0.85)'; ctx.fill();
+
+    /* mid forested ridge */
+    ctx.beginPath();
+    for (var x = 0; x <= W; x += 2) {
+      var nx = x / W * 4.5 + sd * 0.02 + 7.3;
+      var r = _oFbm(nx, sd * 0.02 + 5) * 0.38 + 0.35;
+      var py = hz + H * 0.04 - r * H * 0.38 - bass * H * 0.025;
+      x === 0 ? ctx.moveTo(x, py) : ctx.lineTo(x, py);
+    }
+    ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+    ctx.fillStyle = 'rgba(22,40,28,0.9)'; ctx.fill();
+
+    /* ground fill */
+    ctx.fillStyle = 'rgb(12,22,15)';
+    ctx.fillRect(0, hz + H * 0.25, W, H);
+
+    /* fog belt */
+    var fy = hz + H * 0.08;
+    var fg = ctx.createLinearGradient(0, fy - H * 0.06, 0, fy + H * 0.08);
+    fg.addColorStop(0, 'rgba(155,170,190,0)');
+    fg.addColorStop(0.4, 'rgba(155,170,190,0.13)');
+    fg.addColorStop(1, 'rgba(155,170,190,0)');
+    ctx.fillStyle = fg; ctx.fillRect(0, fy - H * 0.06, W, H * 0.14);
+
+    /* Douglas fir treeline — sway with mids */
+    var tb = hz + H * 0.2, nt = Math.max(8, Math.floor(W / 16));
+    for (var i = 0; i < nt; i++) {
+      var tx = (i + 0.5) / nt * W + (_oHash(i * 7.3 + sd + 200) - 0.5) * 18;
+      var treeH = H * (0.16 + _oHash(i * 3.7 + sd + 300) * 0.1 + mid * 0.04);
+      var sw = Math.sin(t * 1.4 + i * 0.53) * mid * 4;
+      _drawFir(ctx, tx + sw, tb, treeH);
+    }
+
+    /* river at bottom */
+    var rv = H * 0.8;
+    var rg = ctx.createLinearGradient(0, rv, 0, H);
+    rg.addColorStop(0, 'rgba(25,50,80,0.55)'); rg.addColorStop(1, 'rgba(10,22,40,0.75)');
+    ctx.beginPath();
+    for (var x = 0; x <= W; x += 3) {
+      var wy = rv + Math.sin(x * 0.04 + t * 1.8) * (2 + bass * 6);
+      x === 0 ? ctx.moveTo(x, wy) : ctx.lineTo(x, wy);
+    }
+    ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+    ctx.fillStyle = rg; ctx.fill();
+    ctx.strokeStyle = 'rgba(100,145,195,' + (0.06 + bass * 0.1).toFixed(2) + ')';
+    ctx.lineWidth = 1;
+    for (var i = 0; i < 4; i++) {
+      ctx.beginPath();
+      for (var x = 0; x <= W; x += 5) {
+        var ly = rv + H * 0.02 + i * H * 0.025 + Math.sin(x * 0.05 + t * 1.5 + i * 0.7) * 2;
+        x === 0 ? ctx.moveTo(x, ly) : ctx.lineTo(x, ly);
+      }
+      ctx.stroke();
+    }
+
+    /* birds — speed up with highs */
+    ctx.strokeStyle = 'rgba(180,200,225,0.55)';
+    ctx.lineWidth = 1;
+    for (var i = 0; i < _oBirds.length; i++) {
+      var b = _oBirds[i];
+      b.x += b.vx * (1 + high * 4);
+      if (b.x > 1.05) b.x = -0.05;
+      var bx = b.x * W, by = b.y * H + Math.sin(t * 2 + b.ph) * H * 0.012;
+      var ws = 3 + high * 4;
+      ctx.beginPath();
+      ctx.moveTo(bx - ws, by + Math.sin(t * 8 + b.ph) * 1.5);
+      ctx.quadraticCurveTo(bx, by - 1.5, bx + ws, by + Math.sin(t * 8 + b.ph) * 1.5);
+      ctx.stroke();
+    }
+  }
 
   /* ── DOM ── */
   var artEl    = document.getElementById('pl-art');
@@ -483,7 +643,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
         ctx.fillRect(i * (bw + 1), cy - bh, Math.max(1, bw), bh * 2);
       }
     /* ── MODE 2: Scope ── */
-    } else {
+    } else if (_visMode === 2) {
       ctx.lineWidth = 2;
       ctx.strokeStyle = 'rgba(255,107,53,' + (0.85 * op) + ')';
       ctx.shadowColor = '#ff6b35';
@@ -500,6 +660,9 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
       }
       ctx.stroke();
       ctx.shadowBlur = 0;
+    /* ── MODE 3: Oregon ── */
+    } else {
+      _drawOregon(ctx, W, H, freqData, _visT);
     }
   }
   function _drawVis() {
@@ -908,7 +1071,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     if (isVideo) leaveVideo(); else enterVideo();
   });
   if (visBtn) visBtn.addEventListener('click', function() {
-    _visMode = (_visMode + 1) % 3;
+    _visMode = (_visMode + 1) % 4;
     visBtn.textContent = _visModeLabels[_visMode];
     visBtn.title = 'Visualizer: ' + _visModeNames[_visMode];
   });
