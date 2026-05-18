@@ -1266,17 +1266,21 @@ function _carDirectionsPopup(e) {
 }
 
 // ── Default view by screen size (respects saved preference) ──
+// One-time migration: clear prefs saved before hybrid-default landed (version < 2)
+if (localStorage.getItem('cp_view_ver') !== '2') {
+  localStorage.removeItem('cp_view');
+  localStorage.removeItem('cp_view_w');
+  localStorage.setItem('cp_view_ver', '2');
+}
+
 function getDefaultView() {
   const saved = localStorage.getItem('cp_view');
   const savedW = parseInt(localStorage.getItem('cp_view_w') || '0');
   const w = window.innerWidth;
-  const isPhone = w < 600;   // phones only; head units (700–1024px) get hybrid
+  const isPhone = w < 600;
   if (saved) {
     if (isPhone && (saved === 'map' || saved === 'hybrid' || saved === 'car')) return 'list';
-    if (saved === 'list' && !isPhone) {
-      // savedW === 0 means stale pre-width-tracking pref; treat as unknown → hybrid
-      if (savedW === 0 || savedW > w + 200) return 'hybrid';
-    }
+    if (!isPhone && saved === 'list' && (savedW === 0 || savedW < 600)) return 'hybrid';
     return saved;
   }
   return isPhone ? 'list' : 'hybrid';
