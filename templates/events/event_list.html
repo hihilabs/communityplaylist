@@ -1119,6 +1119,8 @@ document.addEventListener('click', function(e) {
 var VIEW_LABELS = {list: '≡ List', map: '⊙ Map', hybrid: '⊟ Hybrid', car: '🚗 Car'};
 function setView(v, persist, instant) {
   if (document.body.classList.contains('view-' + v)) {
+    document.querySelectorAll('.view-btn[data-view]').forEach(b =>
+      b.classList.toggle('active', b.dataset.view === v));
     if (!mapInitialized && (v === 'map' || v === 'hybrid')) initMap();
     return;
   }
