@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% block body_class %}view-hybrid{% endblock %}
 {% block title %}Community Playlist - PDX Events{% endblock %}
 {% block head_extra %}
 <meta name="turbo-cache-control" content="no-cache">
@@ -1117,7 +1118,10 @@ document.addEventListener('click', function(e) {
 // ── View switching ──
 var VIEW_LABELS = {list: '≡ List', map: '⊙ Map', hybrid: '⊟ Hybrid', car: '🚗 Car'};
 function setView(v, persist, instant) {
-  if (document.body.classList.contains('view-' + v)) return;
+  if (document.body.classList.contains('view-' + v)) {
+    if (!mapInitialized && (v === 'map' || v === 'hybrid')) initMap();
+    return;
+  }
 
   // Immediate: button/label feedback + persist
   document.querySelectorAll('.view-btn[data-view]').forEach(b =>

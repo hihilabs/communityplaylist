@@ -817,7 +817,7 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
 .wx-ft{font-size:.52em;color:#2a2a2a;font-family:monospace;text-align:right;letter-spacing:.04em;margin-top:4px}
 </style>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% block styles %}{% endblock %}
 {% block site_header %}{% include 'events/_header.html' %}{% endblock %}
 {% block nav_strip %}{% include 'events/_nav_strip.html' %}{% endblock %}
