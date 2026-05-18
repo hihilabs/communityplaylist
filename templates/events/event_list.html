@@ -174,7 +174,7 @@ body.view-car .site-header{display:none}
 body.view-car .filter-bar{display:none!important}
 body.view-car #events-list{display:none}
 body.view-car .events-grid{display:none}
-body.view-car #map{display:block!important;position:fixed;inset:0;height:auto!important;z-index:1}
+body.view-car #map{display:block!important;position:fixed;inset:0;width:100vw!important;height:100dvh!important;height:100vh!important;z-index:1}
 body.view-car .cp-bar{z-index:10000!important;transform:none!important;opacity:1!important}
 body.view-car .view-float{top:10px;right:10px;z-index:10001}
 body.view-car.has-panel .view-float{opacity:1;pointer-events:auto}
@@ -1203,7 +1203,10 @@ var _carLat = null, _carLng = null;
 
 function _initCarView() {
   initMap();
-  setTimeout(function() { if (map) map.invalidateSize({animate:false}); }, 260);
+  // Force Leaflet to re-read container dimensions — repeat in case of slow paint
+  [100, 350, 800, 1600].forEach(function(ms) {
+    setTimeout(function() { if (map) map.invalidateSize({animate:false}); }, ms);
+  });
   if (!navigator.geolocation) return;
   if (_carWatch) navigator.geolocation.clearWatch(_carWatch);
   _carWatch = navigator.geolocation.watchPosition(function(pos) {
