@@ -369,8 +369,8 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   var _visLogMin = Math.log(30), _visLogMax = Math.log(16000), _visNyquist = 22050;
   var _visT = 0, _visPlaying = false;
   var _visMode = 0; // 0=bars 1=mirror 2=scope 3=oregon
-  var _visModeLabels = ['▮▮▮','◈','〰','⛰','🌊'];
-  var _visModeNames  = ['Bars','Mirror','Scope','Oregon','Coast'];
+  var _visModeLabels = ['▮▮▮','◈','〰','⛰','🌊','✦'];
+  var _visModeNames  = ['Bars','Mirror','Scope','Oregon','Coast','Milk'];
 
   /* ── Oregon landscape ── */
   var _oBass = 0, _oMid = 0, _oHigh = 0;
@@ -711,6 +711,117 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     }
   }
 
+  /* ── Milk visualizer state ── */
+  var _milkDimW = 0, _milkDimH = 0;
+  var _milkHue = 0, _milkFlash = 0, _milkRot = 0;
+
+  function _drawMilk(ctx, cv, W, H, freqData, waveData, t) {
+    var rb=0,rm=0,rh=0;
+    if (freqData) {
+      for(var i=0;i<8;i++)   rb+=freqData[i]/255;
+      for(var i=8;i<60;i++)  rm+=freqData[i]/255;
+      for(var i=60;i<180;i++) rh+=freqData[i]/255;
+      rb/=8; rm/=52; rh/=120;
+    } else {
+      rb=0.03+Math.sin(t*0.5)*0.02; rm=0.015; rh=0.008;
+    }
+    _oBass+=(rb-_oBass)*0.25; _oMid+=(rm-_oMid)*0.2; _oHigh+=(rh-_oHigh)*0.3;
+    var bass=_oBass, mid=_oMid, high=_oHigh;
+
+    _milkHue=(_milkHue+0.4+mid*1.2)%360;
+    _milkRot+=0.003+mid*0.012;
+    if(rb>0.25) _milkFlash=Math.min(1,_milkFlash+rb*0.5);
+    _milkFlash*=0.85;
+
+    var cx=W/2, cy=H/2, R=Math.min(W,H)*0.43;
+
+    /* feedback: draw canvas back onto itself zoomed + rotated — creates MilkDrop trail */
+    var zoom=1.007+bass*0.014;
+    ctx.save();
+    ctx.globalAlpha=0.86;
+    ctx.translate(cx,cy);
+    ctx.rotate(0.004+mid*0.012);
+    ctx.scale(zoom,zoom);
+    ctx.translate(-cx,-cy);
+    ctx.drawImage(cv,0,0,W,H);
+    ctx.restore();
+
+    /* dark fade — controls trail length */
+    ctx.fillStyle='rgba(0,0,0,'+(0.14+bass*0.06)+')';
+    ctx.fillRect(0,0,W,H);
+
+    /* beat flash */
+    if(_milkFlash>0.02) {
+      var fh=(_milkHue+120)%360;
+      var fg=ctx.createRadialGradient(cx,cy,0,cx,cy,R*1.5);
+      fg.addColorStop(0,'hsla('+fh+',100%,70%,'+(_milkFlash*0.35)+')');
+      fg.addColorStop(1,'hsla('+fh+',100%,40%,0)');
+      ctx.fillStyle=fg; ctx.fillRect(0,0,W,H);
+    }
+
+    /* plasma rings */
+    for(var i=12;i>0;i--) {
+      var f=i/12;
+      var r=R*(0.12+f*0.88)*(1+bass*0.1*(1-f*0.5));
+      var hue=(_milkHue+f*200+Math.sin(t*0.9+f*4)*25)%360;
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+      ctx.strokeStyle='hsla('+hue+','+(55+high*25)+'%,'+(28+mid*18+f*12)+'%,'+(0.12+f*0.1)+')';
+      ctx.lineWidth=1+bass*2.5*(1-f*0.6); ctx.stroke();
+    }
+
+    /* waveform as radial shape — audio literally drawn as geometry */
+    if(waveData) {
+      var pts=Math.min(waveData.length,256);
+      ctx.beginPath();
+      for(var i=0;i<pts;i++){
+        var v=waveData[i]/128-1;
+        var angle=(i/pts)*Math.PI*2+_milkRot;
+        var rr=R*(0.28+Math.abs(v)*0.5*(1+bass*1.8));
+        var x=cx+Math.cos(angle)*rr, y=cy+Math.sin(angle)*rr;
+        i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle='hsla('+((_milkHue+60)%360)+',85%,65%,'+(0.55+bass*0.4)+')';
+      ctx.lineWidth=1.5+bass*2.5; ctx.stroke();
+    } else {
+      ctx.beginPath();
+      for(var i=0;i<128;i++){
+        var v=Math.sin(t*2+i*0.12)*0.12;
+        var angle=(i/128)*Math.PI*2+_milkRot;
+        var rr=R*(0.35+v);
+        i===0?ctx.moveTo(cx+Math.cos(angle)*rr,cy+Math.sin(angle)*rr)
+             :ctx.lineTo(cx+Math.cos(angle)*rr,cy+Math.sin(angle)*rr);
+      }
+      ctx.closePath();
+      ctx.strokeStyle='hsla('+_milkHue+',65%,50%,0.25)'; ctx.lineWidth=1; ctx.stroke();
+    }
+
+    /* frequency spokes — each band gets its own hue */
+    if(freqData) {
+      var spokes=60;
+      for(var i=0;i<spokes;i++){
+        var bin=Math.floor(i/spokes*110);
+        var v=freqData[bin]/255;
+        var angle=(i/spokes)*Math.PI*2+_milkRot*0.6;
+        var r0=R*0.1, r1=R*(0.1+v*0.52*(1+bass*0.7));
+        var hue=(_milkHue+i/spokes*360)%360;
+        ctx.beginPath();
+        ctx.moveTo(cx+Math.cos(angle)*r0,cy+Math.sin(angle)*r0);
+        ctx.lineTo(cx+Math.cos(angle)*r1,cy+Math.sin(angle)*r1);
+        ctx.strokeStyle='hsla('+hue+',90%,62%,'+(0.35+v*0.55)+')';
+        ctx.lineWidth=1+v*2.5; ctx.stroke();
+      }
+    }
+
+    /* center orb */
+    var orbR=R*(0.07+bass*0.11);
+    var og=ctx.createRadialGradient(cx,cy,0,cx,cy,orbR);
+    og.addColorStop(0,'hsla('+_milkHue+',100%,88%,'+(0.85+bass*0.15)+')');
+    og.addColorStop(0.5,'hsla('+((_milkHue+50)%360)+',90%,55%,0.55)');
+    og.addColorStop(1,'hsla('+((_milkHue+100)%360)+',80%,30%,0)');
+    ctx.fillStyle=og; ctx.beginPath(); ctx.arc(cx,cy,orbR,0,Math.PI*2); ctx.fill();
+  }
+
   /* ── DOM ── */
   var artEl    = document.getElementById('pl-art');
   var artGrad  = document.getElementById('pl-art-grad');
@@ -801,8 +912,13 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   function _drawFrame(ctx, cv, op, freqData, waveData, amps, numBars) {
     var W = cv.offsetWidth, H = cv.offsetHeight;
     if (!W || !H) return;
-    cv.width = W; cv.height = H;
-    ctx.clearRect(0, 0, W, H);
+    if (_visMode !== 5) {
+      cv.width = W; cv.height = H;
+      ctx.clearRect(0, 0, W, H);
+    } else if (W !== _milkDimW || H !== _milkDimH) {
+      cv.width = W; cv.height = H;
+      _milkDimW = W; _milkDimH = H;
+    }
     var nb = numBars || amps.length;
     /* ── MODE 0: Bars ── */
     if (_visMode === 0) {
@@ -843,8 +959,11 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     } else if (_visMode === 3) {
       _drawOregon(ctx, W, H, freqData, _visT);
     /* ── MODE 4: PNW Coast ── */
-    } else {
+    } else if (_visMode === 4) {
       _drawCoast(ctx, W, H, freqData, waveData, _visT);
+    /* ── MODE 5: Milk ── */
+    } else {
+      _drawMilk(ctx, cv, W, H, freqData, waveData, _visT);
     }
   }
   function _drawVis() {
@@ -859,7 +978,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
       for (var _s = 0; _s < _rf.length; _s += 4) {
         if (_rf[_s] > 2) { freqData = _rf; break; }
       }
-      if (_visMode === 2 || _visMode === 4) {
+      if (_visMode === 2 || _visMode === 4 || _visMode === 5) {
         waveData = new Uint8Array(visAnalyser.fftSize);
         visAnalyser.getByteTimeDomainData(waveData);
       }
@@ -1253,7 +1372,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     if (isVideo) leaveVideo(); else enterVideo();
   });
   if (visBtn) visBtn.addEventListener('click', function() {
-    _visMode = (_visMode + 1) % 5;
+    _visMode = (_visMode + 1) % 6;
     visBtn.textContent = _visModeLabels[_visMode];
     visBtn.title = 'Visualizer: ' + _visModeNames[_visMode];
   });
