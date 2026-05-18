@@ -1268,7 +1268,10 @@ function getDefaultView() {
   const isPhone = w < 600;   // phones only; head units (700–1024px) get hybrid
   if (saved) {
     if (isPhone && (saved === 'map' || saved === 'hybrid' || saved === 'car')) return 'list';
-    if (saved === 'list' && savedW > w + 300) return 'hybrid';
+    if (saved === 'list' && !isPhone) {
+      // savedW === 0 means stale pre-width-tracking pref; treat as unknown → hybrid
+      if (savedW === 0 || savedW > w + 200) return 'hybrid';
+    }
     return saved;
   }
   return isPhone ? 'list' : 'hybrid';
