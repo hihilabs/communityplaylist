@@ -507,3 +507,28 @@ body.has-player .ev-list { padding-bottom: 80px; }
   .ev-card h2 { font-size: .92em; }
   .fb-search { font-size: .88em; }
 }
+
+/* ── Inline view switcher (mobile only, inside sticky filter bar) ── */
+.fb-view-bar {
+  display: none; /* hidden on desktop — .view-float handles it there */
+  border-top: 1px solid #1e1e1e;
+}
+.fb-view-btn {
+  flex: 1;
+  padding: 9px 4px;
+  background: none;
+  border: none;
+  border-right: 1px solid #1e1e1e;
+  color: #666;
+  font-size: .76em;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, background .15s;
+}
+.fb-view-btn:last-child { border-right: none; }
+.fb-view-btn:hover { color: var(--orange); }
+.fb-view-btn.active { color: var(--orange); background: #1a0d00; }
+@media (max-width: 768px) {
+  .fb-view-bar { display: flex; }
+}

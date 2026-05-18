@@ -18,14 +18,12 @@ body{background:#111;color:#eee;font-family:sans-serif}
 @media(min-width:769px){
   .fb-search-row{display:none!important}
 }
-/* Mobile: keep genre chips visible always; let WHEN/HOOD/Free collapse via Filters pill */
+/* Mobile: keep genre chips visible always; let WHEN/HOOD/Free collapse via Filters pill.
+   View switcher lives inside the filter bar (fb-view-bar) — hide the floating version. */
 @media(max-width:768px){
   .fb-controls{max-height:500px!important;opacity:1!important;overflow:visible!important;transition:none!important}
   .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
-  /* Move view-float to bottom-right so it doesn't overlap the sticky filter bar */
-  .view-float{top:auto!important;bottom:96px;right:10px}
-  /* When player active, stay above 88px bar */
-  body.has-player .view-float{bottom:96px}
+  .view-float{display:none!important}
 }
 /* Happening now — cards glow gold in the main list (no strip needed) */
 /* Category badges */

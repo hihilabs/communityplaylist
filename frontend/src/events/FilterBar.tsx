@@ -18,6 +18,13 @@ const DATES = [
   { id: 'weekend', label: 'Weekend' },
 ]
 
+const VIEWS = [
+  { id: 'list',   label: '≡ List' },
+  { id: 'map',    label: '⊙ Map' },
+  { id: 'hybrid', label: '⊟ Hybrid' },
+  { id: 'car',    label: '🚗 Car' },
+]
+
 interface Props {
   filters: FilterState
   neighborhoods: string[]
@@ -66,6 +73,20 @@ export function FilterBar({ filters, neighborhoods, count, total, hasActive, onP
   }, [])
 
   const showControls = searchFocused || hasActive
+
+  // Track active view from body class (set by vanilla setView() in event_list.html)
+  const [activeView, setActiveView] = useState(() => {
+    const m = document.body.className.match(/\bview-(\w+)\b/)
+    return m ? m[1] : 'list'
+  })
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const m = document.body.className.match(/\bview-(\w+)\b/)
+      if (m) setActiveView(m[1])
+    })
+    obs.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
+  }, [])
 
   return (
     <div className="fb-root">
@@ -179,6 +200,19 @@ export function FilterBar({ filters, neighborhoods, count, total, hasActive, onP
             : `${count} of ${total} events`}
         </div>
       )}
+
+      {/* View switcher — only rendered on mobile via CSS (desktop uses .view-float) */}
+      <div className="fb-view-bar">
+        {VIEWS.map(v => (
+          <button
+            key={v.id}
+            className={`fb-view-btn${activeView === v.id ? ' active' : ''}`}
+            onClick={() => (window as any).setView?.(v.id)}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
