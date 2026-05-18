@@ -34,6 +34,8 @@
     #pl-fs-btn{background:none;border:none;color:#555;cursor:pointer;font-size:1em;padding:3px 7px;border-radius:4px;transition:color .15s;line-height:1}
     #pl-fs-btn:hover,#pl-fs-btn.active{color:#ff6b35}
     @media(display-mode:standalone),(display-mode:fullscreen){#pl-fs-btn{display:none!important}}
+    /* Car mode always shows the fullscreen button */
+    .pl-wrap.car-mode #pl-fs-btn{display:flex!important}
 
     /* ── Car mode — full-width, no sidebar, big touch targets ── */
     .pl-wrap.car-mode .pl-header{height:0;overflow:hidden;border:none;padding:0}
@@ -1616,8 +1618,10 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
 
   function plToggleFs() {
     var el = document.documentElement;
-    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-      (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+    var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs) {
+      var fn = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (fn) { var p = fn.call(el); if (p && p.catch) p.catch(function(){}); }
     } else {
       (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
     }

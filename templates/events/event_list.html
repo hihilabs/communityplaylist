@@ -121,6 +121,8 @@ body.has-panel .view-float{opacity:0;pointer-events:none;transition:opacity .2s}
 #view-fs-btn{background:none;border:none;border-left:1px solid #2a2a2a;color:#555;cursor:pointer;padding:0 10px;font-size:.9em;display:flex;align-items:center;min-height:40px;transition:color .15s;flex-shrink:0}
 #view-fs-btn:hover,#view-fs-btn.active{color:#ff6b35}
 @media(display-mode:standalone),(display-mode:fullscreen){#view-fs-btn{display:none!important}}
+/* Car view always shows the fullscreen button regardless of display-mode */
+body.view-car #view-fs-btn{display:flex!important}
 @media(max-width:640px){
   .filter-search-row{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .filter-search-row::-webkit-scrollbar{display:none}
@@ -173,7 +175,7 @@ body.view-car .filter-bar{display:none!important}
 body.view-car #events-list{display:none}
 body.view-car .events-grid{display:none}
 body.view-car #map{display:block!important;position:fixed;inset:0;height:auto!important;z-index:1}
-body.view-car .cp-bar{z-index:10000}
+body.view-car .cp-bar{z-index:10000!important;transform:none!important;opacity:1!important}
 body.view-car .view-float{top:10px;right:10px;z-index:10001}
 body.view-car.has-panel .view-float{opacity:1;pointer-events:auto}
 /* Heading arrow inside car user-location dot */
@@ -1144,6 +1146,10 @@ function setView(v, persist, instant) {
     // Car-mode body class drives mini-player sizing
     if (v === 'car') {
       document.body.classList.add('car-mode');
+      // Close any open right panel so has-panel can't slide the player bar off
+      document.body.classList.remove('has-panel');
+      var _cp = document.querySelector('.cp-panel');
+      if (_cp) _cp.classList.remove('open');
     } else if (wascar) {
       if (!document.fullscreenElement && !document.webkitFullscreenElement)
         document.body.classList.remove('car-mode');
@@ -1312,8 +1318,13 @@ window.addEventListener('pageshow', function(e) {
 // ── Fullscreen toggle (⛶ button — useful on car head units / kiosks) ────────
 function cpToggleFullscreen() {
   var el = document.documentElement;
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-    (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (!isFs) {
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (fn) {
+      var p = fn.call(el);
+      if (p && p.catch) p.catch(function() { /* browser blocked — car view is already near-fullscreen */ });
+    }
   } else {
     (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
   }
