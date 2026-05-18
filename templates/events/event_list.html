@@ -18,14 +18,11 @@ body{background:#111;color:#eee;font-family:sans-serif}
 @media(min-width:769px){
   .fb-search-row{display:none!important}
 }
-/* Mobile: filter-bar search row is the only search; keep it. Hide expanded section toggle
-   (filters are always open on mobile) and hide the view switcher */
+/* Mobile: keep genre chips visible always; let WHEN/HOOD/Free collapse via Filters pill */
 @media(max-width:768px){
   .fb-controls{max-height:500px!important;opacity:1!important;overflow:visible!important;transition:none!important}
-  .fb-expanded{max-height:400px!important;transition:none!important}
   .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
-  .fb-filter-pill{display:none!important}
-  .view-float{display:none!important}
+  /* view-float stays visible on mobile — collapsed to active-btn + caret so it's compact */
 }
 /* Happening now — cards glow gold in the main list (no strip needed) */
 /* Category badges */
