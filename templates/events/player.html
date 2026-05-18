@@ -35,23 +35,31 @@
     #pl-fs-btn:hover,#pl-fs-btn.active{color:#ff6b35}
     @media(display-mode:standalone),(display-mode:fullscreen){#pl-fs-btn{display:none!important}}
 
-    /* ── Car mode ── big controls for head unit / tablet fullscreen ── */
-    .pl-wrap.car-mode .pl-header{height:36px;padding:0 10px}
-    .pl-wrap.car-mode .pl-stage{width:min(62vw,680px)}
-    .pl-wrap.car-mode .pl-info{padding:12px 20px 6px}
-    .pl-wrap.car-mode .pl-title{font-size:1.28em}
-    .pl-wrap.car-mode .pl-artist{font-size:.96em}
-    .pl-wrap.car-mode .pl-controls{gap:22px;padding:14px 20px 8px}
-    .pl-wrap.car-mode .pl-btn{font-size:1.3em;padding:6px}
-    .pl-wrap.car-mode #pl-play{width:70px;height:70px;font-size:1.65em}
-    .pl-wrap.car-mode .pl-seek-row{padding:8px 20px 4px}
-    .pl-wrap.car-mode .pl-seek{height:7px}
-    .pl-wrap.car-mode .pl-secondary{padding:6px 20px 14px}
-    .pl-wrap.car-mode .pl-q-item{padding:10px 10px}
-    .pl-wrap.car-mode .pl-q-art{width:44px;height:44px}
-    .pl-wrap.car-mode .pl-q-title{font-size:.92em}
-    .pl-wrap.car-mode .pl-q-artist{font-size:.78em}
-    .pl-wrap.car-mode .pl-ch{padding:6px 16px;font-size:.83em}
+    /* ── Car mode — full-width, no sidebar, big touch targets ── */
+    .pl-wrap.car-mode .pl-header{height:0;overflow:hidden;border:none;padding:0}
+    .pl-wrap.car-mode .pl-stage{width:100%;border-right:none}
+    .pl-wrap.car-mode .pl-sidebar{display:none}
+    .pl-wrap.car-mode .pl-info{padding:14px 28px 6px}
+    .pl-wrap.car-mode .pl-title{font-size:1.6em;line-height:1.2}
+    .pl-wrap.car-mode .pl-artist{font-size:1.05em;margin-top:5px}
+    .pl-wrap.car-mode .pl-meta{font-size:.88em;margin-top:3px}
+    .pl-wrap.car-mode .pl-controls{gap:28px;padding:16px 28px 8px;justify-content:center}
+    .pl-wrap.car-mode .pl-btn{font-size:1.7em;padding:8px;width:56px;height:56px;display:flex;align-items:center;justify-content:center;border-radius:8px}
+    .pl-wrap.car-mode #pl-play{width:84px;height:84px;font-size:2.1em}
+    .pl-wrap.car-mode .pl-seek-row{padding:10px 28px 2px}
+    .pl-wrap.car-mode .pl-seek{height:9px;border-radius:5px}
+    .pl-wrap.car-mode .pl-seek-row span{font-size:.85em;width:44px}
+    .pl-wrap.car-mode .pl-secondary{padding:6px 28px 10px;gap:18px}
+    /* Car bar: genre nav + queue toggle, shown only in car mode */
+    .pl-car-bar{display:none;align-items:center;border-top:1px solid #1a1a1a;background:#090909;flex-shrink:0;height:44px}
+    .pl-wrap.car-mode .pl-car-bar{display:flex}
+    .pl-car-ch-btn{background:none;border:none;color:#3a3a3a;cursor:pointer;font-size:1.1em;padding:10px 18px;line-height:1;transition:color .15s;flex-shrink:0}
+    .pl-car-ch-btn:hover{color:#ff6b35}
+    .pl-car-genre-name{flex:1;text-align:center;font-family:monospace;font-size:.76em;letter-spacing:.07em;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+    .pl-car-q-btn{background:none;border:none;border-left:1px solid #1a1a1a;color:#3a3a3a;cursor:pointer;font-size:1.1em;padding:10px 18px;line-height:1;transition:color .15s;flex-shrink:0}
+    .pl-car-q-btn:hover,.pl-car-q-btn.active{color:#ff6b35}
+    /* Queue overlay in car mode */
+    .pl-wrap.car-mode.car-q-open .pl-sidebar{display:flex;position:absolute;right:0;top:0;bottom:0;width:min(360px,60vw);z-index:20;background:#0d0d0d;border-left:1px solid #1e1e1e;box-shadow:-8px 0 32px rgba(0,0,0,.8)}
     .pl-header a{color:#555;font-size:.8em;text-decoration:none}
     .pl-header a:hover{color:#ff6b35}
     #pl-install-btn:hover{color:#ff6b35}
@@ -281,6 +289,14 @@
         <input type="range" id="pl-vol" min="0" max="100" value="80">
         <button class="pl-btn" id="pl-video-btn" title="Video mode">📺</button>
         <button class="pl-btn" id="pl-vis-btn" title="Visualizer style">▮▮▮</button>
+      </div>
+
+      <!-- Car mode bar: genre nav + queue toggle -->
+      <div class="pl-car-bar">
+        <button class="pl-car-ch-btn" id="pl-car-prev-ch" title="Previous genre">◀</button>
+        <span class="pl-car-genre-name" id="pl-car-genre-name">ALL</span>
+        <button class="pl-car-ch-btn" id="pl-car-next-ch" title="Next genre">▶</button>
+        <button class="pl-car-q-btn" id="pl-car-q-btn" title="Queue">☰</button>
       </div>
 
     </div>
@@ -1618,11 +1634,65 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
       _plFsBtn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
       _plFsBtn.classList.toggle('active', isFs);
     }
+    _carUpdateGenreLabel();
   }
   document.addEventListener('fullscreenchange', _syncPlCarMode);
   document.addEventListener('webkitfullscreenchange', _syncPlCarMode);
   window.addEventListener('resize', _syncPlCarMode);
   _syncPlCarMode();
+
+  /* ── Car bar: genre nav + queue overlay ── */
+  function _carGetChs() { return Array.from(document.querySelectorAll('#pl-channels .pl-ch')); }
+  function _carActiveIdx() {
+    var chs = _carGetChs();
+    for (var i = 0; i < chs.length; i++) if (chs[i].classList.contains('active')) return i;
+    return 0;
+  }
+  function _carUpdateGenreLabel() {
+    var lbl = document.getElementById('pl-car-genre-name');
+    if (!lbl) return;
+    var chs = _carGetChs();
+    var active = chs[_carActiveIdx()];
+    lbl.textContent = active ? active.textContent.trim() : 'ALL';
+  }
+
+  var _carPrevCh = document.getElementById('pl-car-prev-ch');
+  var _carNextCh = document.getElementById('pl-car-next-ch');
+  var _carQBtn   = document.getElementById('pl-car-q-btn');
+
+  if (_carPrevCh) _carPrevCh.addEventListener('click', function() {
+    var chs = _carGetChs(), i = _carActiveIdx();
+    var t = chs[(i - 1 + chs.length) % chs.length];
+    if (t) { t.click(); setTimeout(_carUpdateGenreLabel, 50); }
+  });
+  if (_carNextCh) _carNextCh.addEventListener('click', function() {
+    var chs = _carGetChs(), i = _carActiveIdx();
+    var t = chs[(i + 1) % chs.length];
+    if (t) { t.click(); setTimeout(_carUpdateGenreLabel, 50); }
+  });
+  if (_carQBtn) _carQBtn.addEventListener('click', function() {
+    var open = _plWrap.classList.toggle('car-q-open');
+    _carQBtn.classList.toggle('active', open);
+    // close on outside tap
+    if (open) {
+      setTimeout(function() {
+        document.addEventListener('click', function _closeQ(e) {
+          if (!document.getElementById('pl-q-list').contains(e.target) && e.target !== _carQBtn) {
+            _plWrap.classList.remove('car-q-open');
+            _carQBtn.classList.remove('active');
+          }
+          document.removeEventListener('click', _closeQ);
+        });
+      }, 10);
+    }
+  });
+
+  // Keep car genre label in sync when channels are rebuilt
+  var _chWrap = document.getElementById('pl-channels');
+  if (_chWrap && window.MutationObserver) {
+    new MutationObserver(function() { setTimeout(_carUpdateGenreLabel, 80); })
+      .observe(_chWrap, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  }
 })();
 </script>
 </body>
