@@ -173,7 +173,7 @@ function _cpGenreAccent(g) {
   var current      = 0;
   var genre        = 'all';
   var cachedGenres = [];
-  var shuffleMode  = false;
+  var shuffleMode  = localStorage.getItem('cp_shuffle') === '1';
   var shuffleOrder = [];
   var repeatMode   = 0;  // 0=off 1=one 2=all
   var _pendingVideo = null;
@@ -456,7 +456,8 @@ function _cpGenreAccent(g) {
       if (shuffleMode) buildShuffleOrder();
       window._cpTracks  = tracks;
       window._cpCurrent = current;
-      loadTrack(restoreIdx || 0, seekTo || 0);
+      var startIdx = restoreIdx != null ? restoreIdx : (shuffleMode ? Math.floor(Math.random() * tracks.length) : 0);
+      loadTrack(startIdx, seekTo || 0);
     }).catch(function(){ show(); setTrackDisplay('-- offline --', '', '', ''); });
   }
 
@@ -666,7 +667,7 @@ function _cpGenreAccent(g) {
     show(); audio.volume = 0.8;
     loadTrack(current); _playCurrentTrack();
   };
-  window.cpSetShuffle  = function(on){ shuffleMode = on; if (on) buildShuffleOrder(); window._cpShuffleMode = on; };
+  window.cpSetShuffle  = function(on){ shuffleMode = on; if (on) buildShuffleOrder(); window._cpShuffleMode = on; localStorage.setItem('cp_shuffle', on ? '1' : '0'); };
   window.cpSetRepeat   = function(m){ repeatMode = m; window._cpRepeatMode = m; };
   window.cpPlayIdx     = function(idx){ loadTrack(idx); _playCurrentTrack(); };
   window.cpPlayCurrent = function(){ _playCurrentTrack(); };
@@ -1373,12 +1374,16 @@ function _cpGenreAccent(g) {
     if (window.cpGetNextIdx && window.cpPlayIdx) window.cpPlayIdx(window.cpGetNextIdx());
   });
 
-  if (shuffleBtn) shuffleBtn.addEventListener('click', function(){
-    var on = !window._cpShuffleMode;
-    if (window.cpSetShuffle) window.cpSetShuffle(on);
-    shuffleBtn.classList.toggle('active', on);
-    shuffleBtn.title = on ? 'Shuffle: on' : 'Shuffle: off';
-  });
+  if (shuffleBtn) {
+    shuffleBtn.classList.toggle('active', shuffleMode);
+    shuffleBtn.title = shuffleMode ? 'Shuffle: on' : 'Shuffle: off';
+    shuffleBtn.addEventListener('click', function(){
+      var on = !window._cpShuffleMode;
+      if (window.cpSetShuffle) window.cpSetShuffle(on);
+      shuffleBtn.classList.toggle('active', on);
+      shuffleBtn.title = on ? 'Shuffle: on' : 'Shuffle: off';
+    });
+  }
   if (repeatBtn) repeatBtn.addEventListener('click', function(){
     var rm = ((window._cpRepeatMode || 0) + 1) % 3;
     if (window.cpSetRepeat) window.cpSetRepeat(rm);

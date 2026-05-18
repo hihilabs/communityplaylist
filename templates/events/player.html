@@ -347,7 +347,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   var allTracks  = [];
   var tracks     = [];
   var current    = 0;
-  var shuffleOn  = false;
+  var shuffleOn  = localStorage.getItem('cp_shuffle') === '1';
   var shuffleOrd = [];
   var repeatMode = 0;   // 0=off 1=one 2=all
   var isVideo      = false;
@@ -1349,11 +1349,14 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     if (isVideo && !_inlineVideo) { nextVideoFn(); return; }
     nextTrack();
   });
+  shuffleBtn.classList.toggle('active', shuffleOn);
+  shuffleBtn.title = shuffleOn ? 'Shuffle: on' : 'Shuffle: off';
   shuffleBtn.addEventListener('click', function() {
     shuffleOn = !shuffleOn;
     if (shuffleOn) buildShuffleOrder();
     shuffleBtn.classList.toggle('active', shuffleOn);
     shuffleBtn.title = shuffleOn ? 'Shuffle: on' : 'Shuffle: off';
+    localStorage.setItem('cp_shuffle', shuffleOn ? '1' : '0');
   });
   repeatBtn.addEventListener('click', function() {
     repeatMode = (repeatMode + 1) % 3;
@@ -1530,7 +1533,11 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
         if (t.genre && !genres.includes(t.genre)) genres.push(t.genre);
       });
       buildChannels(genres);
-      if (tracks.length) loadTrack(0);
+      if (tracks.length) {
+        var startIdx = shuffleOn ? Math.floor(Math.random() * tracks.length) : 0;
+        loadTrack(startIdx);
+        if (shuffleOn) buildShuffleOrder();
+      }
     })
     .catch(function(e) { titleEl.textContent = 'Could not load tracks'; });
 
