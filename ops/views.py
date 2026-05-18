@@ -65,28 +65,26 @@ def _reload_gunicorn(user=None):
     """Send HUP to gunicorn master. Tries pidfile first, then /proc scan."""
     pid = None
     pidfile = getattr(settings, 'GUNICORN_PID_FILE', '/tmp/gunicorn.pid')
-    if os.path.exists(pidfile):
-        try:
-            pid = int(open(pidfile).read().strip())
-        except Exception:
-            pass
+    try:
+        with open(pidfile) as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        pass
 
     if not pid:
-        # Scan /proc for gunicorn master
         try:
             for entry in os.scandir('/proc'):
                 if not entry.name.isdigit():
                     continue
                 try:
-                    cmdline = open(f'/proc/{entry.name}/cmdline').read()
+                    with open(f'/proc/{entry.name}/cmdline') as f:
+                        cmdline = f.read()
                     if 'gunicorn' in cmdline and PROJECT_NAME.replace('-', '_') in cmdline:
-                        # Master has no parent gunicorn (ppid is not gunicorn)
-                        status = open(f'/proc/{entry.name}/status').read()
                         pid = int(entry.name)
                         break
-                except Exception:
+                except (OSError, ValueError):
                     continue
-        except Exception:
+        except OSError:
             pass
 
     if pid:
@@ -210,10 +208,13 @@ def run_cmd(request):
     else:
         return JsonResponse({'success': False, 'output': 'Unknown command'}, status=400)
 
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.accepts('application/json'):
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': success, 'output': output})
 
-    messages.success(request, output) if success else messages.error(request, output)
+    if success:
+        messages.success(request, output)
+    else:
+        messages.error(request, output)
     return redirect('ops:panel')
 
 

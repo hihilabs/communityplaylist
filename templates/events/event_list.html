@@ -1305,20 +1305,23 @@ window.addEventListener('pageshow', function(e) {
 
 // ── Recalculate map dimensions on resize / fullscreen change ──────────────────
 (function() {
+  var _resizeTimer;
   function _syncMapSize() {
-    if (!document.body.classList.contains('view-map') && !document.documentElement.classList.contains('is-hybrid')) return;
+    var isMap    = document.body.classList.contains('view-map');
+    var isHybrid = document.documentElement.classList.contains('is-hybrid');
+    if (!isMap && !isHybrid) return;
     var mapEl = document.getElementById('map');
     if (!mapEl) return;
-    // Recalculate --top-h for map-only view
-    if (document.body.classList.contains('view-map')) {
-      var top = mapEl.getBoundingClientRect().top;
-      document.documentElement.style.setProperty('--top-h', top + 'px');
+    if (isMap) {
+      document.documentElement.style.setProperty('--top-h', mapEl.getBoundingClientRect().top + 'px');
     }
-    if (map) {
-      setTimeout(function() { map.invalidateSize({animate: false}); }, 50);
-    }
+    if (map) { setTimeout(function() { map.invalidateSize({animate: false}); }, 50); }
   }
-  window.addEventListener('resize', _syncMapSize);
+  function _debouncedSync() {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(_syncMapSize, 150);
+  }
+  window.addEventListener('resize', _debouncedSync);
   document.addEventListener('fullscreenchange', _syncMapSize);
   document.addEventListener('webkitfullscreenchange', _syncMapSize);
 })();

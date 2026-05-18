@@ -51,10 +51,8 @@ def wiki_tokenize(tag: str) -> list[str]:
     result = []
     for p in parts:
         p = p.strip()
-        if not p:
-            continue
-        # Re-check parts against protected phrases (e.g. "J-R&B" inside a compound)
-        result.append(p if p in WIKI_PHRASES else p)
+        if p:
+            result.append(p)
     return result
 
 
