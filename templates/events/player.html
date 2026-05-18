@@ -369,8 +369,8 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
   var _visLogMin = Math.log(30), _visLogMax = Math.log(16000), _visNyquist = 22050;
   var _visT = 0, _visPlaying = false;
   var _visMode = 0; // 0=bars 1=mirror 2=scope 3=oregon
-  var _visModeLabels = ['▮▮▮','◈','〰','⛰'];
-  var _visModeNames  = ['Bars','Mirror','Scope','Oregon'];
+  var _visModeLabels = ['▮▮▮','◈','〰','⛰','🌊'];
+  var _visModeNames  = ['Bars','Mirror','Scope','Oregon','Coast'];
 
   /* ── Oregon landscape ── */
   var _oBass = 0, _oMid = 0, _oHigh = 0;
@@ -532,6 +532,185 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     }
   }
 
+  /* ── PNW Coast state ── */
+  var _oCoastX = 0, _oBeamAng = 0;
+  var _oSpray = (function() {
+    var a = []; for (var i = 0; i < 40; i++) a.push({x:0,y:0,vx:0,vy:0,life:0}); return a;
+  })();
+  /* [rel_x_in_repeat, rel_height, rel_width, is_haystack_shape] */
+  var _oStacks = [
+    [0.15, 0.42, 0.055, 1], // Haystack Rock
+    [0.27, 0.14, 0.020, 0], // needle
+    [0.29, 0.19, 0.026, 0], // needle 2
+    [0.60, 0.30, 0.042, 1], // mid stack
+    [0.80, 0.16, 0.025, 0],
+    [0.91, 0.11, 0.017, 0],
+  ];
+  var _oLhRx = 0.48; // lighthouse position within repeat
+
+  function _drawCoast(ctx, W, H, freqData, waveData, t) {
+    var rb=0,rm=0,rh=0;
+    if (freqData) {
+      for(var i=0;i<8;i++)   rb+=freqData[i]/255;
+      for(var i=8;i<60;i++)  rm+=freqData[i]/255;
+      for(var i=60;i<180;i++) rh+=freqData[i]/255;
+      rb/=8; rm/=52; rh/=120;
+    } else {
+      rb=0.04+Math.sin(t*0.6)*0.025;
+      rm=0.02+Math.sin(t*1.0+1)*0.015;
+      rh=0.01+Math.sin(t*1.5+2)*0.01;
+    }
+    _oBass+=(rb-_oBass)*0.22; _oMid+=(rm-_oMid)*0.18; _oHigh+=(rh-_oHigh)*0.28;
+    var bass=_oBass, mid=_oMid, high=_oHigh;
+
+    _oCoastX += (0.5 + bass*4) * (W/600);
+    var REPEAT=W*2.4, hz=H*0.40;
+
+    /* sky */
+    var skyG=ctx.createLinearGradient(0,0,0,hz);
+    skyG.addColorStop(0,'rgb(38,46,60)'); skyG.addColorStop(0.7,'rgb(78,93,110)'); skyG.addColorStop(1,'rgb(98,115,130)');
+    ctx.fillStyle=skyG; ctx.fillRect(0,0,W,hz+1);
+
+    /* cloud wisps */
+    ctx.save();
+    for(var i=0;i<6;i++) {
+      var cx=((i*0.19*W-_oCoastX*(0.08+i*0.02))%W+W)%W;
+      var cy=hz*(0.2+i*0.1), cw=W*(0.1+i*0.025);
+      ctx.globalAlpha=0.08+i*0.025; ctx.fillStyle='rgb(200,210,220)';
+      ctx.beginPath(); ctx.ellipse(cx,cy,cw,cw*0.28,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx+cw*0.45,cy-cw*0.08,cw*0.55,cw*0.22,0,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+
+    /* sea stacks scrolling */
+    for(var si=0;si<_oStacks.length;si++) {
+      var s=_oStacks[si];
+      var wx=((s[0]*REPEAT-_oCoastX)%REPEAT+REPEAT)%REPEAT;
+      if(wx>W+W*0.12) continue;
+      var sw=s[2]*W, sh=s[1]*hz*1.1, sy=hz-sh;
+      var stG=ctx.createLinearGradient(wx,sy,wx,hz);
+      stG.addColorStop(0,'rgba(24,21,18,0.93)'); stG.addColorStop(1,'rgba(16,14,12,0.98)');
+      ctx.fillStyle=stG;
+      ctx.beginPath();
+      if(s[3]) {
+        ctx.moveTo(wx-sw/2,hz);
+        ctx.bezierCurveTo(wx-sw/2,hz-sh*0.25,wx-sw*0.55,sy+sh*0.05,wx,sy-sh*0.05);
+        ctx.bezierCurveTo(wx+sw*0.55,sy+sh*0.05,wx+sw/2,hz-sh*0.25,wx+sw/2,hz);
+      } else {
+        ctx.moveTo(wx-sw/2,hz); ctx.lineTo(wx,sy); ctx.lineTo(wx+sw/2,hz);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle='rgba(60,100,130,0.18)';
+      ctx.beginPath(); ctx.ellipse(wx,hz+3,sw*0.65,5+bass*7,0,0,Math.PI*2); ctx.fill();
+    }
+
+    /* lighthouse */
+    var lhX=(((_oLhRx*REPEAT)-_oCoastX)%REPEAT+REPEAT)%REPEAT;
+    if(lhX<W+80) {
+      var cbY=hz+H*0.04, lhH=H*0.16;
+      ctx.beginPath();
+      ctx.moveTo(lhX-W*0.07,H); ctx.lineTo(lhX-W*0.07,cbY+H*0.06);
+      ctx.quadraticCurveTo(lhX,cbY-H*0.015,lhX+W*0.04,cbY+H*0.06);
+      ctx.lineTo(lhX+W*0.04,H); ctx.closePath();
+      ctx.fillStyle='rgba(32,28,25,0.95)'; ctx.fill();
+      ctx.fillStyle='rgba(228,224,218,0.92)'; ctx.fillRect(lhX-5,cbY-lhH,10,lhH);
+      ctx.fillStyle='rgba(200,192,180,0.95)'; ctx.fillRect(lhX-8,cbY-lhH-11,16,13);
+      /* CP-orange rotating beam */
+      _oBeamAng += 0.009+mid*0.05;
+      var bA=_oBeamAng%(Math.PI*2), bLen=W*0.75;
+      var bG=ctx.createLinearGradient(lhX,cbY-lhH-5,lhX+Math.cos(bA)*bLen,cbY-lhH-5+Math.sin(bA)*bLen);
+      bG.addColorStop(0,'rgba(255,107,53,0.6)'); bG.addColorStop(0.4,'rgba(255,160,80,0.15)'); bG.addColorStop(1,'rgba(255,107,53,0)');
+      ctx.beginPath();
+      ctx.moveTo(lhX,cbY-lhH-5);
+      ctx.lineTo(lhX+Math.cos(bA-0.1)*bLen,cbY-lhH-5+Math.sin(bA-0.1)*bLen);
+      ctx.lineTo(lhX+Math.cos(bA+0.1)*bLen,cbY-lhH-5+Math.sin(bA+0.1)*bLen);
+      ctx.closePath(); ctx.fillStyle=bG; ctx.fill();
+      ctx.fillStyle='rgba(255,200,100,'+(0.6+Math.sin(t*6)*0.35)+')';
+      ctx.beginPath(); ctx.arc(lhX,cbY-lhH-5,3+bass*5,0,Math.PI*2); ctx.fill();
+    }
+
+    /* ocean body */
+    var ocG=ctx.createLinearGradient(0,hz,0,H);
+    ocG.addColorStop(0,'rgb(28,58,82)'); ocG.addColorStop(0.6,'rgb(18,44,65)'); ocG.addColorStop(1,'rgb(10,28,45)');
+    ctx.fillStyle=ocG; ctx.fillRect(0,hz,W,H-hz);
+
+    /* back wave layers */
+    for(var layer=0;layer<3;layer++) {
+      var lf=(layer+1)/3;
+      var wY=hz+(H-hz)*(0.1+lf*0.3), wAmp=(5+lf*13)*(1+bass*(1+lf));
+      var wFreq=0.016-lf*0.003, wSpd=0.8+lf*0.6, wOff=_oCoastX*(0.2+lf*0.3);
+      ctx.beginPath();
+      for(var x=0;x<=W;x+=3){
+        var wy=wY+Math.sin((x+wOff)*wFreq+t*wSpd)*wAmp+Math.sin((x+wOff)*wFreq*1.8+t*wSpd*1.4)*wAmp*0.35;
+        x===0?ctx.moveTo(x,wy):ctx.lineTo(x,wy);
+      }
+      ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+      ctx.fillStyle='rgba('+(18+layer*5)+','+(48+layer*8)+','+(68+layer*6)+','+(0.35+lf*0.3)+')'; ctx.fill();
+    }
+
+    /* front wave — audio waveform drawn as ocean surface */
+    var fY=hz+(H-hz)*0.52, fAmp=18+bass*32;
+    function _wavePath() {
+      ctx.beginPath();
+      if(waveData) {
+        for(var x=0;x<=W;x+=2){
+          var wi=Math.floor(x/W*waveData.length);
+          var wy=fY+(waveData[wi]/128-1)*fAmp+Math.sin((x+_oCoastX*0.5)*0.02+t*1.5)*5;
+          x===0?ctx.moveTo(x,wy):ctx.lineTo(x,wy);
+        }
+      } else {
+        for(var x=0;x<=W;x+=3){
+          var wy=fY+Math.sin((x+_oCoastX*0.5)*0.02+t*1.5)*fAmp*0.4
+                   +Math.sin((x+_oCoastX*0.3)*0.038+t*2.1)*fAmp*0.2;
+          x===0?ctx.moveTo(x,wy):ctx.lineTo(x,wy);
+        }
+      }
+    }
+    _wavePath(); ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+    ctx.fillStyle='rgba(22,55,80,0.88)'; ctx.fill();
+    _wavePath();
+    ctx.strokeStyle='rgba(210,225,235,'+(0.22+bass*0.55)+')'; ctx.lineWidth=1.5; ctx.stroke();
+
+    /* spray particles */
+    if(bass>0.1) {
+      for(var i=0;i<_oSpray.length;i++){
+        if(_oSpray[i].life<=0 && Math.random()<bass*0.25)
+          _oSpray[i]={x:Math.random()*W,y:fY+(Math.random()-0.5)*fAmp*2,
+                      vx:(Math.random()-0.5)*2.5,vy:-(0.8+Math.random()*2)*bass,life:1};
+      }
+    }
+    for(var i=0;i<_oSpray.length;i++){
+      var p=_oSpray[i]; if(p.life<=0) continue;
+      p.x+=p.vx; p.y+=p.vy; p.vy+=0.06; p.life-=0.035;
+      var ps=1.5+p.life*2.5;
+      ctx.fillStyle='rgba(215,228,238,'+Math.max(0,p.life).toFixed(2)+')';
+      ctx.fillRect(p.x-ps/2,p.y-ps/2,ps,ps);
+    }
+
+    /* shore strip */
+    var shY=hz+(H-hz)*0.78;
+    var shG=ctx.createLinearGradient(0,shY,0,H);
+    shG.addColorStop(0,'rgba(148,138,120,0)'); shG.addColorStop(0.15,'rgba(145,133,115,0.65)'); shG.addColorStop(1,'rgba(130,118,100,0.88)');
+    ctx.beginPath();
+    for(var x=0;x<=W;x+=4){
+      var sy=shY+Math.sin((x+_oCoastX*0.08)*0.018)*7;
+      x===0?ctx.moveTo(x,sy):ctx.lineTo(x,sy);
+    }
+    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fillStyle=shG; ctx.fill();
+
+    /* birds */
+    ctx.strokeStyle='rgba(170,185,205,0.55)'; ctx.lineWidth=1;
+    for(var i=0;i<_oBirds.length;i++){
+      var b=_oBirds[i];
+      b.x+=b.vx*(1+high*3)+(3e-4*W/600); if(b.x>1.1) b.x=-0.1;
+      var bx=b.x*W, by=b.y*hz+Math.sin(t*2+b.ph)*hz*0.02, ws=3+high*5;
+      ctx.beginPath();
+      ctx.moveTo(bx-ws,by+Math.sin(t*7+b.ph)*1.5);
+      ctx.quadraticCurveTo(bx,by-2,bx+ws,by+Math.sin(t*7+b.ph)*1.5);
+      ctx.stroke();
+    }
+  }
+
   /* ── DOM ── */
   var artEl    = document.getElementById('pl-art');
   var artGrad  = document.getElementById('pl-art-grad');
@@ -661,8 +840,11 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
       ctx.stroke();
       ctx.shadowBlur = 0;
     /* ── MODE 3: Oregon ── */
-    } else {
+    } else if (_visMode === 3) {
       _drawOregon(ctx, W, H, freqData, _visT);
+    /* ── MODE 4: PNW Coast ── */
+    } else {
+      _drawCoast(ctx, W, H, freqData, waveData, _visT);
     }
   }
   function _drawVis() {
@@ -677,7 +859,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
       for (var _s = 0; _s < _rf.length; _s += 4) {
         if (_rf[_s] > 2) { freqData = _rf; break; }
       }
-      if (_visMode === 2) {
+      if (_visMode === 2 || _visMode === 4) {
         waveData = new Uint8Array(visAnalyser.fftSize);
         visAnalyser.getByteTimeDomainData(waveData);
       }
@@ -1071,7 +1253,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
     if (isVideo) leaveVideo(); else enterVideo();
   });
   if (visBtn) visBtn.addEventListener('click', function() {
-    _visMode = (_visMode + 1) % 4;
+    _visMode = (_visMode + 1) % 5;
     visBtn.textContent = _visModeLabels[_visMode];
     visBtn.title = 'Visualizer: ' + _visModeNames[_visMode];
   });
