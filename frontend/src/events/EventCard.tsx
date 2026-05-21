@@ -16,7 +16,14 @@ export function EventCard({ event: ev, onCategoryClick, onNeighborhoodClick }: P
   const href = `/events/${ev.slug}/`
 
   return (
-    <a className={`ev-card ev-cat-${cat}${ev.is_happening_now ? ' ev-now' : ''}`} href={href} data-cat={cat}>
+    <a
+      className={`ev-card event ev-cat-${cat}${ev.is_happening_now ? ' ev-now' : ''}`}
+      href={href}
+      data-cat={cat}
+      data-slug={ev.slug}
+      data-lat={ev.latitude ?? undefined}
+      data-lng={ev.longitude ?? undefined}
+    >
       <div className="ev-hdr">
         {cat && (
           <span
@@ -61,6 +68,16 @@ export function EventCard({ event: ev, onCategoryClick, onNeighborhoodClick }: P
           {ev.artists.length > 4 && <span className="ev-more"> +{ev.artists.length - 4}</span>}
         </div>
       )}
+
+      <div className="ev-actions">
+        <span
+          className="ev-flyer-link"
+          title="Create flyer"
+          onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(`/events/${ev.slug}/flyer/`, '_blank') }}
+        >
+          🎨 Flyer
+        </span>
+      </div>
     </a>
   )
 }

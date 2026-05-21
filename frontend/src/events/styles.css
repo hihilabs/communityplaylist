@@ -115,28 +115,24 @@
   opacity: 0;
 }
 .fb-controls.open {
-  max-height: 300px;
+  max-height: 600px;
   opacity: 1;
 }
 
 /* ── Category pills ────────────────────────────────────── */
 .fb-cats {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 0 10px 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  padding: 6px 10px 8px;
   align-items: center;
 }
-/* Filters pill — sits at the end of the category strip */
+/* Filters pill — no longer needs margin-left:auto since pills wrap naturally */
 .fb-filter-pill {
-  margin-left: auto;
   border-color: #333;
   position: relative;
 }
 .fb-filter-pill.has-active { border-color: var(--orange); color: var(--orange); }
-.fb-cats::-webkit-scrollbar { display: none; }
 
 .fb-cat-pill {
   flex-shrink: 0;
@@ -433,6 +429,22 @@
   text-overflow: ellipsis;
 }
 .ev-more { color: #555; }
+
+.ev-actions {
+  margin-top: 7px;
+  display: flex;
+  gap: 6px;
+}
+.ev-flyer-link {
+  font-size: .71em;
+  color: var(--faint);
+  cursor: pointer;
+  padding: 2px 7px;
+  border: 1px solid #1e1e1e;
+  border-radius: 4px;
+  transition: color .12s, border-color .12s;
+}
+.ev-flyer-link:hover { color: var(--orange); border-color: var(--orange); }
 
 /* ── Happening now ─────────────────────────────────────── */
 .ev-now {

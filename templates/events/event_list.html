@@ -26,6 +26,11 @@ body{background:#111;color:#eee;font-family:sans-serif}
   .fb-expanded-inner{padding:6px 10px 8px;gap:7px}
   .view-float{display:none!important}
 }
+/* Hybrid sidebar: fix pill overflow, pin filter bar to top of scroll container.
+   When header search triggers body.searching, don't hide the sidebar filter bar. */
+body.view-hybrid.searching .fb-root{display:block!important}
+body.view-hybrid .fb-root{top:0!important}
+
 /* Happening now — cards glow gold in the main list (no strip needed) */
 /* Category badges */
 .cat-music {background:#1e1228;color:#cc88ff}
@@ -150,22 +155,27 @@ body.view-map #events-list{display:none}
 body.view-map #map{display:block!important;height:calc(100vh - var(--top-h, 180px))}
 
 /* ── View: Hybrid ── */
-html.is-hybrid,html.is-hybrid body{height:100%;overflow:hidden}
-html.is-hybrid body{display:flex;flex-direction:column}
-html.is-hybrid .hybrid-wrap{flex:1;display:flex;overflow:hidden;min-height:0}
-html.is-hybrid #events-list{width:360px;flex-shrink:0;overflow-y:auto;border-right:1px solid #1a1a1a;scrollbar-width:thin;scrollbar-color:#2a2a2a #111}
-html.is-hybrid #events-list::-webkit-scrollbar{width:6px}
-html.is-hybrid #events-list::-webkit-scrollbar-track{background:#111}
-html.is-hybrid #events-list::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
-html.is-hybrid #events-list::-webkit-scrollbar-thumb:hover{background:#ff6b35}
-html.is-hybrid .events-grid{max-width:none;margin:0;padding:14px}
-html.is-hybrid .ev-list{padding:10px}
-html.is-hybrid .ev-cards{grid-template-columns:1fr!important}
+/* html.is-hybrid kept for JS compat (_syncMapSize check); CSS drives off body.view-hybrid */
+html.is-hybrid{overflow:hidden}
+body.view-hybrid{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+body.view-hybrid .hybrid-wrap{flex:1;display:flex;overflow:hidden;min-height:0}
+body.view-hybrid #events-list{width:360px;flex-shrink:0;overflow-y:auto;border-right:1px solid #1a1a1a;scrollbar-width:thin;scrollbar-color:#2a2a2a #111}
+body.view-hybrid #events-list::-webkit-scrollbar{width:6px}
+body.view-hybrid #events-list::-webkit-scrollbar-track{background:#111}
+body.view-hybrid #events-list::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
+body.view-hybrid #events-list::-webkit-scrollbar-thumb:hover{background:#ff6b35}
+body.view-hybrid .events-grid{max-width:none;margin:0;padding:14px}
+body.view-hybrid .ev-list{padding:10px}
+body.view-hybrid .ev-cards{grid-template-columns:1fr!important}
 /* Pad bottom of scrollable lists so last card isn't hidden behind player corner */
 body.has-player #events-list,
 body.has-player .events-grid{padding-bottom:220px}
-html.is-hybrid body.has-player #events-list{padding-bottom:220px}
-html.is-hybrid #map{flex:1;height:auto!important;display:block!important}
+body.view-hybrid.has-player #events-list{padding-bottom:220px}
+/* In hybrid the body is height:100vh overflow:hidden — base.html's body.has-player
+   padding-bottom:88px steals height from the flex layout, creating dead space at the
+   bottom of the map. Cancel it here; the player floats fixed over the map instead. */
+body.view-hybrid.has-player{padding-bottom:0!important}
+body.view-hybrid #map{flex:1;height:auto!important;display:block!important}
 
 /* ── View: Car (4th mode) — full-screen GPS map + car player ── */
 body.view-car .site-header{display:none}
@@ -192,6 +202,9 @@ body.view-car.has-panel .view-float{opacity:1;pointer-events:auto}
 .leaflet-bar a:last-child{border-radius:0 0 6px 6px!important;border-bottom-color:#2a2a2a!important}
 .leaflet-bar a:hover{background:#252525!important;color:#ff6b35!important}
 .leaflet-touch .leaflet-bar{border:none!important}
+/* Radar map control */
+.radar-map-btn{font-size:1em;line-height:26px!important;border-radius:6px!important}
+.radar-map-btn.active{background:#1a3a4a!important;color:#66ccff!important;border-color:#2a6a8a!important}
 .leaflet-control-attribution{background:rgba(17,17,17,.7)!important;color:#444!important}
 .leaflet-control-attribution a{color:#555!important}
 /* ── Dark popup ── */
@@ -283,10 +296,10 @@ a.event.ee-loading{opacity:.6;pointer-events:none}
 
 <!-- Floating view toggle — sits at top-right, overlays content -->
 <div class="view-float" id="view-float" aria-label="View mode">
-  <button type="button" class="view-btn active" data-view="list"   onclick="document.body.classList.contains('view-list') ? document.getElementById('view-float').classList.toggle('open') : setView('list')"   title="List">≡ List</button>
-  <button type="button" class="view-btn"         data-view="map"    onclick="document.body.classList.contains('view-map') ? document.getElementById('view-float').classList.toggle('open') : setView('map')"    title="Map">⊙ Map</button>
-  <button type="button" class="view-btn"         data-view="hybrid" onclick="document.body.classList.contains('view-hybrid') ? document.getElementById('view-float').classList.toggle('open') : setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
-  <button type="button" class="view-btn"         data-view="car"    onclick="document.body.classList.contains('view-car') ? document.getElementById('view-float').classList.toggle('open') : setView('car')"    title="Car">🚗 Car</button>
+  <button type="button" class="view-btn"        data-view="list"   onclick="document.body.classList.contains('view-list') ? document.getElementById('view-float').classList.toggle('open') : setView('list')"   title="List">≡ List</button>
+  <button type="button" class="view-btn"        data-view="map"    onclick="document.body.classList.contains('view-map') ? document.getElementById('view-float').classList.toggle('open') : setView('map')"    title="Map">⊙ Map</button>
+  <button type="button" class="view-btn active" data-view="hybrid" onclick="document.body.classList.contains('view-hybrid') ? document.getElementById('view-float').classList.toggle('open') : setView('hybrid')" title="Hybrid">⊟ Hybrid</button>
+  <button type="button" class="view-btn"        data-view="car"    onclick="document.body.classList.contains('view-car') ? document.getElementById('view-float').classList.toggle('open') : setView('car')"    title="Car">🚗 Car</button>
   <button type="button" class="view-float-caret" onclick="document.getElementById('view-float').classList.toggle('open')" aria-label="Show view options">▾</button>
   <button type="button" id="view-fs-btn" onclick="cpToggleFullscreen()" title="Fullscreen">⛶</button>
 </div>
@@ -406,6 +419,29 @@ function initMap() {
     }).setView([45.5051, -122.6750], 12);
     window.map = map;
   } catch(e) { return; }
+
+  // Radar toggle — Leaflet control in top-left below zoom buttons
+  var RadarControl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function() {
+      var wrap = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+      var btn  = L.DomUtil.create('a', 'radar-map-btn', wrap);
+      btn.id    = 'radar-btn';
+      btn.href  = '#';
+      btn.title = 'Precipitation radar';
+      btn.setAttribute('role', 'button');
+      btn.setAttribute('aria-label', 'Toggle precipitation radar');
+      btn.innerHTML = '🌧';
+      L.DomEvent.on(btn, 'click', function(e) {
+        L.DomEvent.preventDefault(e);
+        L.DomEvent.stopPropagation(e);
+        window.cpRadarToggle && window.cpRadarToggle();
+      });
+      return wrap;
+    }
+  });
+  new RadarControl().addTo(map);
+
   tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '© CARTO', crossOrigin: true,
   }).addTo(map);
@@ -522,12 +558,13 @@ window.addEventListener('cp:events-filtered', function(e) { _setMapMarkers(e.det
 
   window.cpRadarToggle = function() {
     radarOn = !radarOn;
+    var rb = document.getElementById('radar-btn');
     if (!radarOn) {
       if (radarLayer && window.map) { window.map.removeLayer(radarLayer); radarLayer = null; }
-      document.getElementById('radar-btn').classList.remove('active');
+      if (rb) rb.classList.remove('active');
       return;
     }
-    document.getElementById('radar-btn').classList.add('active');
+    if (rb) rb.classList.add('active');
     if (!window.map) {
       // Map not initialised yet — switch to hybrid view first, then show radar
       setView('hybrid', false);
@@ -538,17 +575,20 @@ window.addEventListener('cp:events-filtered', function(e) { _setMapMarkers(e.det
   };
 })();
 
-// Card hover ↔ marker
-document.querySelectorAll('.event[data-slug]').forEach(card => {
-  const slug = card.dataset.slug;
-  card.addEventListener('mouseenter', () => {
-    const m = markersBySlug[slug];
-    if (m) m.setIcon(makeIcon(true, categoryBySlug[slug]));
-  });
-  card.addEventListener('mouseleave', () => {
-    const m = markersBySlug[slug];
-    if (m && !card.classList.contains('highlighted')) m.setIcon(makeIcon(false, categoryBySlug[slug]));
-  });
+// Card hover ↔ marker — delegated so React-rendered cards work without rebinding
+document.addEventListener('mouseover', function(e) {
+  var card = e.target.closest('.event[data-slug]');
+  if (!card || card.contains(e.relatedTarget)) return;
+  var slug = card.dataset.slug;
+  var m = markersBySlug[slug];
+  if (m && !card.classList.contains('highlighted')) m.setIcon(makeIcon(true, categoryBySlug[slug]));
+});
+document.addEventListener('mouseout', function(e) {
+  var card = e.target.closest('.event[data-slug]');
+  if (!card || card.contains(e.relatedTarget)) return;
+  var slug = card.dataset.slug;
+  var m = markersBySlug[slug];
+  if (m && !card.classList.contains('highlighted')) m.setIcon(makeIcon(false, categoryBySlug[slug]));
 });
 
 // ── Idle map cycle with GPS route animation ──────────────────────────────────
@@ -1121,7 +1161,17 @@ function setView(v, persist, instant) {
   if (document.body.classList.contains('view-' + v)) {
     document.querySelectorAll('.view-btn[data-view]').forEach(b =>
       b.classList.toggle('active', b.dataset.view === v));
-    if (!mapInitialized && (v === 'map' || v === 'hybrid')) initMap();
+    document.documentElement.classList.toggle('is-hybrid', v === 'hybrid');
+    if (!mapInitialized && (v === 'map' || v === 'hybrid')) {
+      // Defer one frame so the flex layout is computed before Leaflet measures the container.
+      // Without this, L.map() reads 0×0 and no tiles load until the fallback invalidateSize.
+      requestAnimationFrame(function() {
+        initMap();
+        setTimeout(function() { if (map) map.invalidateSize({animate: false}); }, 150);
+      });
+    } else {
+      setTimeout(function() { if (map) map.invalidateSize({animate: false}); }, 220);
+    }
     return;
   }
 
@@ -1273,20 +1323,21 @@ function _carDirectionsPopup(e) {
 
 // ── Default view by screen size (respects saved preference) ──
 // One-time migration: clear prefs saved before hybrid-default landed (version < 2)
-if (localStorage.getItem('cp_view_ver') !== '2') {
+if (localStorage.getItem('cp_view_ver') !== '4') {
   localStorage.removeItem('cp_view');
   localStorage.removeItem('cp_view_w');
-  localStorage.setItem('cp_view_ver', '2');
+  localStorage.setItem('cp_view_ver', '4');
 }
 
 function getDefaultView() {
   const saved = localStorage.getItem('cp_view');
-  const savedW = parseInt(localStorage.getItem('cp_view_w') || '0');
   const w = window.innerWidth;
   const isPhone = w < 600;
   if (saved) {
-    if (isPhone && (saved === 'map' || saved === 'hybrid' || saved === 'car')) return 'list';
-    if (!isPhone && saved === 'list' && (savedW === 0 || savedW < 600)) return 'hybrid';
+    // Phone never defaults to map/hybrid/car
+    if (isPhone && saved !== 'list') return 'list';
+    // Desktop: 'list' is not a sticky preference — hybrid is always the desktop default
+    if (!isPhone && saved === 'list') return 'hybrid';
     return saved;
   }
   return isPhone ? 'list' : 'hybrid';

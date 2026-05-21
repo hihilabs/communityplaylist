@@ -274,6 +274,8 @@
     inputEl.addEventListener('input', function() {
       clearTimeout(debounce);
       var q = inputEl.value.trim();
+      // On the events page, also filter the sidebar + map in-place as the user types
+      if (window.cpSetSearch) window.cpSetSearch(q);
       debounce = setTimeout(function() { search(q); }, 280);
     });
 

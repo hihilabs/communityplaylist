@@ -20,6 +20,12 @@ export function EventsApp({ apiUrl, community }: Props) {
     }
   }, [])
 
+  // Expose hook so the universal site-header search can filter the event list in-place
+  useEffect(() => {
+    (window as any).cpSetSearch = (val: string) => patch({ search: val })
+    return () => { delete (window as any).cpSetSearch }
+  }, [patch])
+
   // Notify vanilla Leaflet map when filtered events change
   useEffect(() => {
     if (loading) return
