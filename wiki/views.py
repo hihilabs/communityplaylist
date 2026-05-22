@@ -10,6 +10,28 @@ from django.http import JsonResponse
 from .models import GenreToken, CompoundGenre, TokenAlias
 
 
+_SOURCE_LABELS = {
+    'lastfm':       'Last.fm',
+    'wikipedia':    'Wikipedia',
+    'musicbrainz':  'MusicBrainz',
+    'discogs':      'Discogs',
+    'listenbrainz': 'ListenBrainz',
+    'editmusic':    'edit.music',
+    'beatport':     'Beatport',
+    'allmusic':     'AllMusic',
+}
+_SOURCE_URLS = {
+    'lastfm':       'https://www.last.fm',
+    'wikipedia':    'https://en.wikipedia.org',
+    'musicbrainz':  'https://musicbrainz.org',
+    'discogs':      'https://www.discogs.com',
+    'listenbrainz': 'https://listenbrainz.org',
+    'editmusic':    'http://10.0.0.124:3001',
+    'beatport':     'https://www.beatport.com',
+    'allmusic':     'https://www.allmusic.com',
+}
+
+
 def token_list(request):
     q = request.GET.get('q', '').strip()
     tokens = GenreToken.objects.annotate(
@@ -28,12 +50,29 @@ def token_list(request):
         compounds = compounds.filter(
             Q(name__icontains=q) | Q(tokens__name__icontains=q)
         ).distinct()
+
+    # Build live source list — only show sources that actually have data
+    from wiki.models import TokenSource
+    live_sources = []
+    for row in (TokenSource.objects
+                .exclude(source='editmusic')   # library itself, not an external source
+                .values('source')
+                .annotate(n=Count('id'))
+                .filter(n__gt=0)
+                .order_by('-n')):
+        src = row['source']
+        live_sources.append({
+            'label': _SOURCE_LABELS.get(src, src),
+            'url':   _SOURCE_URLS.get(src, '#'),
+        })
+
     return render(request, 'wiki/token_list.html', {
-        'tokens': tokens,
-        'compounds': compounds,
-        'q': q,
-        'total_tokens': GenreToken.objects.count(),
+        'tokens':          tokens,
+        'compounds':       compounds,
+        'q':               q,
+        'total_tokens':    GenreToken.objects.count(),
         'total_compounds': CompoundGenre.objects.count(),
+        'live_sources':    live_sources,
     })
 
 
