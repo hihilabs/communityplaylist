@@ -226,7 +226,7 @@
   svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.55));
 
   // ── Load ─────────────────────────────────────────────────────────────
-  fetch('/api/graph/')
+  fetch('/wiki/api/graph/')
     .then(r => r.json())
     .then(data => {
       allNodes = data.nodes;
@@ -248,7 +248,7 @@
       .selectAll('g').data(nodes).join('g')
       .attr('class', 'g-node')
       .call(makeDrag())
-      .on('click', (e, d) => { window.location.href = '/token/' + d.slug + '/'; })
+      .on('click', (e, d) => { window.location.href = '/wiki/token/' + d.slug + '/'; })
       .on('mouseover', (e, d) => { showTip(e, d); highlightNeighborhood(d.slug); })
       .on('mousemove', moveTip)
       .on('mouseout',  ()  => { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); });

@@ -121,7 +121,7 @@ function _wikiLoadTrack(query, title, artist) {
     _wikiStartVideo(_wikiCache[query]);
     return;
   }
-  fetch('/api/yt/?q=' + encodeURIComponent(query))
+  fetch('/wiki/api/yt/?q=' + encodeURIComponent(query))
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.id) { _wikiCache[query] = d.id; _wikiStartVideo(d.id); }
