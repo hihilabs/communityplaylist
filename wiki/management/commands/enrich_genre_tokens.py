@@ -147,11 +147,11 @@ def _lastfm_tag(name: str, api_key: str) -> dict | None:
     return data.get('tag') if data else None
 
 
-def _lastfm_top_tracks(tag: str, api_key: str, limit: int = 5) -> list:
+def _lastfm_top_tracks(tag: str, api_key: str, limit: int = 5, delay: float = 0.35) -> list:
     data = _get(LASTFM_API, {
         'method': 'tag.gettoptracks', 'tag': tag,
         'api_key': api_key, 'format': 'json', 'limit': limit,
-    })
+    }, delay=delay)
     raw = (data or {}).get('tracks', {}).get('track', [])
     if isinstance(raw, dict):
         raw = [raw]
@@ -179,28 +179,34 @@ def _compound_lfm_search(token_names: list[str], api_key: str) -> tuple[str, lis
         tested.add(tag)
         return _lastfm_top_tracks(tag, api_key, limit=5)
 
-    # Full permutations for small sets (4! = 24 — feasible)
-    if n <= 4:
+    # Full permutations with space only (most common on Last.fm)
+    # Capped at 3 tokens (3!=6 calls) to keep it fast
+    if n <= 3:
         for perm in perms_fn(token_names):
-            for joiner in (' ', '-', ' & ', ' and '):
-                t = _try(joiner.join(perm).lower())
-                if len(t) >= 3:
-                    return joiner.join(perm).lower(), t
-    else:
-        for joiner in (' ', '-', ' & ', ' and '):
-            t = _try(joiner.join(token_names).lower())
+            t = _try(' '.join(perm).lower())
             if len(t) >= 3:
-                return joiner.join(token_names).lower(), t
+                return ' '.join(perm).lower(), t
+            t = _try('-'.join(perm).lower())
+            if len(t) >= 3:
+                return '-'.join(perm).lower(), t
 
-    # Sub-permutation fallback: shorter tags catch "trip hop" inside [Downtempo, Hop, Trip]
-    for sub_len in (3, 2):
-        if sub_len >= n:
-            continue
-        for perm in perms_fn(token_names, sub_len):
-            for joiner in (' ', '-'):
-                t = _try(joiner.join(perm).lower())
-                if len(t) >= 3:
-                    return joiner.join(perm).lower(), t
+    # For 4-token compounds, try all 24 space-joined orderings
+    elif n == 4:
+        for perm in perms_fn(token_names):
+            t = _try(' '.join(perm).lower())
+            if len(t) >= 3:
+                return ' '.join(perm).lower(), t
+
+    # Sub-permutation fallback: 2-token pairs catch "trip hop" in [Downtempo, Hop, Trip]
+    # and "hip hop" in larger compounds
+    if n >= 3:
+        for perm in perms_fn(token_names, 2):
+            t = _try(' '.join(perm).lower())
+            if len(t) >= 3:
+                return ' '.join(perm).lower(), t
+            t = _try('-'.join(perm).lower())
+            if len(t) >= 3:
+                return '-'.join(perm).lower(), t
 
     return '', []
 
