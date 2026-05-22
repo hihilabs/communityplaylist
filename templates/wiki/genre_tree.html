@@ -323,8 +323,8 @@
           return n._y >= yMid ? 'hanging' : 'auto';
         })
         .attr('fill', 'var(--muted)')
-        .attr('font-size', n => n.track_count > 500 ? '11px' : '9px')
-        .style('display', n => n.track_count > 100 ? null : 'none');
+        .attr('font-size', n => n.track_count > 800 ? '11px' : n.track_count > 300 ? '10px' : '9px')
+        .style('display', n => n.track_count > 80 ? null : 'none');
 
       // ── Highlight lineage on hover ──────────────────────────────
       function getLineage(node) {
@@ -362,7 +362,7 @@
           .attr('stroke-width', 1.5)
           .attr('stroke', n => genreColor(n.name));
         nodeG.select('text')
-          .style('display', n => n.track_count > 100 ? null : 'none')
+          .style('display', n => (n.track_count > 80 && !n._labelHidden) ? null : 'none')
           .attr('fill', 'var(--muted)');
         d3.selectAll('.t-link').style('opacity', 0.35);
       }
@@ -371,6 +371,38 @@
       const totalW = xScale(maxY) - xScale(minY) + MARGIN.left + MARGIN.right;
       const scaleX = W / (totalW + 40);
       svg.call(zoom.transform, d3.zoomIdentity.scale(scaleX).translate(0, 0));
+
+      // ── Label collision detection ──────────────────────────────────────
+      // Runs after zoom settles so getBoundingClientRect gives real screen coords.
+      // Keeps the label for the bigger node; hides anything that overlaps it.
+      setTimeout(() => {
+        const labeled = [];
+        nodeG.each(function(n) {
+          const el = d3.select(this).select('text').node();
+          if (!el || el.style.display === 'none') return;
+          const r = el.getBoundingClientRect();
+          if (r.width < 1) return;
+          labeled.push({ n, el, r });
+        });
+        // Largest nodes get priority — sort descending by track_count
+        labeled.sort((a, b) => (b.n.track_count || 0) - (a.n.track_count || 0));
+        const kept = [];
+        const PAD = 3;
+        labeled.forEach(item => {
+          const overlaps = kept.some(k =>
+            item.r.left   < k.r.right  + PAD &&
+            item.r.right  > k.r.left   - PAD &&
+            item.r.top    < k.r.bottom + PAD &&
+            item.r.bottom > k.r.top    - PAD
+          );
+          if (overlaps) {
+            item.n._labelHidden = true;
+            item.el.style.display = 'none';
+          } else {
+            kept.push(item);
+          }
+        });
+      }, 120);
     });
 
   window.addEventListener('resize', () => { W = wrap.clientWidth; H = wrap.clientHeight; });
