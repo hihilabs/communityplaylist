@@ -41,11 +41,7 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    command: >
-      sh -c "
-        echo '0 3 * * * python /app/manage.py refresh_genre_wiki --api-url http://10.0.0.124:3001 >> /var/log/wiki-cron.log 2>&1' | crontab - &&
-        crond -f -l 2
-      "
+    command: python /app/wiki/management/commands/wiki_cron_runner.py
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
       - ./wiki:/app/wiki
