@@ -447,7 +447,10 @@
         .scale(scale)
         .translate(-(target.x || 0), -(target.y || 0))
     );
-    if (nodeSel) highlightNeighborhood(slug);
+    // Populate search so the highlight stays sticky on mouse-out
+    searchInput.value = target.name;
+    activeSearch = target.name.toLowerCase();
+    applyHighlight();
   }
 
   // ── Wireframe toggle ──────────────────────────────────────────────────
