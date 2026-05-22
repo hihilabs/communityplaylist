@@ -1,3 +1,9 @@
+import json
+import urllib.request
+import urllib.parse
+
+from django.conf import settings
+from django.core.cache import cache
 from django.shortcuts import get_object_or_404, render
 from django.db.models import Q, Count
 from django.http import JsonResponse
@@ -41,6 +47,47 @@ def token_detail(request, slug):
 def genre_detail(request, slug):
     genre = get_object_or_404(CompoundGenre.objects.prefetch_related('tokens__sources'), slug=slug)
     return render(request, 'wiki/genre_detail.html', {'genre': genre})
+
+
+def api_yt_search(request):
+    """Proxy a YouTube video search, server-side cached so we don't burn quota on repeats."""
+    q = request.GET.get('q', '').strip()
+    if not q:
+        return JsonResponse({'error': 'no query'}, status=400)
+
+    cache_key = f'wiki_yt_{urllib.parse.quote(q[:100])}'
+    cached = cache.get(cache_key)
+    if cached:
+        return JsonResponse(cached)
+
+    api_key = getattr(settings, 'YOUTUBE_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'error': 'no key'}, status=503)
+
+    params = urllib.parse.urlencode({
+        'part': 'snippet', 'q': q, 'type': 'video',
+        'videoCategoryId': '10', 'maxResults': 1, 'key': api_key,
+    })
+    try:
+        req = urllib.request.Request(
+            f'https://www.googleapis.com/youtube/v3/search?{params}',
+            headers={'User-Agent': 'CommunityPlaylistWiki/1.0'},
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.load(r)
+        items = data.get('items', [])
+        if not items:
+            return JsonResponse({'error': 'no results'}, status=404)
+        item = items[0]
+        result = {
+            'id':    item['id']['videoId'],
+            'title': item['snippet']['title'],
+            'thumb': item['snippet']['thumbnails'].get('default', {}).get('url', ''),
+        }
+        cache.set(cache_key, result, 60 * 60 * 24 * 30)  # 30-day cache
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=502)
 
 
 def api_search(request):

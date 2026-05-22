@@ -34,6 +34,16 @@ class GenreToken(models.Model):
     track_count = models.PositiveIntegerField(default=0,
                                               help_text='Tracks in library carrying this token (updated by sync)')
 
+    # Discovery content — populated by enrich_genre_tokens --lastfm-tracks --youtube
+    top_tracks_json = models.JSONField(
+        default=list, blank=True,
+        help_text='Top tracks from Last.fm: [{name, artist, playcount, lastfm_url}]',
+    )
+    youtube_video_id = models.CharField(
+        max_length=20, blank=True,
+        help_text='YouTube video ID for genre overview/mix (populated by enrichment)',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

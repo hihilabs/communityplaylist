@@ -112,6 +112,59 @@
     }
     footer a { color: var(--muted); }
     footer a:hover { color: var(--accent); }
+
+    /* ── Genre track list + mini player ─────────────────────── */
+    .wiki-track-list { margin-top: 8px; }
+    .wiki-track-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .wiki-track-row:last-of-type { border-bottom: none; }
+    .wiki-play-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      width: 28px; height: 28px; border-radius: 4px;
+      cursor: pointer; font-size: 10px; flex-shrink: 0;
+      font-family: monospace; transition: all .15s;
+    }
+    .wiki-play-btn:hover, .wiki-play-btn.wiki-active {
+      border-color: var(--accent); color: var(--accent);
+    }
+    .wiki-track-info { flex: 1; min-width: 0; }
+    .wiki-track-title { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wiki-track-meta  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .wiki-track-link  { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .wiki-track-link:hover { color: var(--accent); }
+    .wiki-queue-btn {
+      margin-top: 14px;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); border-radius: 4px; padding: 6px 14px;
+      font-size: 12px; font-family: inherit; cursor: pointer; transition: all .15s;
+    }
+    .wiki-queue-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Sticky mini player bar ──────────────────────────────── */
+    #wiki-player-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #0a0a0c; border-top: 1px solid var(--border);
+      padding: 10px 20px; z-index: 999;
+      align-items: center; gap: 14px;
+      font-size: 12px;
+    }
+    #wiki-player-yt { width: 0; height: 0; overflow: hidden; }
+    .wiki-player-info { flex: 1; min-width: 0; }
+    #wiki-player-title  { color: var(--text); font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #wiki-player-artist { color: var(--muted); font-size: 11px; display: block; }
+    .wiki-player-btns { display: flex; gap: 6px; flex-shrink: 0; }
+    .wiki-player-btns button {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); width: 30px; height: 30px;
+      border-radius: 4px; cursor: pointer; font-size: 11px;
+      font-family: monospace; transition: all .15s;
+    }
+    .wiki-player-btns button:hover { border-color: var(--accent); color: var(--accent); }
+    body.wiki-player-open { padding-bottom: 60px; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>

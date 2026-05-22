@@ -23,6 +23,7 @@ from wiki.models import GenreToken, TokenSource
 
 LASTFM_API  = 'https://ws.audioscrobbler.com/2.0/'
 MB_API      = 'https://musicbrainz.org/ws/2/'
+YT_API      = 'https://www.googleapis.com/youtube/v3/'
 MB_CONTACT  = getattr(settings, 'MUSICBRAINZ_CONTACT', 'hello@communityplaylist.com')
 USER_AGENT  = f'CommunityPlaylistWiki/1.0 ( {MB_CONTACT} )'
 
@@ -80,6 +81,45 @@ def _get(url, params=None, delay=1.1):
         return None
 
 
+def _lastfm_top_tracks(name: str, api_key: str, limit: int = 5) -> list:
+    data = _get(LASTFM_API, {
+        'method': 'tag.gettoptracks',
+        'tag': name,
+        'api_key': api_key,
+        'format': 'json',
+        'limit': limit,
+    })
+    raw = (data or {}).get('tracks', {}).get('track', [])
+    if isinstance(raw, dict):  # Last.fm returns dict when only one result
+        raw = [raw]
+    result = []
+    for t in raw:
+        artist = t.get('artist', {})
+        result.append({
+            'name':       t.get('name', ''),
+            'artist':     artist.get('name', '') if isinstance(artist, dict) else str(artist),
+            'playcount':  int(t.get('playcount', 0) or 0),
+            'lastfm_url': t.get('url', ''),
+        })
+    return result
+
+
+def _youtube_search_video(name: str, api_key: str) -> str | None:
+    """Search YouTube for a genre overview/mix video, return video ID."""
+    data = _get(YT_API + 'search', {
+        'part': 'snippet',
+        'q': f'{name} genre music mix',
+        'type': 'video',
+        'videoCategoryId': '10',
+        'maxResults': 1,
+        'key': api_key,
+    }, delay=0.3)
+    items = (data or {}).get('items', [])
+    if items:
+        return items[0].get('id', {}).get('videoId')
+    return None
+
+
 def _lastfm_tag(name: str, api_key: str) -> dict | None:
     data = _get(LASTFM_API, {
         'method': 'tag.getinfo',
@@ -114,17 +154,26 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--lastfm-key', default='',
                             help='Last.fm API key (falls back to settings.LASTFM_API_KEY)')
+        parser.add_argument('--yt-key', default='',
+                            help='YouTube Data API key (falls back to settings.YOUTUBE_API_KEY)')
         parser.add_argument('--skip-mb', action='store_true',
                             help='Skip MusicBrainz lookups')
+        parser.add_argument('--lastfm-tracks', action='store_true',
+                            help='Fetch and store top 5 tracks per token from Last.fm')
+        parser.add_argument('--youtube', action='store_true',
+                            help='Search YouTube for a genre overview video per token')
         parser.add_argument('--force', action='store_true',
-                            help='Overwrite existing descriptions (default: only fill blanks)')
+                            help='Overwrite existing data (default: only fill blanks)')
         parser.add_argument('--dry-run', action='store_true')
 
     def handle(self, *args, **options):
-        api_key = options['lastfm_key'] or getattr(settings, 'LASTFM_API_KEY', '')
-        skip_mb = options['skip_mb']
-        force   = options['force']
-        dry     = options['dry_run']
+        api_key    = options['lastfm_key'] or getattr(settings, 'LASTFM_API_KEY', '')
+        yt_key     = options['yt_key']    or getattr(settings, 'YOUTUBE_API_KEY', '')
+        skip_mb    = options['skip_mb']
+        do_tracks  = options['lastfm_tracks']
+        do_youtube = options['youtube']
+        force      = options['force']
+        dry        = options['dry_run']
 
         tokens = list(GenreToken.objects.all().prefetch_related('sources'))
         self.stdout.write(f'Enriching {len(tokens)} tokens…')
@@ -179,6 +228,30 @@ class Command(BaseCommand):
                     self.stdout.write('mb✓', ending=' ')
                 else:
                     self.stdout.write('mb–', ending=' ')
+
+            # ── Last.fm top tracks ────────────────────────────────────────
+            if do_tracks and api_key:
+                if force or not token.top_tracks_json:
+                    tracks = _lastfm_top_tracks(token.name, api_key)
+                    if tracks:
+                        if not dry:
+                            token.top_tracks_json = tracks
+                        changed = True
+                        self.stdout.write(f'tracks({len(tracks)})✓', ending=' ')
+                    else:
+                        self.stdout.write('tracks–', ending=' ')
+
+            # ── YouTube overview video ────────────────────────────────────
+            if do_youtube and yt_key:
+                if force or not token.youtube_video_id:
+                    vid = _youtube_search_video(token.name, yt_key)
+                    if vid:
+                        if not dry:
+                            token.youtube_video_id = vid
+                        changed = True
+                        self.stdout.write(f'yt({vid})✓', ending=' ')
+                    else:
+                        self.stdout.write('yt–', ending=' ')
 
             # ── BPM / energy hints ────────────────────────────────────────
             hint = _BPM_HINTS.get(token.name)
