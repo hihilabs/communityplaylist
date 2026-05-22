@@ -1,5 +1,5 @@
 {% extends 'wiki/base.html' %}
-{% load wiki_tags humanize %}
+{% load wiki_tags %}
 
 {% block title %}{{ token.name }} — Genre Token{% endblock %}
 
@@ -33,6 +33,25 @@
   <p style="color: var(--text); margin-top: 12px; max-width: 680px;">{{ token.description }}</p>
 {% endif %}
 
+{% if token.origin_year or token.derived_from or token.derivatives.all %}
+<div style="margin: 16px 0 24px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; font-size: 12px;">
+  {% if token.origin_year %}<span style="color:var(--muted)">emerged ~{{ token.origin_year }}</span>{% endif %}
+  {% if token.derived_from %}
+    {% if token.origin_year %} · {% endif %}
+    <span style="color:var(--muted)">derived from </span>
+    <a href="{{ token.derived_from.get_absolute_url }}">{{ token.derived_from.name }}</a>
+  {% endif %}
+  {% if token.derivatives.all %}
+    {% if token.origin_year or token.derived_from %} · {% endif %}
+    <span style="color:var(--muted)">spawned </span>
+    {% for d in token.derivatives.all %}
+      <a href="{{ d.get_absolute_url }}">{{ d.name }}</a>{% if not forloop.last %}, {% endif %}
+    {% endfor %}
+  {% endif %}
+  <span style="float:right"><a href="{% url 'wiki:genre_graph' %}?focus={{ token.slug }}" style="color:var(--muted)">↗ see in graph</a></span>
+</div>
+{% endif %}
+
 {% if token.youtube_video_id or token.top_tracks_json %}
 <h2>Sound of {{ token.name }}</h2>
 
@@ -59,7 +78,7 @@
       onclick="wikiPlay(this)">▶</button>
     <div class="wiki-track-info">
       <div class="wiki-track-title">{{ track.name }}</div>
-      <div class="wiki-track-meta">{{ track.artist }}{% if track.playcount %} · {{ track.playcount|intcomma }} plays{% endif %}</div>
+      <div class="wiki-track-meta">{{ track.artist }}{% if track.playcount %} · {{ track.playcount }} plays{% endif %}</div>
     </div>
     {% if track.lastfm_url %}
     <a href="{{ track.lastfm_url }}" target="_blank" rel="noopener" class="wiki-track-link" title="Last.fm">↗</a>
@@ -184,6 +203,25 @@ function _wikiHighlight() {
 })();
 window.onYouTubeIframeAPIReady = function() {};
 </script>
+{% endif %}
+
+{% if fallback_compounds %}
+<h2>Sound of {{ token.name }}</h2>
+<p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+  <strong style="color:var(--text)">{{ token.name }}</strong> is a component token — it shapes these genres rather than standing alone.
+  Explore their sound for examples:
+</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+  {% for c in fallback_compounds %}
+  <a href="{{ c.get_absolute_url }}" style="display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--accent);border-radius:6px;padding:8px 14px;font-size:13px;color:var(--accent)">
+    {{ c.name }}
+    <span style="color:var(--muted);font-size:11px">{{ c.track_count }} tracks</span>
+  </a>
+  {% endfor %}
+</div>
+<p style="font-size:11px;color:var(--muted)">
+  <a href="{% url 'wiki:genre_graph' %}?focus={{ token.slug }}" style="color:var(--muted)">↗ See {{ token.name }}'s full web in the genre graph</a>
+</p>
 {% endif %}
 
 {% if token.compound_genres.all %}

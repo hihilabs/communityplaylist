@@ -39,14 +39,57 @@ def token_list(request):
 
 def token_detail(request, slug):
     token = get_object_or_404(GenreToken.objects.prefetch_related(
-        'aliases', 'sources', 'related', 'compound_genres'
+        'aliases', 'sources', 'related', 'compound_genres',
+        'derived_from', 'derivatives',
     ), slug=slug)
-    return render(request, 'wiki/token_detail.html', {'token': token})
+    # When a token has no direct track data, surface its richest compound genres
+    # so the template can guide the user toward actual audio examples.
+    fallback_compounds = []
+    if not token.top_tracks_json:
+        fallback_compounds = list(
+            token.compound_genres.order_by('-track_count')[:4]
+        )
+    return render(request, 'wiki/token_detail.html', {
+        'token': token,
+        'fallback_compounds': fallback_compounds,
+    })
 
 
 def genre_detail(request, slug):
     genre = get_object_or_404(CompoundGenre.objects.prefetch_related('tokens__sources'), slug=slug)
     return render(request, 'wiki/genre_detail.html', {'genre': genre})
+
+
+def genre_graph(request):
+    return render(request, 'wiki/genre_graph.html', {})
+
+
+def api_graph_data(request):
+    """JSON payload for the D3.js force graph — nodes (tokens) + links (related edges)."""
+    cached = cache.get('wiki_graph_data_v1')
+    if cached:
+        return JsonResponse(cached)
+
+    tokens = list(
+        GenreToken.objects
+        .prefetch_related('related')
+        .values('slug', 'name', 'track_count', 'bpm_min', 'bpm_max', 'energy')
+    )
+    slug_index = {t['slug']: t for t in tokens}
+
+    # Build undirected edges from the symmetric related M2M
+    seen = set()
+    links = []
+    for token_obj in GenreToken.objects.prefetch_related('related').only('slug'):
+        for rel in token_obj.related.only('slug'):
+            a, b = sorted([token_obj.slug, rel.slug])
+            if (a, b) not in seen:
+                seen.add((a, b))
+                links.append({'source': a, 'target': b})
+
+    data = {'nodes': tokens, 'links': links}
+    cache.set('wiki_graph_data_v1', data, 60 * 60)
+    return JsonResponse(data)
 
 
 def api_yt_search(request):

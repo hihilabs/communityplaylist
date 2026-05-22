@@ -1,0 +1,358 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}Genre Web — Community Playlist{% endblock %}
+
+{% block extra_head %}
+<style>
+  body { overflow: hidden; }
+  .container { padding: 0; max-width: none; }
+  footer { display: none; }
+
+  #graph-wrap {
+    position: fixed; inset: 56px 0 0 0;  /* below wiki header */
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  #graph-svg { width: 100%; height: 100%; cursor: grab; }
+  #graph-svg:active { cursor: grabbing; }
+
+  .g-node circle {
+    stroke-width: 1.5;
+    transition: r 0.15s;
+    cursor: pointer;
+  }
+  .g-node text {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    pointer-events: none;
+    user-select: none;
+  }
+  .g-link { stroke: #2a2a30; stroke-width: 1; }
+
+  /* ── Controls overlay ───────────────── */
+  #graph-controls {
+    position: fixed;
+    top: 68px; left: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 10;
+  }
+  #graph-search {
+    background: rgba(23,23,26,0.92);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 7px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    width: 220px;
+    backdrop-filter: blur(4px);
+  }
+  #graph-search:focus { outline: none; border-color: var(--accent); }
+  #graph-search::placeholder { color: var(--muted); }
+
+  #graph-legend {
+    background: rgba(23,23,26,0.88);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.8;
+    backdrop-filter: blur(4px);
+    min-width: 140px;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  /* ── Tooltip ────────────────────────── */
+  #graph-tip {
+    position: fixed;
+    background: rgba(23,23,26,0.95);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 20;
+    display: none;
+    max-width: 200px;
+    backdrop-filter: blur(4px);
+  }
+  #graph-tip .tip-name  { color: var(--text); font-weight: 600; margin-bottom: 2px; }
+  #graph-tip .tip-meta  { color: var(--muted); font-size: 11px; }
+
+  /* ── View toggle ────────────────────── */
+  #view-toggle {
+    position: fixed;
+    top: 68px; right: 16px;
+    display: flex; gap: 6px;
+    z-index: 10;
+  }
+  .view-btn {
+    background: rgba(23,23,26,0.88);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    padding: 6px 12px;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: all .15s;
+  }
+  .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+  @media (max-width: 600px) {
+    #graph-controls { top: auto; bottom: 20px; left: 12px; }
+    #graph-search { width: 180px; }
+    #graph-legend { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="graph-wrap">
+  <svg id="graph-svg"></svg>
+</div>
+
+<div id="graph-controls">
+  <input id="graph-search" type="text" placeholder="Search genres…" autocomplete="off">
+  <div id="graph-legend">
+    <div><span class="legend-dot" style="background:#7c6af7"></span>Electronic</div>
+    <div><span class="legend-dot" style="background:#f59e0b"></span>Hip-Hop / Rap</div>
+    <div><span class="legend-dot" style="background:#ef4444"></span>Rock / Metal</div>
+    <div><span class="legend-dot" style="background:#22c55e"></span>Jazz / Soul</div>
+    <div><span class="legend-dot" style="background:#06b6d4"></span>Drum &amp; Bass</div>
+    <div><span class="legend-dot" style="background:#ec4899"></span>Pop / Indie</div>
+    <div><span class="legend-dot" style="background:#f97316"></span>World / Folk</div>
+    <div><span class="legend-dot" style="background:#6b7280"></span>Other</div>
+  </div>
+</div>
+
+<div id="view-toggle">
+  <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
+  <button class="view-btn active">◉ Graph</button>
+</div>
+
+<div id="graph-tip">
+  <div class="tip-name" id="tip-name"></div>
+  <div class="tip-meta" id="tip-meta"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ── Genre family color ───────────────────────────────────────────────
+  function genreColor(name) {
+    const n = name.toLowerCase();
+    if (/house|techno|trance|electro|synth|rave|ambient|wave|drone|noise|industrial|ebm|idm|glitch/.test(n)) return '#7c6af7';
+    if (/hip|hop|rap|trap|drill|grime|boom|bap|crunk|mumble|cloud/.test(n)) return '#f59e0b';
+    if (/rock|metal|punk|grunge|hardcore|doom|thrash|death|black|post-rock|shoegaze/.test(n)) return '#ef4444';
+    if (/jazz|soul|blues|funk|gospel|swing|bossa|samba|latin|reggae|ska|dub/.test(n)) return '#22c55e';
+    if (/drum|bass|jungle|neurofunk|liquid|footwork|break/.test(n)) return '#06b6d4';
+    if (/pop|indie|alternative|dream|bedroom|lo-fi|chillwave/.test(n)) return '#ec4899';
+    if (/folk|world|afro|celtic|country|bluegrass|cumbia|flamenco/.test(n)) return '#f97316';
+    return '#6b7280';
+  }
+
+  // ── Node radius ───────────────────────────────────────────────────────
+  function nodeR(d) {
+    return Math.max(4, Math.min(18, Math.sqrt(d.track_count || 1) * 0.9));
+  }
+
+  // ── Main ──────────────────────────────────────────────────────────────
+  const svg    = d3.select('#graph-svg');
+  const wrap   = document.getElementById('graph-wrap');
+  let W = wrap.clientWidth, H = wrap.clientHeight;
+
+  const g = svg.append('g').attr('class', 'graph-root');
+
+  // Zoom behaviour
+  const zoom = d3.zoom()
+    .scaleExtent([0.15, 6])
+    .on('zoom', e => g.attr('transform', e.transform));
+  svg.call(zoom);
+
+  // Initial transform — slight zoom out so whole graph fits
+  svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.5));
+
+  let allNodes = [], allLinks = [], simulation = null;
+  let focusSlug = new URLSearchParams(location.search).get('focus');
+
+  // ── Load data ─────────────────────────────────────────────────────────
+  fetch('/api/graph/')
+    .then(r => r.json())
+    .then(data => {
+      allNodes = data.nodes;
+      allLinks = data.links;
+      buildGraph(allNodes, allLinks);
+      if (focusSlug) focusNode(focusSlug);
+    });
+
+  function buildGraph(nodes, links) {
+    g.selectAll('*').remove();
+
+    // Links layer
+    const link = g.append('g').attr('class', 'links')
+      .selectAll('line')
+      .data(links)
+      .join('line')
+      .attr('class', 'g-link')
+      .style('opacity', 0.35);
+
+    // Nodes layer
+    const node = g.append('g').attr('class', 'nodes')
+      .selectAll('g')
+      .data(nodes)
+      .join('g')
+      .attr('class', 'g-node')
+      .call(drag())
+      .on('click', (e, d) => {
+        window.location.href = '/token/' + d.slug + '/';
+      })
+      .on('mouseover', (e, d) => showTip(e, d, node, link))
+      .on('mousemove', (e) => moveTip(e))
+      .on('mouseout',  ()  => hideTip(node, link));
+
+    node.append('circle')
+      .attr('r', nodeR)
+      .attr('fill', d => genreColor(d.name))
+      .attr('fill-opacity', 0.85)
+      .attr('stroke', d => genreColor(d.name))
+      .attr('stroke-opacity', 0.5);
+
+    // Labels for high-traffic nodes only (visible at default zoom)
+    node.append('text')
+      .text(d => d.name)
+      .attr('x', d => nodeR(d) + 3)
+      .attr('y', '0.35em')
+      .attr('fill', 'var(--muted)')
+      .attr('font-size', d => d.track_count > 500 ? '11px' : '9px')
+      .style('display', d => d.track_count > 150 ? null : 'none');
+
+    simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links)
+        .id(d => d.slug)
+        .distance(55)
+        .strength(0.4))
+      .force('charge', d3.forceManyBody()
+        .strength(d => -80 - nodeR(d) * 8))
+      .force('center', d3.forceCenter(0, 0))
+      .force('collision', d3.forceCollide(d => nodeR(d) + 3))
+      .on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+  }
+
+  // ── Tooltip ───────────────────────────────────────────────────────────
+  const tip = document.getElementById('graph-tip');
+  function showTip(e, d, nodeSel, linkSel) {
+    document.getElementById('tip-name').textContent = d.name;
+    const bpm = d.bpm_min && d.bpm_max ? ` · ${d.bpm_min}–${d.bpm_max} BPM` : '';
+    document.getElementById('tip-meta').textContent =
+      (d.track_count || 0) + ' tracks' + bpm;
+    tip.style.display = 'block';
+
+    // Dim unconnected nodes
+    const connected = new Set([d.slug]);
+    linkSel.each(function(l) {
+      const s = typeof l.source === 'object' ? l.source.slug : l.source;
+      const t = typeof l.target === 'object' ? l.target.slug : l.target;
+      if (s === d.slug) connected.add(t);
+      if (t === d.slug) connected.add(s);
+    });
+    nodeSel.select('circle')
+      .style('opacity', n => connected.has(n.slug) ? 1 : 0.12);
+    linkSel
+      .style('opacity', l => {
+        const s = typeof l.source === 'object' ? l.source.slug : l.source;
+        const t = typeof l.target === 'object' ? l.target.slug : l.target;
+        return (s === d.slug || t === d.slug) ? 0.9 : 0.04;
+      });
+  }
+  function moveTip(e) {
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top  = (e.clientY - 10) + 'px';
+  }
+  function hideTip(nodeSel, linkSel) {
+    tip.style.display = 'none';
+    nodeSel.select('circle').style('opacity', 0.85);
+    linkSel.style('opacity', 0.35);
+  }
+
+  // ── Focus on a specific node (from ?focus= param) ─────────────────────
+  function focusNode(slug) {
+    const target = allNodes.find(n => n.slug === slug);
+    if (!target || !simulation) return;
+    // Wait for simulation to settle a bit, then pan to it
+    setTimeout(() => {
+      if (!target.x || !target.y) return;
+      const scale = 1.8;
+      svg.transition().duration(800)
+        .call(zoom.transform, d3.zoomIdentity
+          .translate(W / 2, H / 2)
+          .scale(scale)
+          .translate(-target.x, -target.y));
+      // Pulse the node
+      g.selectAll('.g-node').filter(d => d.slug === slug)
+        .select('circle')
+        .attr('stroke', 'white')
+        .attr('stroke-width', 3)
+        .attr('stroke-opacity', 1);
+    }, 2200);
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────
+  const searchInput = document.getElementById('graph-search');
+  searchInput.addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    if (!q) {
+      g.selectAll('.g-node circle').style('opacity', 0.85);
+      g.selectAll('.g-link').style('opacity', 0.35);
+      return;
+    }
+    g.selectAll('.g-node circle').style('opacity', d =>
+      d.name.toLowerCase().includes(q) ? 1 : 0.1
+    );
+    g.selectAll('.g-link').style('opacity', l => {
+      const s = typeof l.source === 'object' ? l.source.name : l.source;
+      const t = typeof l.target === 'object' ? l.target.name : l.target;
+      return s.toLowerCase().includes(q) || t.toLowerCase().includes(q) ? 0.7 : 0.04;
+    });
+  });
+
+  // ── Drag ──────────────────────────────────────────────────────────────
+  function drag() {
+    return d3.drag()
+      .on('start', (e, d) => {
+        if (!e.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => {
+        if (!e.active) simulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      });
+  }
+
+  // ── Resize ────────────────────────────────────────────────────────────
+  window.addEventListener('resize', () => {
+    W = wrap.clientWidth; H = wrap.clientHeight;
+    if (simulation) simulation.force('center', d3.forceCenter(0, 0));
+  });
+})();
+</script>
+{% endblock %}

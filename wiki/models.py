@@ -34,6 +34,17 @@ class GenreToken(models.Model):
     track_count = models.PositiveIntegerField(default=0,
                                               help_text='Tracks in library carrying this token (updated by sync)')
 
+    # Lineage — origin year + parent genre (for chronological tree)
+    origin_year = models.SmallIntegerField(
+        null=True, blank=True,
+        help_text='Year the genre emerged (filled by Wikipedia enrichment)',
+    )
+    derived_from = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='derivatives',
+        help_text='Parent genre this one split from (for chronological tree)',
+    )
+
     # Discovery content — populated by enrich_genre_tokens --lastfm-tracks --youtube
     top_tracks_json = models.JSONField(
         default=list, blank=True,
