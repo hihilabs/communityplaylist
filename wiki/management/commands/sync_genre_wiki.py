@@ -30,6 +30,7 @@ import json
 from collections import defaultdict
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils.text import slugify
 
 from wiki.models import GenreToken, CompoundGenre
@@ -102,80 +103,78 @@ class Command(BaseCommand):
             for wt in wtoks:
                 wiki_token_counts[wt] += count
 
-        # ── 3. Upsert GenreTokens ─────────────────────────────────────────
+        # ── 3–5. All DB writes in one transaction (avoids SQLite lock contention) ──
         self.stdout.write(f'  {len(wiki_token_counts)} wiki tokens')
         token_objs: dict[str, GenreToken] = {}
-        for name, count in wiki_token_counts.items():
-            if not name:
-                continue
-            sl = slugify(name)
-            if not sl:
-                continue
-            if not dry:
-                obj, _ = GenreToken.objects.update_or_create(
-                    slug=sl,
-                    defaults={'name': name, 'track_count': count},
-                )
-                token_objs[name] = obj
-            else:
-                self.stdout.write(f'    [dry] token: {name} ({count})')
 
-        # ── 4. Build compound genres from multi-token tags ────────────────
-        # A compound genre = a file tag that resolves to ≥2 wiki tokens,
-        # with at least min_tracks files carrying that tag.
+        # Build compound candidates in memory before touching the DB
         compound_candidates: dict[frozenset[str], int] = defaultdict(int)
         for entry in raw_tokens:
-            tag   = entry['name']
-            count = entry['count']
-            wtoks = tag_to_wiki.get(tag, [])
+            wtoks = tag_to_wiki.get(entry['name'], [])
             if len(wtoks) >= 2:
-                compound_candidates[frozenset(wtoks)] += count
+                compound_candidates[frozenset(wtoks)] += entry['count']
 
         created = updated = skipped = 0
-        for token_set, count in sorted(compound_candidates.items(), key=lambda x: -x[1]):
-            if count < min_tracks:
-                skipped += 1
-                continue
-            # Canonical name: tokens sorted alphabetically, joined with ", "
-            sorted_names = sorted(token_set)
-            name = ', '.join(sorted_names)
-            sl   = slugify(name)
-            if not sl:
-                continue
-            if dry:
-                self.stdout.write(f'    [dry] compound: {name} ({count} tracks)')
-                created += 1
-                continue
-            obj, is_new = CompoundGenre.objects.update_or_create(
-                slug=sl,
-                defaults={'name': name, 'track_count': count},
-            )
-            # Wire tokens
-            toks_to_link = [
-                token_objs[n] for n in sorted_names if n in token_objs
-            ]
-            if toks_to_link:
-                obj.tokens.set(toks_to_link)
-            if is_new:
-                created += 1
-            else:
-                updated += 1
 
-        # ── 5. Wire related edges from co-occurrence ──────────────────────
-        if not dry:
-            for pair in cooccurrence:
-                if pair['count'] < min_tracks:
-                    continue
-                a_names = tag_to_wiki.get(pair['a'], [pair['a']])
-                b_names = tag_to_wiki.get(pair['b'], [pair['b']])
-                for an in a_names:
-                    for bn in b_names:
-                        if an == bn:
-                            continue
-                        ta = token_objs.get(an)
-                        tb = token_objs.get(bn)
-                        if ta and tb:
-                            ta.related.add(tb)
+        if dry:
+            for name, count in wiki_token_counts.items():
+                if name and slugify(name):
+                    self.stdout.write(f'    [dry] token: {name} ({count})')
+            for token_set, count in sorted(compound_candidates.items(), key=lambda x: -x[1]):
+                if count >= min_tracks:
+                    self.stdout.write(f'    [dry] compound: {", ".join(sorted(token_set))} ({count} tracks)')
+                    created += 1
+        else:
+            with transaction.atomic():
+                # step 3: upsert tokens
+                for name, count in wiki_token_counts.items():
+                    if not name:
+                        continue
+                    sl = slugify(name)
+                    if not sl:
+                        continue
+                    obj, _ = GenreToken.objects.update_or_create(
+                        slug=sl,
+                        defaults={'name': name, 'track_count': count},
+                    )
+                    token_objs[name] = obj
+
+                # step 4: upsert compound genres
+                for token_set, count in sorted(compound_candidates.items(), key=lambda x: -x[1]):
+                    if count < min_tracks:
+                        skipped += 1
+                        continue
+                    sorted_names = sorted(token_set)
+                    name = ', '.join(sorted_names)
+                    sl   = slugify(name)
+                    if not sl:
+                        continue
+                    obj, is_new = CompoundGenre.objects.update_or_create(
+                        slug=sl,
+                        defaults={'name': name, 'track_count': count},
+                    )
+                    toks_to_link = [token_objs[n] for n in sorted_names if n in token_objs]
+                    if toks_to_link:
+                        obj.tokens.set(toks_to_link)
+                    if is_new:
+                        created += 1
+                    else:
+                        updated += 1
+
+                # step 5: wire related edges from co-occurrence
+                for pair in cooccurrence:
+                    if pair['count'] < min_tracks:
+                        continue
+                    a_names = tag_to_wiki.get(pair['a'], [pair['a']])
+                    b_names = tag_to_wiki.get(pair['b'], [pair['b']])
+                    for an in a_names:
+                        for bn in b_names:
+                            if an == bn:
+                                continue
+                            ta = token_objs.get(an)
+                            tb = token_objs.get(bn)
+                            if ta and tb:
+                                ta.related.add(tb)
 
         self.stdout.write(self.style.SUCCESS(
             f'Done — {len(wiki_token_counts)} tokens, '
