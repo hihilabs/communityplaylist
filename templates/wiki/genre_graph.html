@@ -9,7 +9,7 @@
   footer { display: none; }
 
   #graph-wrap {
-    position: fixed; inset: 56px 0 0 0;  /* below wiki header */
+    position: fixed; inset: 56px 0 0 0;
     background: var(--bg);
     overflow: hidden;
   }
@@ -17,24 +17,42 @@
   #graph-svg { width: 100%; height: 100%; cursor: grab; }
   #graph-svg:active { cursor: grabbing; }
 
+  /* ── Node styles ──────────────────────────────────────── */
   .g-node circle {
     stroke-width: 1.5;
-    transition: r 0.15s;
     cursor: pointer;
+    transition: stroke 0.1s, stroke-width 0.1s;
   }
   .g-node text {
     font-family: 'DM Mono', ui-monospace, monospace;
     pointer-events: none;
     user-select: none;
+    transition: opacity 0.2s;
   }
-  .g-link { stroke: #2a2a30; stroke-width: 1; }
+  .g-link {
+    stroke: #2e2e38;
+    stroke-width: 1;
+    transition: stroke 0.15s, opacity 0.15s;
+  }
 
-  /* ── Controls overlay ───────────────── */
-  #graph-controls {
+  /* Wireframe mode overrides */
+  body.wire .g-node circle {
+    fill: transparent !important;
+    stroke-width: 2 !important;
+    stroke-opacity: 0.9 !important;
+  }
+  body.wire .g-link {
+    stroke: #3a3a50;
+    stroke-width: 1.2;
+    opacity: 0.55 !important;
+  }
+
+  /* ── Left panel ───────────────────────────────────────── */
+  #graph-panel {
     position: fixed;
-    top: 68px; left: 16px;
+    top: 68px; left: 14px;
     display: flex; flex-direction: column; gap: 8px;
-    z-index: 10;
+    z-index: 10; width: 200px;
   }
   #graph-search {
     background: rgba(23,23,26,0.92);
@@ -44,34 +62,42 @@
     padding: 7px 12px;
     font-size: 12px;
     font-family: inherit;
-    width: 220px;
-    backdrop-filter: blur(4px);
+    width: 100%;
+    backdrop-filter: blur(6px);
   }
   #graph-search:focus { outline: none; border-color: var(--accent); }
   #graph-search::placeholder { color: var(--muted); }
 
+  /* ── Legend (clickable) ───────────────────────────────── */
   #graph-legend {
     background: rgba(23,23,26,0.88);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 10px 12px;
-    font-size: 11px;
-    line-height: 1.8;
-    backdrop-filter: blur(4px);
-    min-width: 140px;
+    padding: 8px 4px;
+    backdrop-filter: blur(6px);
   }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px;
+    font-size: 11px; color: var(--muted);
+    background: transparent; border: none;
+    border-radius: 4px;
+    cursor: pointer; font-family: inherit;
+    width: 100%; text-align: left;
+    transition: background 0.12s, color 0.12s;
+  }
+  .legend-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .legend-item.active { background: rgba(255,255,255,0.07); color: var(--text); }
+  .legend-item.active .legend-dot { box-shadow: 0 0 0 2px rgba(255,255,255,0.4); }
   .legend-dot {
-    display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    margin-right: 5px;
-    vertical-align: middle;
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    transition: box-shadow 0.12s;
   }
 
-  /* ── Tooltip ────────────────────────── */
+  /* ── Tooltip ──────────────────────────────────────────── */
   #graph-tip {
     position: fixed;
-    background: rgba(23,23,26,0.95);
+    background: rgba(23,23,26,0.96);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 8px 12px;
@@ -80,37 +106,32 @@
     z-index: 20;
     display: none;
     max-width: 200px;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(6px);
   }
-  #graph-tip .tip-name  { color: var(--text); font-weight: 600; margin-bottom: 2px; }
-  #graph-tip .tip-meta  { color: var(--muted); font-size: 11px; }
+  #tip-name  { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; }
+  #tip-meta  { color: var(--muted); font-size: 11px; display: block; }
 
-  /* ── View toggle ────────────────────── */
+  /* ── Top-right controls ───────────────────────────────── */
   #view-toggle {
-    position: fixed;
-    top: 68px; right: 16px;
-    display: flex; gap: 6px;
-    z-index: 10;
+    position: fixed; top: 68px; right: 14px;
+    display: flex; gap: 6px; z-index: 10;
   }
   .view-btn {
     background: rgba(23,23,26,0.88);
     border: 1px solid var(--border);
     border-radius: 6px;
     color: var(--muted);
-    padding: 6px 12px;
-    font-size: 11px;
-    font-family: inherit;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
+    padding: 6px 12px; font-size: 11px; font-family: inherit;
+    cursor: pointer; backdrop-filter: blur(6px);
     text-decoration: none;
     display: inline-flex; align-items: center; gap: 5px;
     transition: all .15s;
   }
   .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+  body.wire #btn-wire { border-color: var(--accent); color: var(--accent); }
 
   @media (max-width: 600px) {
-    #graph-controls { top: auto; bottom: 20px; left: 12px; }
-    #graph-search { width: 180px; }
+    #graph-panel { top: auto; bottom: 20px; left: 10px; width: 170px; }
     #graph-legend { display: none; }
   }
 </style>
@@ -121,116 +142,125 @@
   <svg id="graph-svg"></svg>
 </div>
 
-<div id="graph-controls">
+<div id="graph-panel">
   <input id="graph-search" type="text" placeholder="Search genres…" autocomplete="off">
   <div id="graph-legend">
-    <div><span class="legend-dot" style="background:#7c6af7"></span>Electronic</div>
-    <div><span class="legend-dot" style="background:#f59e0b"></span>Hip-Hop / Rap</div>
-    <div><span class="legend-dot" style="background:#ef4444"></span>Rock / Metal</div>
-    <div><span class="legend-dot" style="background:#22c55e"></span>Jazz / Soul</div>
-    <div><span class="legend-dot" style="background:#06b6d4"></span>Drum &amp; Bass</div>
-    <div><span class="legend-dot" style="background:#ec4899"></span>Pop / Indie</div>
-    <div><span class="legend-dot" style="background:#f97316"></span>World / Folk</div>
-    <div><span class="legend-dot" style="background:#6b7280"></span>Other</div>
+    {% for item in legend_items %}<button class="legend-item" data-color="{{ item.color }}">
+      <span class="legend-dot" style="background:{{ item.color }}"></span>{{ item.label }}
+    </button>
+    {% empty %}
+    <button class="legend-item" data-color="#7c6af7"><span class="legend-dot" style="background:#7c6af7"></span>Electronic</button>
+    <button class="legend-item" data-color="#f59e0b"><span class="legend-dot" style="background:#f59e0b"></span>Hip-Hop / Rap</button>
+    <button class="legend-item" data-color="#ef4444"><span class="legend-dot" style="background:#ef4444"></span>Rock / Metal</button>
+    <button class="legend-item" data-color="#22c55e"><span class="legend-dot" style="background:#22c55e"></span>Jazz / Soul</button>
+    <button class="legend-item" data-color="#06b6d4"><span class="legend-dot" style="background:#06b6d4"></span>Drum &amp; Bass</button>
+    <button class="legend-item" data-color="#ec4899"><span class="legend-dot" style="background:#ec4899"></span>Pop / Indie</button>
+    <button class="legend-item" data-color="#f97316"><span class="legend-dot" style="background:#f97316"></span>World / Folk</button>
+    <button class="legend-item" data-color="#6b7280"><span class="legend-dot" style="background:#6b7280"></span>Other</button>
+    {% endfor %}
   </div>
 </div>
 
 <div id="view-toggle">
   <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
+  <button id="btn-wire" class="view-btn" onclick="toggleWire()" title="Toggle wireframe">◎ Wire</button>
   <button class="view-btn active">◉ Graph</button>
 </div>
 
 <div id="graph-tip">
-  <div class="tip-name" id="tip-name"></div>
-  <div class="tip-meta" id="tip-meta"></div>
+  <span id="tip-name"></span>
+  <span id="tip-meta"></span>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script>
-(function() {
+(function () {
   'use strict';
 
-  // ── Genre family color ───────────────────────────────────────────────
+  // ── Color family ────────────────────────────────────────────────────
   function genreColor(name) {
     const n = name.toLowerCase();
-    if (/house|techno|trance|electro|synth|rave|ambient|wave|drone|noise|industrial|ebm|idm|glitch/.test(n)) return '#7c6af7';
-    if (/hip|hop|rap|trap|drill|grime|boom|bap|crunk|mumble|cloud/.test(n)) return '#f59e0b';
-    if (/rock|metal|punk|grunge|hardcore|doom|thrash|death|black|post-rock|shoegaze/.test(n)) return '#ef4444';
-    if (/jazz|soul|blues|funk|gospel|swing|bossa|samba|latin|reggae|ska|dub/.test(n)) return '#22c55e';
+    if (/house|techno|trance|electro|synth|rave|ambient|wave|drone|noise|industrial|ebm|idm|glitch|electronica|dubstep|edm/.test(n)) return '#7c6af7';
+    if (/hip|hop|rap|trap|drill|grime|boom|bap|crunk|mumble|cloud|gangsta/.test(n)) return '#f59e0b';
+    if (/rock|metal|punk|grunge|hardcore|doom|thrash|death|black|shoegaze/.test(n)) return '#ef4444';
+    if (/jazz|soul|blues|funk|gospel|swing|bossa|latin|reggae|ska|dub|r&b|rnb/.test(n)) return '#22c55e';
     if (/drum|bass|jungle|neurofunk|liquid|footwork|break/.test(n)) return '#06b6d4';
-    if (/pop|indie|alternative|dream|bedroom|lo-fi|chillwave/.test(n)) return '#ec4899';
-    if (/folk|world|afro|celtic|country|bluegrass|cumbia|flamenco/.test(n)) return '#f97316';
+    if (/pop|indie|alternative|dream|bedroom|chillwave/.test(n)) return '#ec4899';
+    if (/folk|world|afro|celtic|country|bluegrass|cumbia|flamenco|bhangra|cumbia/.test(n)) return '#f97316';
     return '#6b7280';
   }
 
-  // ── Node radius ───────────────────────────────────────────────────────
+  // Family cluster centers (guide nodes toward loose groupings)
+  const FAMILY_CENTERS = {
+    '#7c6af7': { x: -180, y: -80  },
+    '#f59e0b': { x:  180, y: -80  },
+    '#ef4444': { x: -180, y:  80  },
+    '#22c55e': { x:    0, y: -200 },
+    '#06b6d4': { x:  180, y:  80  },
+    '#ec4899': { x:    0, y:  200 },
+    '#f97316': { x: -100, y:    0 },
+    '#6b7280': { x:  100, y:    0 },
+  };
+
   function nodeR(d) {
     return Math.max(4, Math.min(18, Math.sqrt(d.track_count || 1) * 0.9));
   }
 
-  // ── Main ──────────────────────────────────────────────────────────────
-  const svg    = d3.select('#graph-svg');
-  const wrap   = document.getElementById('graph-wrap');
-  let W = wrap.clientWidth, H = wrap.clientHeight;
+  // ── State ────────────────────────────────────────────────────────────
+  let activeLegend = null;
+  let activeSearch = '';
+  let nodeSel, linkSel;
+  let allNodes = [], allLinks = [], simulation;
+  const focusSlug = new URLSearchParams(location.search).get('focus');
 
+  // ── SVG setup ────────────────────────────────────────────────────────
+  const svg  = d3.select('#graph-svg');
+  const wrap = document.getElementById('graph-wrap');
+  let W = wrap.clientWidth, H = wrap.clientHeight;
   const g = svg.append('g').attr('class', 'graph-root');
 
-  // Zoom behaviour
   const zoom = d3.zoom()
-    .scaleExtent([0.15, 6])
+    .scaleExtent([0.1, 8])
     .on('zoom', e => g.attr('transform', e.transform));
   svg.call(zoom);
+  svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.55));
 
-  // Initial transform — slight zoom out so whole graph fits
-  svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.5));
-
-  let allNodes = [], allLinks = [], simulation = null;
-  let focusSlug = new URLSearchParams(location.search).get('focus');
-
-  // ── Load data ─────────────────────────────────────────────────────────
+  // ── Load ─────────────────────────────────────────────────────────────
   fetch('/api/graph/')
     .then(r => r.json())
     .then(data => {
       allNodes = data.nodes;
       allLinks = data.links;
       buildGraph(allNodes, allLinks);
-      if (focusSlug) focusNode(focusSlug);
+      if (focusSlug) setTimeout(() => focusNode(focusSlug), 2800);
     });
 
+  // ── Build ─────────────────────────────────────────────────────────────
   function buildGraph(nodes, links) {
     g.selectAll('*').remove();
 
-    // Links layer
-    const link = g.append('g').attr('class', 'links')
-      .selectAll('line')
-      .data(links)
-      .join('line')
+    linkSel = g.append('g').attr('class', 'links')
+      .selectAll('line').data(links).join('line')
       .attr('class', 'g-link')
-      .style('opacity', 0.35);
+      .style('opacity', 0.3);
 
-    // Nodes layer
-    const node = g.append('g').attr('class', 'nodes')
-      .selectAll('g')
-      .data(nodes)
-      .join('g')
+    nodeSel = g.append('g').attr('class', 'nodes')
+      .selectAll('g').data(nodes).join('g')
       .attr('class', 'g-node')
-      .call(drag())
-      .on('click', (e, d) => {
-        window.location.href = '/token/' + d.slug + '/';
-      })
-      .on('mouseover', (e, d) => showTip(e, d, node, link))
-      .on('mousemove', (e) => moveTip(e))
-      .on('mouseout',  ()  => hideTip(node, link));
+      .call(makeDrag())
+      .on('click', (e, d) => { window.location.href = '/token/' + d.slug + '/'; })
+      .on('mouseover', (e, d) => { showTip(e, d); highlightNeighborhood(d.slug); })
+      .on('mousemove', moveTip)
+      .on('mouseout',  ()  => { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); });
 
-    node.append('circle')
+    nodeSel.append('circle')
       .attr('r', nodeR)
       .attr('fill', d => genreColor(d.name))
       .attr('fill-opacity', 0.85)
       .attr('stroke', d => genreColor(d.name))
-      .attr('stroke-opacity', 0.5);
+      .attr('stroke-opacity', 0.45);
 
-    // Labels for high-traffic nodes only (visible at default zoom)
-    node.append('text')
+    nodeSel.append('text')
       .text(d => d.name)
       .attr('x', d => nodeR(d) + 3)
       .attr('y', '0.35em')
@@ -238,111 +268,175 @@
       .attr('font-size', d => d.track_count > 500 ? '11px' : '9px')
       .style('display', d => d.track_count > 150 ? null : 'none');
 
+    // Custom family clustering force
+    function familyForce(alpha) {
+      nodes.forEach(node => {
+        const center = FAMILY_CENTERS[genreColor(node.name)];
+        if (!center) return;
+        node.vx += (center.x - (node.x || 0)) * 0.06 * alpha;
+        node.vy += (center.y - (node.y || 0)) * 0.06 * alpha;
+      });
+    }
+
     simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links)
-        .id(d => d.slug)
-        .distance(55)
-        .strength(0.4))
+        .id(d => d.slug).distance(65).strength(0.35))
       .force('charge', d3.forceManyBody()
-        .strength(d => -80 - nodeR(d) * 8))
-      .force('center', d3.forceCenter(0, 0))
+        .strength(d => -55 - nodeR(d) * 6).distanceMax(300))
+      .force('center', d3.forceCenter(0, 0).strength(0.05))
       .force('collision', d3.forceCollide(d => nodeR(d) + 3))
+      .force('family', familyForce)
+      .alphaDecay(0.035)
+      .velocityDecay(0.45)
       .on('tick', () => {
-        link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
-        node.attr('transform', d => `translate(${d.x},${d.y})`);
+        linkSel
+          .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
       });
+  }
+
+  // ── Highlight helpers ─────────────────────────────────────────────────
+  function neighborhoodOf(slugs) {
+    const set = new Set(slugs);
+    linkSel.each(function(l) {
+      const s = l.source.slug || l.source;
+      const t = l.target.slug || l.target;
+      slugs.forEach(sl => {
+        if (s === sl) set.add(t);
+        if (t === sl) set.add(s);
+      });
+    });
+    return set;
+  }
+
+  function highlightNeighborhood(slug) {
+    const hood = neighborhoodOf([slug]);
+    nodeSel.select('circle')
+      .style('opacity', n => hood.has(n.slug) ? 1 : 0.08)
+      .attr('stroke', n => n.slug === slug ? 'white' : genreColor(n.name))
+      .attr('stroke-width', n => n.slug === slug ? 3 : 1.5)
+      .attr('stroke-opacity', n => n.slug === slug ? 1 : 0.45);
+    linkSel.style('opacity', l => {
+      const s = l.source.slug || l.source;
+      const t = l.target.slug || l.target;
+      return (s === slug || t === slug) ? 0.85 : 0.03;
+    });
+  }
+
+  function applyHighlight() {
+    if (activeSearch) {
+      const matches = allNodes
+        .filter(n => n.name.toLowerCase().includes(activeSearch))
+        .map(n => n.slug);
+      if (matches.length) {
+        const hood = neighborhoodOf(matches);
+        nodeSel.select('circle')
+          .style('opacity', n => hood.has(n.slug) ? 1 : 0.07)
+          .attr('stroke', n => matches.includes(n.slug) ? 'white' : genreColor(n.name))
+          .attr('stroke-width', n => matches.includes(n.slug) ? 2.5 : 1.5)
+          .attr('stroke-opacity', n => matches.includes(n.slug) ? 0.9 : 0.45);
+        linkSel.style('opacity', l => {
+          const s = l.source.slug || l.source;
+          const t = l.target.slug || l.target;
+          return hood.has(s) && hood.has(t) ? 0.6 : 0.03;
+        });
+        return;
+      }
+    }
+    if (activeLegend) {
+      nodeSel.select('circle')
+        .style('opacity', n => genreColor(n.name) === activeLegend ? 1 : 0.07)
+        .attr('stroke', d => genreColor(d.name))
+        .attr('stroke-width', 1.5)
+        .attr('stroke-opacity', 0.45);
+      linkSel.style('opacity', l => {
+        const s = l.source.slug || l.source, t = l.target.slug || l.target;
+        const sn = allNodes.find(n => n.slug === s), tn = allNodes.find(n => n.slug === t);
+        return (sn && genreColor(sn.name) === activeLegend) ||
+               (tn && genreColor(tn.name) === activeLegend) ? 0.5 : 0.02;
+      });
+      return;
+    }
+    resetHighlight();
+  }
+
+  function resetHighlight() {
+    nodeSel.select('circle')
+      .style('opacity', null)
+      .attr('stroke', d => genreColor(d.name))
+      .attr('stroke-width', 1.5)
+      .attr('stroke-opacity', 0.45);
+    linkSel.style('opacity', 0.3);
   }
 
   // ── Tooltip ───────────────────────────────────────────────────────────
   const tip = document.getElementById('graph-tip');
-  function showTip(e, d, nodeSel, linkSel) {
+  function showTip(e, d) {
     document.getElementById('tip-name').textContent = d.name;
     const bpm = d.bpm_min && d.bpm_max ? ` · ${d.bpm_min}–${d.bpm_max} BPM` : '';
-    document.getElementById('tip-meta').textContent =
-      (d.track_count || 0) + ' tracks' + bpm;
+    document.getElementById('tip-meta').textContent = (d.track_count || 0) + ' tracks' + bpm;
     tip.style.display = 'block';
-
-    // Dim unconnected nodes
-    const connected = new Set([d.slug]);
-    linkSel.each(function(l) {
-      const s = typeof l.source === 'object' ? l.source.slug : l.source;
-      const t = typeof l.target === 'object' ? l.target.slug : l.target;
-      if (s === d.slug) connected.add(t);
-      if (t === d.slug) connected.add(s);
-    });
-    nodeSel.select('circle')
-      .style('opacity', n => connected.has(n.slug) ? 1 : 0.12);
-    linkSel
-      .style('opacity', l => {
-        const s = typeof l.source === 'object' ? l.source.slug : l.source;
-        const t = typeof l.target === 'object' ? l.target.slug : l.target;
-        return (s === d.slug || t === d.slug) ? 0.9 : 0.04;
-      });
   }
   function moveTip(e) {
     tip.style.left = (e.clientX + 14) + 'px';
     tip.style.top  = (e.clientY - 10) + 'px';
   }
-  function hideTip(nodeSel, linkSel) {
-    tip.style.display = 'none';
-    nodeSel.select('circle').style('opacity', 0.85);
-    linkSel.style('opacity', 0.35);
-  }
-
-  // ── Focus on a specific node (from ?focus= param) ─────────────────────
-  function focusNode(slug) {
-    const target = allNodes.find(n => n.slug === slug);
-    if (!target || !simulation) return;
-    // Wait for simulation to settle a bit, then pan to it
-    setTimeout(() => {
-      if (!target.x || !target.y) return;
-      const scale = 1.8;
-      svg.transition().duration(800)
-        .call(zoom.transform, d3.zoomIdentity
-          .translate(W / 2, H / 2)
-          .scale(scale)
-          .translate(-target.x, -target.y));
-      // Pulse the node
-      g.selectAll('.g-node').filter(d => d.slug === slug)
-        .select('circle')
-        .attr('stroke', 'white')
-        .attr('stroke-width', 3)
-        .attr('stroke-opacity', 1);
-    }, 2200);
-  }
+  function hideTip() { tip.style.display = 'none'; }
 
   // ── Search ────────────────────────────────────────────────────────────
   const searchInput = document.getElementById('graph-search');
-  searchInput.addEventListener('input', function() {
-    const q = this.value.toLowerCase().trim();
-    if (!q) {
-      g.selectAll('.g-node circle').style('opacity', 0.85);
-      g.selectAll('.g-link').style('opacity', 0.35);
-      return;
-    }
-    g.selectAll('.g-node circle').style('opacity', d =>
-      d.name.toLowerCase().includes(q) ? 1 : 0.1
-    );
-    g.selectAll('.g-link').style('opacity', l => {
-      const s = typeof l.source === 'object' ? l.source.name : l.source;
-      const t = typeof l.target === 'object' ? l.target.name : l.target;
-      return s.toLowerCase().includes(q) || t.toLowerCase().includes(q) ? 0.7 : 0.04;
+  searchInput.addEventListener('input', function () {
+    activeSearch = this.value.toLowerCase().trim();
+    applyHighlight();
+  });
+
+  // ── Legend ────────────────────────────────────────────────────────────
+  document.querySelectorAll('.legend-item').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const color = this.dataset.color;
+      if (activeLegend === color) {
+        activeLegend = null;
+        this.classList.remove('active');
+      } else {
+        document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
+        activeLegend = color;
+        this.classList.add('active');
+      }
+      activeSearch = '';
+      searchInput.value = '';
+      applyHighlight();
     });
   });
 
+  // ── Focus (from ?focus= param) ────────────────────────────────────────
+  function focusNode(slug) {
+    const target = allNodes.find(n => n.slug === slug);
+    if (!target) return;
+    const scale = 2;
+    svg.transition().duration(900).call(zoom.transform,
+      d3.zoomIdentity
+        .translate(W / 2, H / 2)
+        .scale(scale)
+        .translate(-(target.x || 0), -(target.y || 0))
+    );
+    if (nodeSel) highlightNeighborhood(slug);
+  }
+
+  // ── Wireframe toggle ──────────────────────────────────────────────────
+  window.toggleWire = function () {
+    document.body.classList.toggle('wire');
+  };
+
   // ── Drag ──────────────────────────────────────────────────────────────
-  function drag() {
+  function makeDrag() {
     return d3.drag()
       .on('start', (e, d) => {
-        if (!e.active) simulation.alphaTarget(0.3).restart();
+        if (!e.active) simulation.alphaTarget(0.15).restart();
         d.fx = d.x; d.fy = d.y;
       })
-      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
-      .on('end', (e, d) => {
+      .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end',   (e, d) => {
         if (!e.active) simulation.alphaTarget(0);
         d.fx = null; d.fy = null;
       });
@@ -351,7 +445,6 @@
   // ── Resize ────────────────────────────────────────────────────────────
   window.addEventListener('resize', () => {
     W = wrap.clientWidth; H = wrap.clientHeight;
-    if (simulation) simulation.force('center', d3.forceCenter(0, 0));
   });
 })();
 </script>
