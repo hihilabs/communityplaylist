@@ -52,19 +52,8 @@
 </div>
 {% endif %}
 
-{% if token.youtube_video_id or token.top_tracks_json %}
+{% if token.top_tracks_json %}
 <h2>Sound of {{ token.name }}</h2>
-
-{% if token.youtube_video_id %}
-<div style="margin-bottom: 20px;">
-  <iframe
-    style="width:100%; max-width:640px; aspect-ratio:16/9; height:auto; display:block; border-radius:6px; border:1px solid var(--border);"
-    src="https://www.youtube.com/embed/{{ token.youtube_video_id }}?rel=0&modestbranding=1"
-    frameborder="0"
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-    allowfullscreen loading="lazy"></iframe>
-</div>
-{% endif %}
 
 {% if token.top_tracks_json %}
 <div class="wiki-track-list" id="wiki-tracklist">

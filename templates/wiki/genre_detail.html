@@ -25,19 +25,8 @@
   <p style="color: var(--text); margin-top: 12px; max-width: 680px;">{{ genre.description }}</p>
 {% endif %}
 
-{% if genre.youtube_video_id or genre.top_tracks_json %}
+{% if genre.top_tracks_json %}
 <h2>Sound of {{ genre.name }}</h2>
-
-{% if genre.youtube_video_id %}
-<div style="margin-bottom: 20px;">
-  <iframe
-    style="width:100%; max-width:640px; aspect-ratio:16/9; height:auto; display:block; border-radius:6px; border:1px solid var(--border);"
-    src="https://www.youtube.com/embed/{{ genre.youtube_video_id }}?rel=0&modestbranding=1"
-    frameborder="0"
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-    allowfullscreen loading="lazy"></iframe>
-</div>
-{% endif %}
 
 {% if genre.top_tracks_json %}
 <div class="wiki-track-list" id="wiki-tracklist">

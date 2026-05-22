@@ -1,7 +1,8 @@
 """
 refresh_genre_wiki — one-shot: sync library data then enrich from external sources.
 
-Run nightly via cron or the ops panel button.
+Pipeline: library sync → Last.fm top tracks → Wikipedia (origin_year, lineage) → compound tracks
+YouTube video embeds are intentionally excluded — track list player is the discovery surface.
 """
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
