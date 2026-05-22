@@ -94,6 +94,14 @@
     line-height: 1.6;
   }
   #tree-info strong { color: var(--text); display: block; font-size: 12px; margin-bottom: 4px; }
+
+  @media (max-width: 640px) {
+    #tree-info { display: none; }
+    #view-toggle { flex-direction: column; gap: 4px; right: 10px; }
+    .view-btn { padding: 5px 9px; font-size: 10px; }
+    /* Tooltip pinned top-center on touch */
+    #tree-tip { left: 50% !important; top: 70px !important; transform: translateX(-50%); max-width: 85vw; }
+  }
 </style>
 {% endblock %}
 
@@ -160,7 +168,10 @@
   // ── SVG setup ────────────────────────────────────────────────────
   const wrap = document.getElementById('tree-wrap');
   let W = wrap.clientWidth, H = wrap.clientHeight;
-  const MARGIN = { top: 40, right: 60, bottom: 40, left: 60 };
+  const mob = W <= 640;
+  const isTouch = window.matchMedia('(hover: none)').matches;
+  let _tapSlug = null;
+  const MARGIN = { top: 36, right: mob ? 16 : 60, bottom: mob ? 28 : 40, left: mob ? 16 : 60 };
   const LANE_H = (H - MARGIN.top - MARGIN.bottom) / N_LANES;
 
   const svg = d3.select('#tree-svg');
@@ -184,8 +195,11 @@
     tip.style.display = 'block';
   }
   function moveTip(e) {
-    tip.style.left = (e.clientX + 14) + 'px';
-    tip.style.top  = (e.clientY - 10) + 'px';
+    if (!isTouch) {
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top  = (e.clientY - 10) + 'px';
+    }
+    // On touch the tooltip is pinned top-center via CSS media query
   }
   function hideTip() { tip.style.display = 'none'; }
 
@@ -270,10 +284,23 @@
         .selectAll('g').data(nodes).join('g')
         .attr('class', 't-node')
         .attr('transform', n => `translate(${n._x},${n._y})`)
-        .on('click', (e, n) => { window.location.href = "{{ token_url_base }}" + n.slug + '/'; })
-        .on('mouseover', (e, n) => { showTip(e, n); highlightLineage(n); })
-        .on('mousemove', moveTip)
-        .on('mouseout',  ()  => { hideTip(); resetHighlight(); });
+        .on('click', (e, n) => {
+          if (isTouch) {
+            e.stopPropagation();
+            if (_tapSlug === n.slug) {
+              window.location.href = "{{ token_url_base }}" + n.slug + '/';
+            } else {
+              _tapSlug = n.slug;
+              showTip(e, n); moveTip(e);
+              highlightLineage(n);
+            }
+          } else {
+            window.location.href = "{{ token_url_base }}" + n.slug + '/';
+          }
+        })
+        .on('mouseover', (e, n) => { if (!isTouch) { showTip(e, n); highlightLineage(n); } })
+        .on('mousemove', (e) => { if (!isTouch) moveTip(e); })
+        .on('mouseout',  ()  => { if (!isTouch) { hideTip(); resetHighlight(); } });
 
       nodeG.append('circle')
         .attr('r', n => nodeR(n.track_count))

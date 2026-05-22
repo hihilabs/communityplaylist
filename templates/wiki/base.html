@@ -165,6 +165,22 @@
     }
     .wiki-player-btns button:hover { border-color: var(--accent); color: var(--accent); }
     body.wiki-player-open { padding-bottom: 60px; }
+
+    /* ── Mobile ─────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      /* Scroll header horizontally — keeps it single-line (56px) so graph/tree inset stays correct */
+      header { overflow-x: auto; padding: 10px 14px; gap: 14px; scrollbar-width: none; }
+      header::-webkit-scrollbar { display: none; }
+      header .logo, header nav, header .search-form { flex-shrink: 0; }
+      header .search-form { margin-left: 10px; }
+      header .search-form input { width: 120px; }
+      .nav-cp-long { display: none; }
+      .nav-cp-short { display: inline !important; }
+      /* Content pages */
+      .container { padding: 20px 16px; }
+      h1 { font-size: 22px; }
+      h2 { font-size: 13px; }
+    }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -176,7 +192,7 @@
     <a href="{% url 'wiki:token_list' %}">Tokens</a>
     <a href="{% url 'wiki:genre_graph' %}">◉ Graph</a>
     <a href="{% url 'wiki:genre_tree' %}">⊕ Tree</a>
-    <a href="https://communityplaylist.com">← Community Playlist</a>
+    <a href="https://communityplaylist.com"><span class="nav-cp-long">← Community Playlist</span><span class="nav-cp-short" style="display:none">← CP</span></a>
   </nav>
   <form class="search-form" action="{% url 'wiki:token_list' %}" method="get">
     <input name="q" value="{{ q|default:'' }}" placeholder="Search tokens, genres…" autocomplete="off">

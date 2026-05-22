@@ -130,9 +130,22 @@
   .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
   body.wire #btn-wire { border-color: var(--accent); color: var(--accent); }
 
-  @media (max-width: 600px) {
-    #graph-panel { top: auto; bottom: 20px; left: 10px; width: 170px; }
+  @media (max-width: 640px) {
+    /* Search bar moves to bottom, full-width — thumb-reachable */
+    #graph-panel {
+      top: auto;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      width: auto;
+      flex-direction: row;
+      align-items: center;
+    }
+    #graph-search { flex: 1; min-width: 0; }
     #graph-legend { display: none; }
+    /* View buttons stack vertically, icon size */
+    #view-toggle { flex-direction: column; gap: 4px; right: 10px; }
+    .view-btn { padding: 5px 9px; font-size: 10px; }
   }
 </style>
 {% endblock %}
@@ -213,6 +226,9 @@
   let nodeSel, linkSel;
   let allNodes = [], allLinks = [], simulation;
   const focusSlug = new URLSearchParams(location.search).get('focus');
+  // Touch: true on phones/tablets (no hover). First tap highlights, second navigates.
+  const isTouch = window.matchMedia('(hover: none)').matches;
+  let _tapSlug = null;
 
   // ── SVG setup ────────────────────────────────────────────────────────
   const svg  = d3.select('#graph-svg');
@@ -249,10 +265,23 @@
       .selectAll('g').data(nodes).join('g')
       .attr('class', 'g-node')
       .call(makeDrag())
-      .on('click', (e, d) => { window.location.href = "{{ token_url_base }}" + d.slug + '/'; })
-      .on('mouseover', (e, d) => { showTip(e, d); highlightNeighborhood(d.slug); })
-      .on('mousemove', moveTip)
-      .on('mouseout',  ()  => { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); });
+      .on('click', (e, d) => {
+        if (isTouch) {
+          e.stopPropagation();
+          if (_tapSlug === d.slug) {
+            window.location.href = "{{ token_url_base }}" + d.slug + '/';
+          } else {
+            _tapSlug = d.slug;
+            showTip(e, d); moveTip(e);
+            highlightNeighborhood(d.slug);
+          }
+        } else {
+          window.location.href = "{{ token_url_base }}" + d.slug + '/';
+        }
+      })
+      .on('mouseover', (e, d) => { if (!isTouch) { showTip(e, d); highlightNeighborhood(d.slug); } })
+      .on('mousemove', (e) => { if (!isTouch) moveTip(e); })
+      .on('mouseout',  ()  => { if (!isTouch) { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); } });
 
     nodeSel.append('circle')
       .attr('r', nodeR)
@@ -407,8 +436,15 @@
     tip.style.display = 'block';
   }
   function moveTip(e) {
-    tip.style.left = (e.clientX + 14) + 'px';
-    tip.style.top  = (e.clientY - 10) + 'px';
+    if (isTouch) {
+      tip.style.left = '50%';
+      tip.style.top  = '70px';
+      tip.style.transform = 'translateX(-50%)';
+    } else {
+      tip.style.transform = '';
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top  = (e.clientY - 10) + 'px';
+    }
   }
   function hideTip() { tip.style.display = 'none'; }
 
@@ -471,6 +507,17 @@
         if (!e.active) simulation.alphaTarget(0);
         d.fx = null; d.fy = null;
       });
+  }
+
+  // ── Touch: tap empty canvas to deselect ───────────────────────────────
+  if (isTouch) {
+    svg.on('click', (e) => {
+      if (e.target.tagName === 'svg' || e.target.tagName === 'g') {
+        _tapSlug = null;
+        hideTip();
+        if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight();
+      }
+    });
   }
 
   // ── Resize ────────────────────────────────────────────────────────────
