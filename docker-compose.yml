@@ -36,6 +36,27 @@ services:
     networks:
       - traefik
 
+  wiki-cron:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: >
+      sh -c "
+        echo '0 3 * * * python /app/manage.py refresh_genre_wiki --api-url http://10.0.0.124:3001 >> /var/log/wiki-cron.log 2>&1' | crontab - &&
+        crond -f -l 2
+      "
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./wiki:/app/wiki
+      - ./ops:/app/ops
+      - ./manage.py:/app/manage.py
+      - ./communityplaylist:/app/communityplaylist
+      - ./events:/app/events
+      - ./board:/app/board
+      - ./social:/app/social
+    networks:
+      - traefik
+
   vite:
     image: node:22-alpine
     working_dir: /app/frontend

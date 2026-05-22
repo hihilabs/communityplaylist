@@ -131,14 +131,6 @@ class Command(BaseCommand):
             if len(wtoks) >= 2:
                 compound_candidates[frozenset(wtoks)] += count
 
-        # Also promote co-occurring single-token pairs above threshold
-        for pair in cooccurrence:
-            a_toks = tag_to_wiki.get(pair['a'], wiki_tokenize(pair['a']))
-            b_toks = tag_to_wiki.get(pair['b'], wiki_tokenize(pair['b']))
-            combined = frozenset(a_toks + b_toks)
-            if len(combined) >= 2:
-                compound_candidates[combined] += pair['count']
-
         created = updated = skipped = 0
         for token_set, count in sorted(compound_candidates.items(), key=lambda x: -x[1]):
             if count < min_tracks:

@@ -37,7 +37,8 @@ _COMMANDS = {
     'git_pull':        ['git', '-C', str(PROJECT_ROOT), 'pull'],
     'git_diff':        ['git', '-C', str(PROJECT_ROOT), 'diff', '--stat', 'HEAD~1'],
     'collectstatic':   [sys.executable, _MANAGE, 'collectstatic', '--noinput', '--clear'],
-    'sync_genre_wiki': [sys.executable, _MANAGE, 'sync_genre_wiki', '--api-url', 'http://10.0.0.124:3001'],
+    'sync_genre_wiki':    [sys.executable, _MANAGE, 'sync_genre_wiki',    '--api-url', 'http://10.0.0.124:3001'],
+    'refresh_genre_wiki': [sys.executable, _MANAGE, 'refresh_genre_wiki', '--api-url', 'http://10.0.0.124:3001'],
 }
 
 
