@@ -193,6 +193,9 @@ html,body{background:#0a0a0a;font-family:sans-serif;min-height:100vh;
   <button class="ctrl-btn" onclick="window.print()">🖨 Print</button>
   <button class="ctrl-btn" id="dl-btn" onclick="downloadPNG()">⬇ Download PNG</button>
   <div class="ctrl-sep"></div>
+  <button class="ctrl-btn" id="copy-post-btn" onclick="copyPostText(this)">📋 Copy Post</button>
+  <a class="ctrl-btn" id="bsky-btn" href="#" target="_blank" rel="noopener noreferrer">🦋 Bluesky</a>
+  <div class="ctrl-sep"></div>
   <span class="ctrl-hint">Screenshot or download to save as image</span>
 </div>
 
@@ -238,7 +241,7 @@ html,body{background:#0a0a0a;font-family:sans-serif;min-height:100vh;
   <!-- Background -->
   <div class="fl-bg">
     {% if photo_url %}
-      <img src="{{ photo_url }}" alt="" crossorigin="anonymous">
+      <img class="event-photo" src="{{ photo_url }}" alt="" crossorigin="anonymous">
     {% else %}
       <div class="fl-no-photo"></div>
     {% endif %}
@@ -333,17 +336,17 @@ function getCsrf(){return(document.cookie.match('(^|;) ?csrftoken=([^;]*)') || [
 
 // ── Background switcher ─────────────────────────────────────────────────
 function setBg(url, thumbEl) {
-  var flBg  = document.querySelector('.fl-bg');
-  var grad  = flBg.querySelector('.fl-grad');
+  var flBg     = document.querySelector('.fl-bg');
+  var grad     = flBg.querySelector('.fl-grad');
   var existing = flBg.querySelector('img.custom-bg');
+  var gradDiv  = flBg.querySelector('div.custom-grad-bg');
+  if (gradDiv) gradDiv.remove();
 
   if (!url) {
     if (existing) existing.remove();
-    // Restore event photo if present
     var ep = flBg.querySelector('img.event-photo');
     if (ep) ep.style.display = '';
   } else {
-    // Hide event photo, show custom bg
     var ep2 = flBg.querySelector('img.event-photo');
     if (ep2) ep2.style.display = 'none';
     if (!existing) {
@@ -358,6 +361,65 @@ function setBg(url, thumbEl) {
   document.querySelectorAll('.bg-thumb').forEach(t => t.classList.remove('on'));
   if (thumbEl) thumbEl.classList.add('on');
 }
+
+var GRAD_PRESETS = [
+  { name: 'Cosmos',   css: 'radial-gradient(ellipse at 40% 30%, #1a0a2e 0%, #0d0d0d 55%), radial-gradient(ellipse at 80% 80%, #0a1a0a 0%, transparent 60%)' },
+  { name: 'Ember',    css: 'radial-gradient(ellipse at 30% 40%, #2e0a00 0%, #0d0505 60%), radial-gradient(ellipse at 70% 70%, #1a0500 0%, transparent 70%)' },
+  { name: 'Abyss',    css: 'radial-gradient(ellipse at 50% 20%, #001533 0%, #05050d 65%), radial-gradient(ellipse at 20% 80%, #00102a 0%, transparent 60%)' },
+  { name: 'Blush',    css: 'radial-gradient(ellipse at 60% 30%, #2a0020 0%, #0a0009 60%), radial-gradient(ellipse at 30% 70%, #1a0015 0%, transparent 60%)' },
+  { name: 'Teal',     css: 'radial-gradient(ellipse at 50% 25%, #003333 0%, #050d0d 65%), radial-gradient(ellipse at 75% 75%, #001a1a 0%, transparent 60%)' },
+  { name: 'Dusk',     css: 'radial-gradient(ellipse at 35% 35%, #0a1e0a 0%, #050805 65%), radial-gradient(ellipse at 65% 65%, #071207 0%, transparent 60%)' },
+  { name: 'Infrared', css: 'radial-gradient(ellipse at 45% 30%, #2a0008 0%, #0a0204 65%), radial-gradient(ellipse at 55% 75%, #1a000a 0%, transparent 60%)' },
+  { name: 'Amber',    css: 'radial-gradient(ellipse at 40% 30%, #2a1800 0%, #0a0700 65%), radial-gradient(ellipse at 70% 70%, #1a1000 0%, transparent 60%)' },
+];
+
+function setGradBg(css, thumbEl) {
+  var flBg    = document.querySelector('.fl-bg');
+  var grad    = flBg.querySelector('.fl-grad');
+  var imgBg   = flBg.querySelector('img.custom-bg');
+  var gradDiv = flBg.querySelector('div.custom-grad-bg');
+  var ep      = flBg.querySelector('img.event-photo');
+  if (imgBg)   imgBg.remove();
+  if (gradDiv) gradDiv.remove();
+  if (ep) ep.style.display = 'none';
+  var d = document.createElement('div');
+  d.className = 'custom-grad-bg';
+  d.style.cssText = 'position:absolute;inset:0;background:' + css;
+  flBg.insertBefore(d, grad);
+  document.querySelectorAll('.bg-thumb').forEach(t => t.classList.remove('on'));
+  if (thumbEl) thumbEl.classList.add('on');
+}
+
+// Inject preset thumbs and auto-apply one based on event slug
+(function() {
+  var thumbs = document.getElementById('bg-thumbs');
+  if (!thumbs) return;
+  var sep = document.createElement('div');
+  sep.style.cssText = 'width:1px;height:48px;background:#222;flex-shrink:0;align-self:center;margin:0 2px';
+  thumbs.appendChild(sep);
+  GRAD_PRESETS.forEach(function(p, i) {
+    var div = document.createElement('div');
+    div.className = 'bg-thumb';
+    div.dataset.gradPreset = i;
+    div.title = p.name;
+    var inner = document.createElement('div');
+    inner.style.cssText = 'width:64px;height:64px;background:' + p.css;
+    div.appendChild(inner);
+    var lbl = document.createElement('span');
+    lbl.textContent = p.name;
+    div.appendChild(lbl);
+    div.onclick = (function(preset, el){ return function(){ setGradBg(preset.css, el); }; })(p, div);
+    thumbs.appendChild(div);
+  });
+  var slug = "{{ event.slug|escapejs }}";
+  var h = 0;
+  for (var i = 0; i < slug.length; i++) h = ((h * 31) + slug.charCodeAt(i)) & 0xffff;
+  var autoIdx = h % GRAD_PRESETS.length;
+  {% if not photo_url %}
+  var presetThumb = thumbs.querySelector('[data-grad-preset="' + autoIdx + '"]');
+  if (presetThumb) setGradBg(GRAD_PRESETS[autoIdx].css, presetThumb);
+  {% endif %}
+})();
 
 function uploadBg(input) {
   if (!input.files[0]) return;
@@ -505,6 +567,31 @@ function downloadPNG() {
   var p = new URLSearchParams(location.search);
   if (p.get('fmt') === 'square') setFmt('square');
 })();
+
+// ── Social sharing ───────────────────────────────────────────────────────
+(function(){
+  var title = "{{ event.title|escapejs }}";
+  var date  = "{{ date_str|escapejs }} · {{ time_str|escapejs }}";
+  var loc   = "{{ event.location|escapejs }}";
+  var evUrl = "https://communityplaylist.com/events/{{ event.slug }}/";
+  var postText = title + '\n📅 ' + date + (loc ? '\n📍 ' + loc : '') + '\n\n' + evUrl + '\n#PDXEvents';
+  var btn = document.getElementById('bsky-btn');
+  if (btn) btn.href = 'https://bsky.app/intent/compose?text=' + encodeURIComponent(postText);
+})();
+
+function copyPostText(btn) {
+  var title = "{{ event.title|escapejs }}";
+  var date  = "{{ date_str|escapejs }} · {{ time_str|escapejs }}";
+  var loc   = "{{ event.location|escapejs }}";
+  var evUrl = "https://communityplaylist.com/events/{{ event.slug }}/";
+  var text  = title + '\n📅 ' + date + (loc ? '\n📍 ' + loc : '') + '\n\n' + evUrl + '\n#PDXEvents';
+  navigator.clipboard.writeText(text).then(function() {
+    btn.textContent = '✓ Copied!';
+    setTimeout(function(){ btn.textContent = '📋 Copy Post'; }, 2200);
+  }).catch(function(){
+    prompt('Copy this post text:', text);
+  });
+}
 </script>
 
 </body>
