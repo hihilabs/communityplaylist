@@ -26,8 +26,20 @@ class Command(BaseCommand):
                      dry_run=dry)
 
         if not options['skip_enrich']:
-            self.stdout.write('── Step 2: enrich tokens ───────────────────────')
+            self.stdout.write('── Step 2: enrich tokens (Last.fm tracks) ──────')
             call_command('enrich_genre_tokens',
                          lastfm_tracks=True,
+                         skip_mb=True,
+                         dry_run=dry)
+
+            self.stdout.write('── Step 3: enrich tokens (Wikipedia) ───────────')
+            call_command('enrich_genre_tokens',
+                         wikipedia=True,
+                         skip_mb=True,
+                         dry_run=dry)
+
+            self.stdout.write('── Step 4: enrich compounds (Last.fm tracks) ───')
+            call_command('enrich_genre_tokens',
+                         compound_tracks=True,
                          skip_mb=True,
                          dry_run=dry)

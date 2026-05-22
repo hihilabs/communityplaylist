@@ -151,6 +151,14 @@ class CompoundGenre(models.Model):
     track_count = models.PositiveIntegerField(default=0,
                                               help_text='Tracks in library with this exact compound (updated by sync)')
 
+    # Discovery content — populated by enrich_genre_tokens --compound-tracks/--youtube
+    top_tracks_json = models.JSONField(
+        default=list, blank=True,
+        help_text='Top tracks from Last.fm: [{name, artist, playcount, lastfm_url}]',
+    )
+    youtube_video_id = models.CharField(max_length=20, blank=True)
+    origin_year = models.SmallIntegerField(null=True, blank=True)
+
     # Platform-native equivalents (may differ from our canonical name)
     mb_id         = models.CharField(max_length=40, blank=True, verbose_name='MusicBrainz ID')
     lastfm_tag    = models.CharField(max_length=200, blank=True)

@@ -1,5 +1,5 @@
 {% extends 'wiki/base.html' %}
-{% load wiki_tags %}
+{% load wiki_tags static %}
 
 {% block title %}{{ genre.name }} — Genre{% endblock %}
 
@@ -17,8 +17,130 @@
   {% endfor %}
 </div>
 
+{% if genre.origin_year %}
+<div style="margin: 10px 0 6px; font-size: 12px; color: var(--muted);">emerged ~{{ genre.origin_year }}</div>
+{% endif %}
+
 {% if genre.description %}
   <p style="color: var(--text); margin-top: 12px; max-width: 680px;">{{ genre.description }}</p>
+{% endif %}
+
+{% if genre.youtube_video_id or genre.top_tracks_json %}
+<h2>Sound of {{ genre.name }}</h2>
+
+{% if genre.youtube_video_id %}
+<div style="margin-bottom: 20px;">
+  <iframe
+    style="width:100%; max-width:640px; aspect-ratio:16/9; height:auto; display:block; border-radius:6px; border:1px solid var(--border);"
+    src="https://www.youtube.com/embed/{{ genre.youtube_video_id }}?rel=0&modestbranding=1"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+    allowfullscreen loading="lazy"></iframe>
+</div>
+{% endif %}
+
+{% if genre.top_tracks_json %}
+<div class="wiki-track-list" id="wiki-tracklist">
+  {% for track in genre.top_tracks_json %}
+  <div class="wiki-track-row">
+    <button class="wiki-play-btn"
+      data-idx="{{ forloop.counter0 }}"
+      data-query="{{ track.name }} {{ track.artist }}"
+      data-title="{{ track.name }}"
+      data-artist="{{ track.artist }}"
+      onclick="wikiPlay(this)">▶</button>
+    <div class="wiki-track-info">
+      <div class="wiki-track-title">{{ track.name }}</div>
+      <div class="wiki-track-meta">{{ track.artist }}{% if track.playcount %} · {{ track.playcount }} plays{% endif %}</div>
+    </div>
+    {% if track.lastfm_url %}
+    <a href="{{ track.lastfm_url }}" target="_blank" rel="noopener" class="wiki-track-link" title="Last.fm">↗</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <button class="wiki-queue-btn" onclick="wikiQueueAll()">⇄ Queue {{ genre.name }}</button>
+</div>
+{% endif %}
+{% endif %}
+
+<div id="wiki-player-bar" style="display:none">
+  <div id="wiki-player-yt"></div>
+  <div class="wiki-player-info">
+    <span id="wiki-player-title">—</span>
+    <span id="wiki-player-artist"></span>
+  </div>
+  <div class="wiki-player-btns">
+    <button onclick="wikiPrev()" title="Previous">⏮</button>
+    <button id="wiki-pp-btn" onclick="wikiToggle()" title="Play/Pause">⏸</button>
+    <button onclick="wikiNext()" title="Next">⏭</button>
+  </div>
+</div>
+
+{% if genre.top_tracks_json %}
+<script>
+var _wikiQueue   = {{ genre.top_tracks_json|safe }};
+var _wikiCurrent = -1;
+var _wikiPlayer  = null;
+var _wikiCache   = {};
+
+function wikiPlay(btn) {
+  _wikiCurrent = parseInt(btn.dataset.idx, 10);
+  _wikiLoadTrack(btn.dataset.query, btn.dataset.title, btn.dataset.artist);
+}
+function wikiQueueAll() {
+  _wikiCurrent = 0;
+  var t = _wikiQueue[0];
+  _wikiLoadTrack(t.name + ' ' + t.artist, t.name, t.artist);
+}
+function _wikiLoadTrack(query, title, artist) {
+  document.getElementById('wiki-player-title').textContent  = title;
+  document.getElementById('wiki-player-artist').textContent = artist;
+  _wikiShowBar(); _wikiHighlight();
+  if (_wikiCache[query]) { _wikiStartVideo(_wikiCache[query]); return; }
+  fetch('/api/yt/?q=' + encodeURIComponent(query))
+    .then(function(r){return r.json();})
+    .then(function(d){ if(d.id){_wikiCache[query]=d.id;_wikiStartVideo(d.id);} });
+}
+function _wikiStartVideo(videoId) {
+  if (_wikiPlayer) { _wikiPlayer.loadVideoById(videoId); return; }
+  _wikiPlayer = new YT.Player('wiki-player-yt', {
+    height:'0', width:'0', videoId: videoId,
+    playerVars: {autoplay:1, rel:0, modestbranding:1},
+    events: {
+      onStateChange: function(e) {
+        var b = document.getElementById('wiki-pp-btn');
+        if (e.data===1) b.textContent='⏸';
+        if (e.data===2) b.textContent='▶';
+        if (e.data===0) wikiNext();
+      }
+    }
+  });
+}
+function wikiToggle() {
+  if (!_wikiPlayer) return;
+  _wikiPlayer.getPlayerState()===1 ? _wikiPlayer.pauseVideo() : _wikiPlayer.playVideo();
+}
+function wikiNext() {
+  _wikiCurrent = (_wikiCurrent+1) % _wikiQueue.length;
+  var t=_wikiQueue[_wikiCurrent]; _wikiLoadTrack(t.name+' '+t.artist,t.name,t.artist);
+}
+function wikiPrev() {
+  _wikiCurrent = (_wikiCurrent-1+_wikiQueue.length) % _wikiQueue.length;
+  var t=_wikiQueue[_wikiCurrent]; _wikiLoadTrack(t.name+' '+t.artist,t.name,t.artist);
+}
+function _wikiShowBar() {
+  var bar=document.getElementById('wiki-player-bar');
+  if(bar.style.display==='none'){bar.style.display='flex';document.body.classList.add('wiki-player-open');}
+}
+function _wikiHighlight() {
+  document.querySelectorAll('.wiki-play-btn').forEach(function(b){
+    var a=parseInt(b.dataset.idx,10)===_wikiCurrent;
+    b.classList.toggle('wiki-active',a); b.textContent=a?'⏸':'▶';
+  });
+}
+(function(){var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);})();
+window.onYouTubeIframeAPIReady=function(){};
+</script>
 {% endif %}
 
 {% if genre.mb_id or genre.lastfm_tag or genre.discogs_style or genre.beatport_name or genre.wikipedia_url %}
