@@ -1,0 +1,675 @@
+{% extends 'base.html' %}
+{% load url_tags %}
+{% block title %}{{ space.name }} — Community Playlist{% endblock %}
+
+{% block head_extra %}
+{% with desc=space.bio|default:"A community space in Portland — on Community Playlist." %}
+<meta property="og:type"        content="place">
+<meta property="og:title"       content="{{ space.name }} — Community Playlist">
+<meta property="og:description" content="{{ desc|truncatechars:200 }}">
+<meta property="og:url"         content="https://communityplaylist.com/spaces/{{ space.slug }}/">
+{% if space.photo %}<meta property="og:image" content="https://communityplaylist.com{{ space.photo.url }}">{% endif %}
+<meta property="og:site_name"   content="Community Playlist PDX">
+<meta name="twitter:card" content="summary{% if space.photo %}_large_image{% endif %}">
+<link rel="canonical" href="https://communityplaylist.com/spaces/{{ space.slug }}/">
+<link rel="alternate" type="application/rss+xml" title="{{ space.name }} updates RSS" href="/spaces/{{ space.slug }}/feed.rss">
+{% endwith %}
+{% endblock %}
+
+{% block site_header %}{% endblock %}
+{% block nav_strip %}{% endblock %}
+
+{% block styles %}
+<style>
+:root{--accent:{{ space.brand_color|default:"#4caf50" }};--accent-dark:color-mix(in srgb,var(--accent) 80%,#000);--accent-bg:color-mix(in srgb,var(--accent) 8%,#0e0e0e)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0e0e0e;color:#eee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.epk{max-width:480px;margin:0 auto;padding:24px 16px 90px;display:flex;flex-direction:column;gap:10px}
+
+/* Footer */
+.epk-footer{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:10px;padding:10px 16px;background:linear-gradient(transparent,#0e0e0e 60%);pointer-events:none;flex-wrap:wrap}
+.epk-footer a,.epk-footer button{pointer-events:auto;color:#333;font-size:.68em;text-decoration:none;letter-spacing:.04em;transition:color .15s;background:none;border:none;cursor:pointer;font-family:inherit;padding:0}
+.epk-footer a:hover,.epk-footer button:hover{color:var(--accent)}
+.epk-footer-sep{color:#222;font-size:.68em;pointer-events:none}
+
+/* Hero */
+.hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:28px 20px 20px;background:#161616;border:1px solid #222;border-radius:14px}
+.hero-photo{width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--accent)}
+.hero-placeholder{width:88px;height:88px;border-radius:50%;background:#1a1a1a;border:3px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:2.2em;color:var(--accent)}
+h1{color:var(--accent);font-size:1.3em;font-weight:700;line-height:1.2}
+.type-badge{display:inline-flex;align-items:center;gap:5px;background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);font-size:.63em;padding:2px 9px;border-radius:4px;font-weight:700;letter-spacing:.05em}
+.verified-badge{display:inline-flex;align-items:center;gap:4px;background:#0d1f0d;color:#4caf50;font-size:.63em;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:.04em}
+.bio{color:#888;line-height:1.65;font-size:.84em;max-width:340px}
+.contact-email{color:#666;font-size:.8em;text-decoration:none;transition:color .15s;margin-top:2px}
+.contact-email:hover{color:var(--accent)}
+
+/* Socials */
+.socials{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:4px}
+.social-pill{display:inline-flex;align-items:center;gap:5px;background:#111;border:1px solid #252525;border-radius:20px;padding:4px 11px;text-decoration:none;color:#888;font-size:.78em;transition:all .15s;white-space:nowrap}
+.social-pill:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+
+/* Action row */
+.action-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:6px}
+.follow-btn{background:transparent;border:1px solid #2a2a2a;color:#888;padding:6px 16px;border-radius:20px;cursor:pointer;font-size:.82em;font-family:inherit;transition:all .15s}
+.follow-btn:hover{border-color:var(--accent);color:var(--accent)}
+.follow-btn.active{background:#0d1f0d;border-color:var(--accent);color:var(--accent)}
+.follow-btn-cta{border-color:var(--accent) !important;color:var(--accent) !important;animation:ctapulse 2.5s ease-in-out infinite}
+@keyframes ctapulse{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--accent-bg)}60%{opacity:.85;box-shadow:0 0 0 4px var(--accent-bg)}}
+.edit-link,.share-btn{background:transparent;border:1px solid #2a2a2a;color:#666;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:.82em;font-family:inherit;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.edit-link:hover,.share-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Custom link buttons */
+.link-btn{display:flex;align-items:center;gap:12px;background:#161616;border:1px solid #222;border-radius:12px;padding:12px 16px;text-decoration:none;color:#eee;font-size:.88em;font-weight:500;transition:all .15s;width:100%}
+.link-btn:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+.link-thumb{width:40px;height:40px;border-radius:7px;object-fit:cover;flex-shrink:0;background:#1a1a1a}
+.link-thumb-placeholder{width:40px;height:40px;border-radius:7px;flex-shrink:0;background:#1a1a1a;display:flex;align-items:center;justify-content:center;font-size:1.1em}
+.link-label{flex:1;text-align:center}
+.link-arrow{color:#444;font-size:.8em;flex-shrink:0}
+
+/* Action btn */
+.action-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#161616;border:1px solid #222;border-radius:12px;padding:12px 16px;text-decoration:none;color:#eee;font-size:.88em;font-weight:500;transition:all .15s;width:100%}
+.action-btn:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+.donate-btn{border-color:#cc4466 !important;color:#cc4466 !important}
+.donate-btn:hover{background:rgba(204,68,102,.08) !important;border-color:#cc4466 !important;color:#cc4466 !important}
+
+/* Section label */
+.section-label{font-size:.68em;text-transform:uppercase;letter-spacing:.1em;color:#444;margin:6px 0 4px;padding-left:4px}
+
+/* ── Community Asks — collapsible with thumbnail peek ── */
+.asks-details{background:#161616;border:1px solid #222;border-radius:14px;overflow:hidden}
+.asks-summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px;user-select:none}
+.asks-summary::-webkit-details-marker{display:none}
+.asks-summary-label{flex:1;font-size:.84em;font-weight:600;color:#ccc}
+.asks-summary-count{font-size:.72em;color:#555;background:#111;border:1px solid #222;padding:2px 8px;border-radius:10px}
+.asks-chevron{color:#444;font-size:.75em;transition:transform .25s;flex-shrink:0}
+.asks-details[open] .asks-chevron{transform:rotate(180deg)}
+
+/* Thumbnail peek strip — visible when collapsed */
+.asks-peek{display:flex;gap:5px;padding:0 14px 12px;overflow:hidden}
+.asks-details[open] .asks-peek{display:none}
+.ask-peek-thumb{width:48px;height:48px;border-radius:8px;object-fit:cover;border:1px solid #2a2a2a;flex-shrink:0}
+.ask-peek-more{width:48px;height:48px;border-radius:8px;background:#1a1a1a;border:1px solid #2a2a2a;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.7em;color:#555;font-weight:600}
+
+/* Expanded ask cards */
+.asks-expanded{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px}
+.ask-card{display:flex;align-items:center;gap:10px;background:#111;border:1px solid #1e1e1e;border-radius:10px;padding:9px 10px}
+.ask-card:hover{border-color:#2a2a2a}
+.ask-product-img{width:44px;height:44px;border-radius:7px;object-fit:cover;flex-shrink:0;background:#1a1a1a;border:1px solid #2a2a2a}
+.ask-product-placeholder{width:44px;height:44px;border-radius:7px;flex-shrink:0;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:1.1em}
+.ask-body{flex:1;min-width:0}
+.ask-title{color:#ddd;font-size:.82em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ask-price{color:var(--accent);font-size:.75em;font-weight:600;margin-top:1px}
+.ask-cta{flex-shrink:0}
+.btn-view-item{display:inline-block;padding:4px 10px;border-radius:6px;font-size:.72em;font-weight:600;text-decoration:none;white-space:nowrap;background:transparent;border:1px solid #333;color:#888;transition:all .15s}
+.btn-view-item:hover{border-color:var(--accent);color:var(--accent)}
+.btn-i-have{display:inline-block;padding:4px 10px;border-radius:6px;font-size:.72em;font-weight:600;text-decoration:none;white-space:nowrap;background:transparent;border:1px solid #333;color:#888;transition:all .15s;cursor:pointer;font-family:inherit}
+.btn-i-have:hover{border-color:var(--accent);color:var(--accent)}
+.btn-donate-sm{display:inline-block;padding:5px 12px;border-radius:6px;font-size:.74em;font-weight:600;text-decoration:none;background:#cc4466;color:#fff;white-space:nowrap}
+
+/* Donate row inside expanded asks */
+.asks-donate-row{padding:6px 10px 4px;display:flex;justify-content:center}
+
+/* Audio library */
+.audio-list{display:flex;flex-direction:column;gap:6px;margin-bottom:4px}
+.audio-row{display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #222;border-radius:10px;padding:9px 12px;cursor:pointer;transition:border-color .15s}
+.audio-row:hover,.audio-row.playing{border-color:var(--accent)}
+.audio-play-btn{width:30px;height:30px;border-radius:50%;background:var(--accent);border:none;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.85em;flex-shrink:0;cursor:pointer;line-height:1}
+.audio-name{flex:1;font-size:.82em;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.audio-progress{width:100%;height:3px;background:#222;border-radius:2px;margin-top:4px;display:none}
+.audio-progress-bar{height:100%;background:var(--accent);border-radius:2px;width:0;transition:width .5s linear}
+.audio-row.playing .audio-progress{display:block}
+
+/* Document library */
+.doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:4px}
+.doc-card{background:#161616;border:1px solid #222;border-radius:10px;overflow:hidden;text-decoration:none;color:#ccc;transition:border-color .15s;display:flex;flex-direction:column}
+.doc-card:hover{border-color:var(--accent)}
+.doc-preview{width:100%;aspect-ratio:3/4;border:none;pointer-events:none}
+.doc-name{font-size:.74em;padding:6px 8px;border-top:1px solid #222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaa}
+.doc-card.no-preview{align-items:center;padding:20px 10px;gap:8px;text-align:center}
+.doc-card.no-preview .doc-icon{font-size:2em;line-height:1}
+.doc-card.no-preview .doc-name{border:none;padding:0;font-size:.78em}
+
+/* Photo gallery */
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;border-radius:10px;overflow:hidden}
+.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;display:block;transition:opacity .15s}
+.photo-grid img:hover{opacity:.85;cursor:zoom-in}
+.photo-grid-more{background:#161616;border:1px solid #222;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:.75em;color:#555;aspect-ratio:1}
+
+/* Recent supporter banner */
+.supporter-banner{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 12%,#0e0e0e),color-mix(in srgb,var(--accent) 6%,#0e0e0e));border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:14px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.supporter-banner-icon{font-size:1.4em;flex-shrink:0;animation:coffeepop .6s ease}
+@keyframes coffeepop{0%{transform:scale(0.6);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+.supporter-banner-names{flex:1;font-size:.82em;color:var(--accent);font-weight:600;line-height:1.5}
+.supporter-banner-sub{font-size:.72em;color:#555;margin-top:1px}
+.supporter-banner-link{font-size:.74em;color:#555;text-decoration:none;white-space:nowrap;border:1px solid #2a2a2a;padding:4px 10px;border-radius:20px;transition:all .15s;flex-shrink:0}
+.supporter-banner-link:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Ko-fi post cards */
+.kofi-posts{display:flex;flex-direction:column;gap:8px}
+.kofi-post-card{background:#161616;border:1px solid #222;border-radius:12px;padding:14px 16px;text-decoration:none;color:#eee;display:block;transition:border-color .15s}
+.kofi-post-card:hover{border-color:var(--accent)}
+.kofi-post-meta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.kofi-post-icon{font-size:1.1em;line-height:1}
+.kofi-post-date{font-size:.7em;color:#444;letter-spacing:.02em}
+.kofi-post-title{font-size:.88em;font-weight:600;color:#ddd;line-height:1.4;margin-bottom:4px}
+.kofi-post-excerpt{font-size:.78em;color:#666;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.kofi-post-link{font-size:.74em;color:var(--accent);margin-top:6px;display:inline-block}
+
+/* Supporter strip */
+.supporters-strip{display:flex;flex-wrap:wrap;gap:6px}
+.supporter-pill{display:inline-flex;align-items:center;gap:4px;background:#111;border:1px solid #1e1e1e;border-radius:20px;padding:4px 10px;font-size:.74em;color:#888}
+.supporter-pill .sp-emoji{font-size:.9em}
+
+/* Timeline */
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #1a1a1a}
+.tl-item:last-child{border-bottom:none}
+.tl-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:5px}
+.tl-body{flex:1;min-width:0}
+.tl-date{font-size:.68em;color:#444;margin-bottom:4px;letter-spacing:.02em}
+.tl-text{font-size:.82em;color:#aaa;line-height:1.55;white-space:pre-wrap}
+
+/* Update post form */
+.update-form{background:#161616;border:1px solid #222;border-radius:12px;padding:12px}
+.update-form textarea{width:100%;background:#111;border:1px solid #2a2a2a;border-radius:8px;color:#ddd;font-size:.82em;padding:8px 10px;resize:vertical;min-height:72px;font-family:inherit;outline:none;transition:border-color .15s}
+.update-form textarea:focus{border-color:var(--accent)}
+.update-form-actions{display:flex;justify-content:flex-end;margin-top:8px}
+.update-post-btn{background:var(--accent);color:#fff;border:none;padding:6px 16px;border-radius:8px;cursor:pointer;font-size:.8em;font-weight:600;font-family:inherit;transition:opacity .15s}
+.update-post-btn:hover{opacity:.85}
+
+@media(max-width:480px){h1{font-size:1.15em}.hero-photo,.hero-placeholder{width:72px;height:72px;font-size:1.8em}.doc-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}}
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="epk">
+
+{# ── Hero card ── #}
+<div class="hero">
+  {% if space.photo %}
+    <img src="{{ space.photo.url }}" alt="{{ space.name }}" class="hero-photo">
+  {% else %}
+    <div class="hero-placeholder">🌱</div>
+  {% endif %}
+
+  <div>
+    <h1>{{ space.name }}</h1>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:6px">
+      <span class="type-badge">{{ space.get_space_type_display }}</span>
+      {% if space.is_verified %}<span class="verified-badge">✓ Verified</span>{% endif %}
+    </div>
+  </div>
+
+  {% if space.bio %}<p class="bio">{{ space.bio }}</p>{% endif %}
+  {% if space.contact_email %}<a href="mailto:{{ space.contact_email }}" class="contact-email">✉ {{ space.contact_email }}</a>{% endif %}
+
+  <div class="socials">
+    {% if space.website %}<a href="{{ space.website|safe_href }}" class="social-pill" target="_blank" rel="noopener">🌐 Website</a>{% endif %}
+    {% if space.instagram %}<a href="https://instagram.com/{{ space.instagram }}" class="social-pill" target="_blank" rel="noopener">📷 @{{ space.instagram }}</a>{% endif %}
+    {% if space.bluesky %}<a href="https://bsky.app/profile/{{ space.bluesky }}" class="social-pill" target="_blank" rel="noopener">🦋 Bluesky</a>{% endif %}
+    {% if space.mastodon %}<a href="{{ space.mastodon|safe_href }}" class="social-pill" target="_blank" rel="noopener">🐘 Mastodon</a>{% endif %}
+    {% if space.tiktok %}<a href="https://tiktok.com/@{{ space.tiktok }}" class="social-pill" target="_blank" rel="noopener">🎵 TikTok</a>{% endif %}
+    {% if space.kofi %}<a href="https://ko-fi.com/{{ space.kofi }}" class="social-pill" target="_blank" rel="noopener">☕ Ko-fi</a>{% endif %}
+    <a href="/spaces/{{ space.slug }}/feed.rss" class="social-pill" title="RSS feed for this space">RSS</a>
+  </div>
+
+  <div class="action-row">
+    {% if request.user.is_authenticated %}
+      <button class="follow-btn {% if is_following %}active{% endif %}" id="follow-btn"
+        data-type="space" data-id="{{ space.pk }}">
+        {% if is_following %}★ Following{% else %}☆ Follow{% endif %}
+      </button>
+    {% else %}
+      <button class="follow-btn follow-btn-cta" id="follow-btn-cta">♡ Follow</button>
+    {% endif %}
+    {% if can_edit %}
+      <a href="{% url 'community_space_edit' slug=space.slug %}" class="edit-link">✏ Edit</a>
+    {% endif %}
+    <button class="share-btn" id="share-profile-btn">⬆ Share</button>
+    {% if space.view_count %}<span style="color:#444;font-size:.78em">👁 {{ space.view_count }}</span>{% endif %}
+  </div>
+</div>
+
+{# ── Recent supporter banner (last 7 days) ── #}
+{% if kofi_recent %}
+<div class="supporter-banner">
+  <span class="supporter-banner-icon">☕</span>
+  <div style="flex:1;min-width:0">
+    <div class="supporter-banner-names">
+      {% for s in kofi_recent|slice:":3" %}{{ s.from_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if kofi_recent|length > 3 %} + {{ kofi_recent|length|add:"-3" }} more{% endif %}
+    </div>
+    <div class="supporter-banner-sub">
+      {% if kofi_recent|length == 1 %}just supported{% else %}just supported{% endif %} {{ space.name }} this week ♥
+    </div>
+  </div>
+  <a href="{% url 'community_space_supporters' slug=space.slug %}" class="supporter-banner-link">Thank you →</a>
+</div>
+{% endif %}
+
+{# ── 1. Custom link buttons (Code of Conduct, zines, etc.) ── #}
+{% if space.custom_links %}
+<div class="section-label">Links</div>
+{% for link in space.custom_links %}
+<a href="{{ link.url }}" class="link-btn" target="_blank" rel="noopener">
+  {% if link.thumbnail_url %}
+    <img src="{{ link.thumbnail_url }}" class="link-thumb" alt="" loading="lazy">
+  {% else %}
+    <div class="link-thumb-placeholder">📄</div>
+  {% endif %}
+  <span class="link-label">{{ link.label }}</span>
+  <span class="link-arrow">↗</span>
+</a>
+{% endfor %}
+{% endif %}
+
+{# ── 2. Audio library ── #}
+{% if audio_files %}
+<div class="section-label">🎵 Audio</div>
+<div class="audio-list" id="audio-library">
+  {% for af in audio_files %}
+  <div class="audio-row" data-src="{{ af.stream_url }}" data-idx="{{ forloop.counter0 }}">
+    <button class="audio-play-btn" aria-label="Play {{ af.name }}">▶</button>
+    <div style="flex:1;min-width:0">
+      <div class="audio-name">{{ af.name }}</div>
+      <div class="audio-progress"><div class="audio-progress-bar"></div></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<audio id="space-audio-player" preload="none" style="display:none"></audio>
+{% endif %}
+
+{# ── 3. Document / Zine library ── #}
+{% if doc_files %}
+<div class="section-label">📄 Zines &amp; Docs</div>
+<div class="doc-grid">
+  {% for df in doc_files %}
+  {% if df.mimeType == 'application/pdf' or 'google-apps' in df.mimeType %}
+  <a href="{{ df.preview_url }}" class="doc-card" target="_blank" rel="noopener">
+    <iframe class="doc-preview" src="{{ df.preview_url }}" loading="lazy" title="{{ df.name }}"></iframe>
+    <div class="doc-name">{{ df.name }}</div>
+  </a>
+  {% else %}
+  <a href="{{ df.preview_url }}" class="doc-card no-preview" target="_blank" rel="noopener">
+    <div class="doc-icon">📄</div>
+    <div class="doc-name">{{ df.name }}</div>
+  </a>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── 4. Resource library (Google Drive folder link) ── #}
+{% if space.drive_folder_url %}
+<a href="{{ space.drive_folder_url|safe_href }}" class="action-btn" target="_blank" rel="noopener">
+  <span>📁</span> <span>Resource Library</span> <span style="margin-left:auto;color:#444;font-size:.8em">↗</span>
+</a>
+{% endif %}
+
+{# ── 5. Community Asks — collapsed with thumbnail peek ── #}
+{% if asks %}
+<div class="section-label" style="margin-top:8px">Community Asks</div>
+<details class="asks-details" id="asks-details">
+  <summary class="asks-summary">
+    <span class="asks-summary-label">🛒 Wish List</span>
+    <span class="asks-summary-count">{{ asks|length }} item{{ asks|length|pluralize }}</span>
+    <span class="asks-chevron">▼</span>
+  </summary>
+
+  {# Thumbnail peek strip — shown when collapsed #}
+  <div class="asks-peek">
+    {% for ask in asks %}
+      {% if ask.product_image_url %}
+        <img src="{{ ask.product_image_url }}" class="ask-peek-thumb" alt="" loading="lazy">
+      {% elif ask.product_url %}
+        <div class="ask-peek-more">📦</div>
+      {% endif %}
+      {% if forloop.counter == 6 and not forloop.last %}
+        <div class="ask-peek-more">+{{ asks|length|add:"-6" }}</div>
+        {% comment %}stop rendering peek thumbs{% endcomment %}
+        {% if True %}{% endif %}
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {# Full expanded cards #}
+  <div class="asks-expanded">
+    {% for ask in asks %}
+    <div class="ask-card">
+      {% if ask.product_image_url %}
+        <img src="{{ ask.product_image_url }}" class="ask-product-img" alt="" loading="lazy">
+      {% elif ask.product_url %}
+        <div class="ask-product-placeholder">📦</div>
+      {% elif ask.ask_type == 'fund' %}
+        <div class="ask-product-placeholder">💰</div>
+      {% elif ask.ask_type == 'volunteer' %}
+        <div class="ask-product-placeholder">🤝</div>
+      {% else %}
+        <div class="ask-product-placeholder">🔧</div>
+      {% endif %}
+      <div class="ask-body">
+        <div class="ask-title">{{ ask.title }}</div>
+        {% if ask.product_price %}<div class="ask-price">~${{ ask.product_price }}</div>{% endif %}
+      </div>
+      <div class="ask-cta">
+        {% if ask.ask_type == 'item' and ask.product_url %}
+          <a href="{{ ask.product_url }}" target="_blank" rel="noopener" class="btn-view-item">View ↗</a>
+        {% elif ask.ask_type == 'fund' %}
+          {% with donate_url=ask.donation_url|default:space.donation_url %}
+          {% if donate_url %}<a href="{{ donate_url }}" target="_blank" rel="noopener" class="btn-donate-sm">♥</a>{% endif %}
+          {% endwith %}
+        {% else %}
+          {% if space.contact_email %}
+            <a href="mailto:{{ space.contact_email }}" class="btn-i-have">I have this</a>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {# Donate / wishlist source link at bottom of asks #}
+    <div class="asks-donate-row">
+      {% if space.website %}
+        <a href="{{ space.website|safe_href }}" target="_blank" rel="noopener" class="action-btn donate-btn" style="padding:9px 16px;font-size:.82em">
+          ♥ Donate or support {{ space.name }}
+        </a>
+      {% elif space.donation_url %}
+        <a href="{{ space.donation_url|safe_href }}" target="_blank" rel="noopener" class="action-btn donate-btn" style="padding:9px 16px;font-size:.82em">
+          ♥ Donate
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</details>
+{% endif %}
+
+{# ── 6. Location ── #}
+{% if space.address %}
+<div class="section-label">Location</div>
+<a href="https://www.google.com/maps/search/?api=1&query={{ space.address|urlencode }}"
+   class="action-btn" target="_blank" rel="noopener">
+  <span>📍</span>
+  <span>
+    Find on Google Maps
+    <div style="font-size:.78em;color:#666;margin-top:2px">{{ space.address }}</div>
+  </span>
+  <span style="margin-left:auto;color:#444;font-size:.8em">↗</span>
+</a>
+{% endif %}
+
+{# ── 7a. External RSS feed items ── #}
+{% if feed_items %}
+<div class="section-label">📡 Updates</div>
+<div class="kofi-posts">
+  {% for item in feed_items %}
+  <a href="{{ item.link|safe_href }}" class="kofi-post-card" target="_blank" rel="noopener">
+    <div class="kofi-post-meta">
+      <span class="kofi-post-icon">📝</span>
+      {% if item.published %}<span class="kofi-post-date">{{ item.published|date:"M j, Y" }}</span>{% endif %}
+    </div>
+    <div class="kofi-post-title">{{ item.title|truncatechars:120 }}</div>
+    <span class="kofi-post-link">Read more ↗</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── 7. Ko-fi Posts + Supporters ── #}
+{% if space.kofi %}
+{% if kofi_blog %}
+<div class="section-label">☕ Ko-fi Posts</div>
+<div class="kofi-posts">
+  {% for post in kofi_blog %}
+  <a href="{{ post.url }}" class="kofi-post-card" target="_blank" rel="noopener">
+    <div class="kofi-post-meta">
+      <span class="kofi-post-icon">📝</span>
+      {% if post.timestamp %}<span class="kofi-post-date">{{ post.timestamp|date:"M j, Y" }}</span>{% endif %}
+    </div>
+    <div class="kofi-post-title">{{ post.message|truncatechars:120 }}</div>
+    <span class="kofi-post-link">Read on Ko-fi ↗</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if kofi_support %}
+<div class="section-label" style="margin-top:{% if kofi_blog %}10{% else %}0{% endif %}px">☕ Supporters</div>
+<div class="supporters-strip">
+  {% for s in kofi_support %}
+  {% if s.is_public %}
+  <span class="supporter-pill">
+    <span class="sp-emoji">{% if s.kofi_type == 'Subscription' %}⭐{% elif s.kofi_type == 'Shop_Order' %}🛒{% elif s.kofi_type == 'Commission' %}🎨{% else %}☕{% endif %}</span>
+    {{ s.from_name }}{% if s.amount and s.amount != '0' %} · ${{ s.amount }}{% endif %}
+  </span>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not kofi_blog and not kofi_support %}
+{# No webhook data yet — show the embed as fallback #}
+<div class="section-label">☕ Ko-fi</div>
+<div style="background:#161616;border:1px solid #222;border-radius:14px;overflow:hidden">
+  <iframe src="https://ko-fi.com/{{ space.kofi }}/?hidefeed=false&widget=true&embed=true&preview=true"
+    style="border:none;width:100%;display:block;min-height:480px" title="{{ space.name }} Ko-fi" loading="lazy">
+  </iframe>
+</div>
+{% endif %}
+{% endif %}
+
+{# ── 8. Photo Gallery ── #}
+{% if photos or can_edit %}
+<div class="section-label">Photos</div>
+{% if photos %}
+<div class="photo-grid">
+  {% for p in photos|slice:":9" %}
+    <img src="{{ p.image.url }}" alt="{{ p.caption|default:space.name }}" loading="lazy"
+         onclick="window.open('{{ p.image.url }}','_blank')">
+  {% endfor %}
+  {% if photos|length > 9 %}
+    <div class="photo-grid-more">+{{ photos|length|add:"-9" }} more</div>
+  {% endif %}
+</div>
+{% endif %}
+{% if can_edit %}
+<form method="post" action="{% url 'community_space_edit' slug=space.slug %}" enctype="multipart/form-data"
+      style="margin-top:6px">
+  {% csrf_token %}
+  {# pass all existing space fields as hidden so the edit view doesn't blank them #}
+  <input type="hidden" name="name"             value="{{ space.name|escapejs }}">
+  <input type="hidden" name="bio"              value="{{ space.bio|escapejs }}">
+  <input type="hidden" name="address"          value="{{ space.address|escapejs }}">
+  <input type="hidden" name="neighborhood"     value="{{ space.neighborhood|escapejs }}">
+  <input type="hidden" name="website"          value="{{ space.website|escapejs }}">
+  <input type="hidden" name="space_type"       value="{{ space.space_type }}">
+  <input type="hidden" name="_photo_only"      value="1">
+  <label style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #222;border-radius:10px;padding:10px 14px;cursor:pointer;font-size:.82em;color:#888;transition:border-color .15s"
+         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='#222'">
+    <span style="font-size:1.2em">📷</span>
+    <span>Add photos</span>
+    <input type="file" name="extra_photos" multiple accept="image/*" style="display:none"
+           onchange="this.closest('form').submit()">
+  </label>
+</form>
+{% endif %}
+{% endif %}
+
+{# ── 9. Timeline / Updates ── #}
+{% if updates or can_edit %}
+<div class="section-label">Updates</div>
+{% if can_edit %}
+<form method="post" action="{% url 'community_space_profile' slug=space.slug %}" class="update-form">
+  {% csrf_token %}
+  <input type="hidden" name="_post_update" value="1">
+  <textarea name="update_body" placeholder="Post an update, milestone, or note for the community…" rows="3"></textarea>
+  <div class="update-form-actions">
+    <button type="submit" class="update-post-btn">Post update</button>
+  </div>
+</form>
+{% endif %}
+{% if updates %}
+<div class="timeline" style="background:#161616;border:1px solid #222;border-radius:12px;padding:12px 14px;margin-top:6px">
+  {% for u in updates %}
+  <div class="tl-item">
+    <div class="tl-dot"></div>
+    <div class="tl-body">
+      <div class="tl-date">{{ u.created_at|date:"M j, Y" }}{% if u.posted_by %} · {{ u.posted_by.get_short_name|default:u.posted_by.username }}{% endif %}</div>
+      <div class="tl-text">{{ u.body }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+</div>{# /epk #}
+
+<div class="epk-footer">
+  <a href="/" title="Community Playlist · Portland">community playlist · pdx</a>
+  <span class="epk-footer-sep">·</span>
+  <a href="/spaces/{{ space.slug }}/feed.rss" title="RSS feed">RSS</a>
+  <span class="epk-footer-sep">·</span>
+  <button id="cookie-btn" onclick="cpCookieModal()">Cookie Preferences</button>
+  <span class="epk-footer-sep">·</span>
+  <a href="/report/">Report</a>
+  <span class="epk-footer-sep">·</span>
+  <a href="/privacy/">Privacy</a>
+</div>
+
+{# Cookie modal #}
+<div id="cookie-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;align-items:flex-end;justify-content:center">
+  <div style="width:100%;max-width:500px;background:#1a1a1a;border-top:1px solid #333;border-radius:14px 14px 0 0;padding:28px 24px 32px;font-family:-apple-system,sans-serif">
+    <h2 style="color:#eee;font-size:1em;margin-bottom:10px">Cookie Preferences</h2>
+    <p style="color:#888;font-size:.82em;line-height:1.6;margin-bottom:20px">We use essential cookies only — session authentication and CSRF protection. No ad tracking or third-party analytics.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="cpCookieAccept()" style="background:var(--accent);color:#fff;border:none;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:.85em;font-family:inherit">Accept &amp; Close</button>
+      <button onclick="cpCookieModal()" style="background:transparent;border:1px solid #333;color:#888;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:.85em;font-family:inherit">Close</button>
+      <a href="/privacy/" style="display:inline-flex;align-items:center;color:#555;font-size:.8em;text-decoration:none;padding:9px 4px">Privacy Policy →</a>
+    </div>
+  </div>
+</div>
+
+{% if not request.user.is_authenticated %}
+<div id="join-popup" style="display:none;position:fixed;bottom:44px;left:50%;transform:translateX(-50%);width:min(480px,94vw);background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:20px 22px;z-index:8000;box-shadow:0 8px 40px rgba(0,0,0,.6);font-family:-apple-system,sans-serif">
+  <button onclick="document.getElementById('join-popup').style.display='none';sessionStorage.setItem('cpJoinDismissed','1')" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#444;font-size:1.2em;cursor:pointer;line-height:1">✕</button>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:1.1em;flex-shrink:0">🎵</div>
+    <div>
+      <div style="color:#eee;font-size:.92em;font-weight:600">Join Community Playlist</div>
+      <div style="color:#666;font-size:.75em">Follow spaces, artists &amp; get local event updates</div>
+    </div>
+  </div>
+  <p style="color:#888;font-size:.8em;line-height:1.55;margin-bottom:16px">Free, no spam. Follow {{ space.name }} and get notified about events and updates.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a href="/register/" style="background:var(--accent);color:#fff;text-decoration:none;padding:8px 18px;border-radius:8px;font-size:.84em;font-weight:600">Create account</a>
+    <a href="/login/" style="background:transparent;border:1px solid #333;color:#888;text-decoration:none;padding:8px 16px;border-radius:8px;font-size:.84em">Log in</a>
+  </div>
+</div>
+{% endif %}
+
+<script>
+// ── Follow toggle ──
+(function(){
+  var btn = document.getElementById('follow-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    fetch('/follow/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+      body:JSON.stringify({type:btn.dataset.type, id:parseInt(btn.dataset.id)})
+    }).then(r=>r.json()).then(d=>{
+      btn.textContent = d.following ? '★ Following' : '☆ Follow';
+      btn.classList.toggle('active', d.following);
+    });
+  });
+})();
+
+(function(){
+  var cta = document.getElementById('follow-btn-cta');
+  if (!cta) return;
+  cta.addEventListener('click', function() {
+    var p = document.getElementById('join-popup');
+    if (p) { p.style.display = 'block'; sessionStorage.removeItem('cpJoinDismissed'); }
+  });
+})();
+
+document.getElementById('share-profile-btn').addEventListener('click', function() {
+  var title = '{{ space.name|escapejs }} — Community Playlist';
+  if (navigator.share) {
+    navigator.share({title: title, url: location.href}).catch(function(){});
+  } else {
+    navigator.clipboard.writeText(location.href).then(function() {
+      var btn = document.getElementById('share-profile-btn');
+      var orig = btn.textContent;
+      btn.textContent = '✓ Copied';
+      setTimeout(function(){ btn.textContent = orig; }, 2000);
+    });
+  }
+});
+
+function cpCookieModal() {
+  var m = document.getElementById('cookie-modal');
+  m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
+}
+function cpCookieAccept() {
+  localStorage.setItem('cpCookieOk', '1');
+  document.getElementById('cookie-modal').style.display = 'none';
+}
+document.getElementById('cookie-modal').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+
+function getCookie(n){var v=document.cookie.match('(^|;) ?'+n+'=([^;]*)(;|$)');return v?v[2]:null}
+
+{% if audio_files %}
+(function(){
+  var player = document.getElementById('space-audio-player');
+  var rows   = document.querySelectorAll('#audio-library .audio-row');
+  var currentIdx = -1;
+  function updateRow(idx, playing) {
+    var row = rows[idx]; if (!row) return;
+    row.classList.toggle('playing', playing);
+    row.querySelector('.audio-play-btn').textContent = playing ? '⏸' : '▶';
+  }
+  function setProgress(idx, pct) {
+    var row = rows[idx]; if (!row) return;
+    var bar = row.querySelector('.audio-progress-bar');
+    if (bar) bar.style.width = pct + '%';
+  }
+  player.addEventListener('timeupdate', function(){
+    if (!player.duration) return;
+    setProgress(currentIdx, (player.currentTime / player.duration) * 100);
+  });
+  player.addEventListener('ended', function(){
+    updateRow(currentIdx, false); setProgress(currentIdx, 0);
+    var next = currentIdx + 1;
+    if (next < rows.length) rows[next].click();
+  });
+  rows.forEach(function(row, idx) {
+    row.addEventListener('click', function(){
+      var src = row.dataset.src;
+      if (currentIdx === idx) {
+        if (player.paused) { player.play(); updateRow(idx, true); }
+        else               { player.pause(); updateRow(idx, false); }
+        return;
+      }
+      if (currentIdx >= 0) { updateRow(currentIdx, false); setProgress(currentIdx, 0); }
+      currentIdx = idx; player.src = src;
+      player.play().catch(function(){});
+      updateRow(idx, true);
+    });
+  });
+})();
+{% endif %}
+
+{% if not request.user.is_authenticated %}
+(function() {
+  if (sessionStorage.getItem('cpJoinDismissed')) return;
+  setTimeout(function() {
+    var p = document.getElementById('join-popup');
+    if (p) p.style.display = 'block';
+  }, 4000);
+})();
+{% endif %}
+</script>
+{% endblock %}

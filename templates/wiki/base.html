@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Genre Wiki{% endblock %} — Community Playlist</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0e0e10;
+      --surface: #17171a;
+      --border:  #2a2a30;
+      --text:    #e8e8ec;
+      --muted:   #6b6b7a;
+      --accent:  #7c6af7;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --gold:    #eab308;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', ui-monospace, monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    header .logo {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    header nav { display: flex; gap: 16px; font-size: 12px; }
+    header nav a { color: var(--muted); }
+    header nav a:hover { color: var(--text); }
+
+    header .search-form { margin-left: auto; display: flex; gap: 6px; }
+    header .search-form input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      padding: 5px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      width: 200px;
+    }
+    header .search-form input:focus { outline: none; border-color: var(--accent); }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .chip.accent { border-color: var(--accent); color: var(--accent); }
+    .chip.muted  { color: var(--muted); }
+
+    .source-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .source-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--border); }
+    .source-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .source-table tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge.verified  { background: rgba(34,197,94,0.15);  color: var(--green); }
+    .badge.consensus { background: rgba(124,106,247,0.15); color: var(--accent); }
+    .badge.derived   { background: rgba(107,107,122,0.15); color: var(--muted); }
+    .badge.proposed  { background: rgba(234,179,8,0.15);   color: var(--gold); }
+
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+    h2 { font-size: 16px; font-weight: 600; margin: 28px 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    p  { color: var(--muted); margin-bottom: 12px; }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 20px 24px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 60px;
+    }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--accent); }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<header>
+  <a href="{% url 'wiki:token_list' %}" class="logo">Genre Wiki</a>
+  <nav>
+    <a href="{% url 'wiki:token_list' %}">Tokens</a>
+    <a href="https://communityplaylist.com">← Community Playlist</a>
+  </nav>
+  <form class="search-form" action="{% url 'wiki:token_list' %}" method="get">
+    <input name="q" value="{{ q|default:'' }}" placeholder="Search tokens, genres…" autocomplete="off">
+  </form>
+</header>
+
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+
+<footer>
+  Built with gratitude to
+  <a href="https://en.wikipedia.org/wiki/List_of_music_genres_and_styles" target="_blank">Wikipedia</a> ·
+  <a href="https://musicbrainz.org" target="_blank">MusicBrainz</a> ·
+  <a href="https://www.last.fm" target="_blank">Last.fm</a> ·
+  <a href="https://www.discogs.com" target="_blank">Discogs</a> ·
+  <a href="https://listenbrainz.org" target="_blank">ListenBrainz</a> ·
+  <a href="https://www.beatport.com" target="_blank">Beatport</a> ·
+  <a href="https://www.allmusic.com" target="_blank">AllMusic</a>
+  <br><br>
+  <a href="https://communityplaylist.com">Community Playlist</a> — Portland, OR
+</footer>
+
+</body>
+</html>

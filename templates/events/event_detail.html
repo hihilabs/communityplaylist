@@ -1,22 +1,61 @@
 {% extends 'base.html' %}
-{% block title %}{{ event.title }} - Community Playlist{% endblock %}
-{% block meta_description %}{{ event.description|striptags|truncatewords:30 }}{% endblock %}
-{% block canonical %}https://communityplaylist.com/events/{{ event.slug }}/{% endblock %}
-{% block og_title %}{{ event.title }} — Community Playlist{% endblock %}
-{% block og_description %}{{ event.description|striptags|truncatewords:30 }}{% endblock %}
-{% block og_url %}https://communityplaylist.com/events/{{ event.slug }}/{% endblock %}
-{% block og_image %}{% if event.photo %}{{ event.photo.url }}{% else %}https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png{% endif %}{% endblock %}
+{% load url_tags %}
+{% block title %}{{ event.title }} — Community Playlist PDX{% endblock %}
+{% block head_extra %}
+{% with desc=event.description|truncatechars:200 %}{% with img=photo_url|default:'' %}
+<meta name="description" content="{{ desc }}">
+<link rel="canonical" href="https://communityplaylist.com/events/{{ event.slug }}/">
+<meta property="og:type"        content="website">
+<meta property="og:title"       content="{{ event.title }} — Community Playlist PDX">
+<meta property="og:description" content="{{ desc }}">
+<meta property="og:url"         content="https://communityplaylist.com/events/{{ event.slug }}/">
+<meta property="og:site_name"   content="Community Playlist PDX">
+{% if img %}<meta property="og:image" content="https://communityplaylist.com{{ img }}">{% endif %}
+<meta name="twitter:card"        content="{% if img %}summary_large_image{% else %}summary{% endif %}">
+<meta name="twitter:title"       content="{{ event.title }}">
+<meta name="twitter:description" content="{{ desc }}">
+{% if img %}<meta name="twitter:image" content="https://communityplaylist.com{{ img }}">{% endif %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MusicEvent",
+  "name": "{{ event.title|escapejs }}",
+  "url": "https://communityplaylist.com/events/{{ event.slug }}/",
+  "startDate": "{{ event.start_date|date:'c' }}",
+  {% if event.end_date %}"endDate": "{{ event.end_date|date:'c' }}",{% endif %}
+  "eventStatus": "https://schema.org/EventScheduled",
+  "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+  "description": "{{ desc|escapejs }}",
+  {% if img %}"image": "https://communityplaylist.com{{ img }}",{% endif %}
+  "location": {
+    "@type": "Place",
+    "name": "{{ event.location|escapejs }}"{% if venue and venue.address %},
+    "address": {"@type":"PostalAddress","streetAddress":"{{ venue.address|escapejs }}","addressLocality":"Portland","addressRegion":"OR","addressCountry":"US"}{% endif %}
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "{% if event.is_free %}0{% else %}{{ event.price_info|default:'' }}{% endif %}",
+    "priceCurrency": "USD",
+    "url": "https://communityplaylist.com/events/{{ event.slug }}/"
+  }{% if linked_artists %},
+  "performer": [{% for a in linked_artists %}{"@type":"MusicGroup","name":"{{ a.name|escapejs }}","url":"https://communityplaylist.com/artists/{{ a.slug }}/"}{% if not forloop.last %},{% endif %}{% endfor %}]{% endif %}{% if linked_promoters %},
+  "organizer": [{% for p in linked_promoters %}{"@type":"Organization","name":"{{ p.name|escapejs }}","url":"https://communityplaylist.com/promoters/{{ p.slug }}/"}{% if not forloop.last %},{% endif %}{% endfor %}]{% endif %}
+}
+</script>
+{% endwith %}{% endwith %}
+{% endblock %}
 {% block styles %}
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#111;color:#eee;font-family:sans-serif;padding:20px;max-width:860px;margin:0 auto}
+body{background:#111;color:#eee;font-family:sans-serif}
+.page-wrap{max-width:860px;margin:0 auto;padding:16px}
 .back{color:#ff6b35;text-decoration:none;font-size:.9em;display:inline-block;margin-bottom:20px}
 .back:hover{text-decoration:underline}
 h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 .meta{font-size:.85em;color:#888;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;line-height:1.6}
-.weather-row{font-size:.78em;color:#666;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:0 10px;align-items:center;line-height:1.6}
-.weather-hour{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
-.weather-hour .wt{color:#555;font-size:.9em}
+.weather-row{font-size:.85em;color:#777;margin:14px 0 20px;padding:12px 16px;background:#0d0d0d;border-radius:10px;border:1px solid #1a1a1a;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;line-height:1.8}
+.weather-hour{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:2px 0}
+.weather-hour .wt{color:#555;font-size:.88em;letter-spacing:.02em}
 .meta span{white-space:nowrap}
 .meta a{color:#aaa;text-decoration:none;border-bottom:1px dotted #555}
 .meta a:hover{color:#ff6b35;border-color:#ff6b35}
@@ -42,7 +81,7 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 .form-group{margin-bottom:14px}
 .form-group label{display:block;font-size:.85em;color:#aaa;margin-bottom:4px}
 .form-group input,.form-group textarea{width:100%;background:#222;border:1px solid #333;border-radius:6px;padding:10px;color:#eee;font-size:.9em}
-.form-group input:focus,.form-group textarea:focus,.form-group input:focus-visible,.form-group textarea:focus-visible{outline:none;border-color:#ff6b35}
+.form-group input:focus,.form-group textarea:focus{outline:none;border-color:#ff6b35}
 .btn{background:#ff6b35;color:#fff;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;font-size:.9em}
 .btn:hover{background:#e55a25}
 .more-link{display:inline-block;margin-top:16px;color:#ff6b35;text-decoration:none;font-size:.9em}
@@ -72,7 +111,7 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 </style>
 {% endblock %}
 {% block body %}
-<a href="/"><img src="https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png" alt="Community Playlist" style="height:36px;width:auto;display:block;margin-bottom:14px;opacity:.85"></a>
+<div class="page-wrap">
 <a href="/" class="back">← Back to all events</a>
 {% if event.category %}<a href="/?category={{ event.category }}" class="cat-badge cat-{{ event.category }}" style="text-decoration:none">{{ event.get_category_display }}</a>{% endif %}
 <h1>{% if upload_success %}
@@ -83,12 +122,26 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 <div class="meta">
 <span>📅 <a href="{{ cal_url }}" target="_blank" rel="noopener" title="Add to Google Calendar">{{ event.start_date|date:"l, F j, Y @ g:i A" }}</a></span>
 {% if event.end_date %}<span>until {{ event.end_date|date:"g:i A" }}</span>{% endif %}
-<span>📍 <a href="{{ maps_url }}" target="_blank" rel="noopener" title="Get directions">{{ event.location }}</a></span>
+<span>📍 <a href="{{ maps_url|safe_href }}" target="_blank" rel="noopener" title="Get directions">{{ event.location }}</a></span>
 {% if venue %}<a href="/venues/{{ venue.slug }}/" class="venue-pill">🏛 {{ venue.name }}</a>{% endif %}
 {% if event.neighborhood %}<span>{{ event.neighborhood }}</span>{% endif %}
 {% if event.view_count %}<span style="color:#444;font-size:.8em">👁 {{ event.view_count }} view{{ event.view_count|pluralize }}</span>{% endif %}
 {% if event.is_free %}<span class="free">FREE</span>{% else %}{% if event.price_info %}<span>{{ event.price_info }}</span>{% endif %}{% endif %}
 </div>
+{% if event.photo or flyer_photo %}
+<div style="margin:18px 0 24px">
+  {% if flyer_photo %}
+  <div class="flyer-wrap" style="margin-bottom:{% if event.photo %}16px{% else %}0{% endif %}">
+    <span class="flyer-label">The Flyer</span>
+    <img class="flyer-img lb-trigger" src="{{ flyer_photo.image.url }}" alt="{{ flyer_photo.caption|default:event.title }}" data-caption="{{ flyer_photo.caption|default:'' }}">
+    {% if flyer_photo.caption %}<p class="flyer-caption">{{ flyer_photo.caption }}</p>{% endif %}
+  </div>
+  {% endif %}
+  {% if event.photo %}
+  <div class="promo-photo" style="margin-bottom:0"><img src="{{ event.photo.url }}" alt="{{ event.title }}" class="lb-trigger" data-caption="{{ event.title }}"></div>
+  {% endif %}
+</div>
+{% endif %}
 {% if event.latitude and event.longitude %}
 <div class="weather-row" id="weather-row" style="display:none"></div>
 <script>
@@ -118,16 +171,13 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 })();
 </script>
 {% endif %}
-{% if event.photo %}
-<div class="promo-photo"><img src="{{ event.photo.url }}" alt="{{ event.title }}" class="lb-trigger" data-caption="{{ event.title }}"></div>
-{% endif %}
 <p class="desc">{{ event.description }}</p>
-{% if event.website %}
-<a href="{{ event.website }}" target="_blank" class="more-link">More info / Tickets →</a>
+{% if event.website and event.website|slice:":4" == "http" %}
+<a href="{{ event.website|safe_href }}" target="_blank" class="more-link">More info / Tickets →</a>
 {% endif %}
 {% if event.extra_links %}
 {% for link in event.extra_links %}
-<a href="{{ link }}" target="_blank" class="more-link" style="margin-left:12px">{{ link|truncatechars:50 }} →</a>
+<a href="{{ link|safe_href }}" target="_blank" class="more-link" style="margin-left:12px">{{ link|truncatechars:50 }} →</a>
 {% endfor %}
 {% endif %}
 {% if user.is_authenticated and not event.submitted_user and event.submitted_email == user.email %}
@@ -137,17 +187,25 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 {% elif user.is_authenticated and event.submitted_user == user %}
 <div style="margin-top:20px;padding:10px 16px;background:#1a1a1a;border:1px solid #333;border-radius:8px;font-size:.82em;color:#666;display:flex;justify-content:space-between;align-items:center">
   <span>You own this event</span>
-  <a href="/events/{{ event.slug }}/edit/" style="color:#ff6b35;text-decoration:none;font-size:.9em">Edit →</a>
+  <div style="display:flex;gap:10px;align-items:center">
+    <a href="/events/{{ event.slug }}/flyer/" target="_blank" style="color:#888;text-decoration:none;font-size:.82em;border:1px solid #2a2a2a;padding:3px 10px;border-radius:5px">🎨 Flyer</a>
+    <a href="/events/{{ event.slug }}/edit/" style="color:#ff6b35;text-decoration:none;font-size:.9em">Edit →</a>
+  </div>
 </div>
 {% endif %}
 {# ── Lineup ── #}
-{% if linked_artists or linked_promoters or can_edit_lineup %}
+{% if linked_artists or linked_promoters or can_add_lineup %}
 <div id="lineup-section" style="margin:24px 0;padding:16px;background:#161616;border:1px solid #222;border-radius:10px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
     <span style="color:#ff6b35;font-size:.9em;font-weight:600;text-transform:uppercase;letter-spacing:.07em">Lineup</span>
-    {% if can_edit_lineup %}
-    <button onclick="toggleLineupEdit()" style="background:transparent;border:1px solid #333;color:#666;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:.75em" id="lineup-edit-toggle">✏ Edit</button>
-    {% endif %}
+    <div style="display:flex;gap:6px">
+      {% if can_add_lineup %}
+      <button onclick="toggleAddArtist()" id="add-artist-btn" style="background:transparent;border:1px solid #2a4a2a;color:#4caf50;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:.75em">+ Add Artist</button>
+      {% endif %}
+      {% if can_edit_lineup %}
+      <button onclick="toggleLineupEdit()" style="background:transparent;border:1px solid #333;color:#666;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:.75em" id="lineup-edit-toggle">✏ Edit</button>
+      {% endif %}
+    </div>
   </div>
 
   <div id="lineup-display">
@@ -156,10 +214,10 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
       <span style="color:#555;font-size:.72em;text-transform:uppercase;letter-spacing:.06em">Artists</span>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px" id="linked-artists-list">
         {% for a in linked_artists %}
-        <a href="/artists/{{ a.slug }}/" style="display:inline-flex;align-items:center;gap:5px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:20px;padding:4px 12px;text-decoration:none;color:#ccc;font-size:.82em">
-          🎵 {{ a.name }}
-          {% if can_edit_lineup %}<span class="rm-btn" onclick="removeLineup(event,'artist',{{ a.pk }},this)" style="color:#555;margin-left:4px;cursor:pointer;font-size:.9em" title="Remove">✕</span>{% endif %}
-        </a>
+        <span data-id="{{ a.pk }}" style="display:inline-flex;align-items:center;gap:0;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:20px;font-size:.82em;overflow:hidden">
+          <a href="/artists/{{ a.slug }}/" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;text-decoration:none;color:#ccc;cursor:pointer" title="View {{ a.name }} profile">🎵 {{ a.name }}</a>
+          {% if can_edit_lineup %}<span class="rm-btn" onclick="removeLineup(event,'artist',{{ a.pk }},this.closest('span[data-id]'))" style="color:#444;padding:4px 8px 4px 0;cursor:pointer;font-size:.9em;line-height:1" title="Remove">✕</span>{% endif %}
+        </span>
         {% endfor %}
       </div>
     </div>
@@ -169,31 +227,135 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
       <span style="color:#555;font-size:.72em;text-transform:uppercase;letter-spacing:.06em">Crew / Promoters</span>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px" id="linked-promoters-list">
         {% for p in linked_promoters %}
-        <a href="/promoters/{{ p.slug }}/" style="display:inline-flex;align-items:center;gap:5px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:20px;padding:4px 12px;text-decoration:none;color:#ccc;font-size:.82em">
-          📣 {{ p.name }}
-          {% if can_edit_lineup %}<span class="rm-btn" onclick="removeLineup(event,'promoter',{{ p.pk }},this)" style="color:#555;margin-left:4px;cursor:pointer;font-size:.9em" title="Remove">✕</span>{% endif %}
-        </a>
+        <span data-id="{{ p.pk }}" style="display:inline-flex;align-items:center;gap:0;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:20px;font-size:.82em;overflow:hidden">
+          <a href="/promoters/{{ p.slug }}/" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;text-decoration:none;color:#ccc;cursor:pointer" title="View {{ p.name }} profile">📣 {{ p.name }}</a>
+          {% if can_edit_lineup %}<span class="rm-btn" onclick="removeLineup(event,'promoter',{{ p.pk }},this.closest('span[data-id]'))" style="color:#444;padding:4px 8px 4px 0;cursor:pointer;font-size:.9em;line-height:1" title="Remove">✕</span>{% endif %}
+        </span>
         {% endfor %}
       </div>
     </div>
     {% endif %}
     {% if not linked_artists and not linked_promoters %}
-    <p style="color:#444;font-size:.82em">No lineup linked yet.</p>
+    <p style="color:#444;font-size:.82em;margin:0">No lineup linked yet.</p>
     {% endif %}
   </div>
 
+  {# ── Add Artist panel (any logged-in user) ── #}
+  {% if can_add_lineup %}
+  <div id="add-artist-panel" style="display:none;margin-top:14px;border-top:1px solid #222;padding-top:14px">
+    <p style="color:#555;font-size:.75em;margin:0 0 8px">Search for an artist to link, or create a new profile:</p>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input type="text" id="artist-lookup-input" placeholder="Artist name…" autocomplete="off"
+        style="flex:1;background:#222;border:1px solid #333;border-radius:6px;padding:6px 10px;color:#eee;font-size:.82em">
+      <button onclick="runArtistLookup()" style="background:#1a2a1a;border:1px solid #2a4a2a;color:#4caf50;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.82em">Search</button>
+    </div>
+    <div id="artist-lookup-results" style="margin-bottom:10px"></div>
+
+    {# ── Inline create form ── #}
+    <div id="artist-create-form" style="display:none;background:#111;border:1px solid #2a3a2a;border-radius:8px;padding:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="color:#4caf50;font-size:.82em;font-weight:600">New Artist Profile</span>
+        <div style="font-size:.72em;color:#555">Profile completeness:</div>
+      </div>
+      <div style="background:#1a1a1a;border-radius:6px;height:8px;margin-bottom:12px;overflow:hidden">
+        <div id="completeness-bar" style="height:100%;background:linear-gradient(90deg,#ff6b35,#4caf50);border-radius:6px;transition:width .3s;width:0%"></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <span id="completeness-pct" style="font-size:.72em;color:#555">0% complete</span>
+        <span id="completeness-tip" style="font-size:.7em;color:#666"></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="grid-column:1/-1">
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Artist Name *</label>
+          <input id="cf-name" type="text" placeholder="Stage name or project name"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Bio <span style="color:#4caf50">+30%</span></label>
+          <textarea id="cf-bio" rows="3" placeholder="Brief bio — genre, origin, style, history…"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box;resize:vertical"></textarea>
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">City / Origin</label>
+          <input id="cf-city" type="text" placeholder="Portland, OR"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Website</label>
+          <input id="cf-website" type="url" placeholder="https://…"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Instagram <span style="color:#4caf50">+30%</span></label>
+          <input id="cf-instagram" type="text" placeholder="handle (no @)"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">SoundCloud</label>
+          <input id="cf-soundcloud" type="text" placeholder="username"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Bandcamp</label>
+          <input id="cf-bandcamp" type="url" placeholder="https://you.bandcamp.com"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Spotify</label>
+          <input id="cf-spotify" type="url" placeholder="https://open.spotify.com/artist/…"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">YouTube</label>
+          <input id="cf-youtube" type="url" placeholder="https://youtube.com/@yourchannel"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">MusicBrainz ID <span style="color:#4caf50">+20%</span></label>
+          <input id="cf-mb-id" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+          <a id="cf-mb-link" href="https://musicbrainz.org/search?type=artist&query=" target="_blank"
+            style="font-size:.68em;color:#555;text-decoration:none">Look up on MusicBrainz ↗</a>
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Mixcloud</label>
+          <input id="cf-mixcloud" type="text" placeholder="username"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">Bluesky</label>
+          <input id="cf-bluesky" type="text" placeholder="yourname.bsky.social"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="color:#666;font-size:.72em;display:block;margin-bottom:3px">TikTok</label>
+          <input id="cf-tiktok" type="text" placeholder="handle (no @)"
+            style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:5px;padding:6px 9px;color:#eee;font-size:.82em;box-sizing:border-box">
+        </div>
+      </div>
+      <p style="color:#444;font-size:.7em;margin:10px 0 12px">Photo can be added after via the artist profile page.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('artist-create-form').style.display='none'" style="background:transparent;border:1px solid #333;color:#555;padding:5px 14px;border-radius:5px;cursor:pointer;font-size:.78em">Cancel</button>
+        <button onclick="submitCreateArtist()" id="cf-submit-btn" style="background:#1a2a1a;border:1px solid #2a4a2a;color:#4caf50;padding:5px 14px;border-radius:5px;cursor:pointer;font-size:.78em">Create &amp; Add to Lineup</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Owner/staff edit panel ── #}
   {% if can_edit_lineup %}
   <div id="lineup-editor" style="display:none;margin-top:14px;border-top:1px solid #222;padding-top:14px">
     <button onclick="parseTitleLineup()" style="background:transparent;border:1px solid #2a4a1a;color:#4caf50;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:.78em;margin-bottom:10px">⚡ Suggest from title</button>
     <div id="parse-suggestions" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <div style="flex:1;min-width:160px">
-        <input type="text" id="artist-search-input" placeholder="Search artist name…" oninput="searchLineup('artist',this.value)"
+        <input type="text" id="artist-search-input" placeholder="Search artist name…" oninput="searchLineup('artist',this.value)" autocomplete="new-password"
           style="width:100%;background:#222;border:1px solid #333;border-radius:6px;padding:6px 10px;color:#eee;font-size:.82em">
         <div id="artist-search-results" style="margin-top:4px"></div>
       </div>
       <div style="flex:1;min-width:160px">
-        <input type="text" id="crew-search-input" placeholder="Search crew / promoter…" oninput="searchLineup('promoter',this.value)"
+        <input type="text" id="crew-search-input" placeholder="Search crew / promoter…" oninput="searchLineup('promoter',this.value)" autocomplete="off"
           style="width:100%;background:#222;border:1px solid #333;border-radius:6px;padding:6px 10px;color:#eee;font-size:.82em">
         <div id="crew-search-results" style="margin-top:4px"></div>
       </div>
@@ -210,12 +372,24 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 
   function getCsrf(){var v=document.cookie.match('(^|;) ?csrftoken=([^;]*)(;|$)');return v?v[2]:null}
 
+  // ── Owner/staff edit panel toggle ──
   window.toggleLineupEdit = function(){
     var ed = document.getElementById('lineup-editor');
     var btn = document.getElementById('lineup-edit-toggle');
+    if(!ed) return;
     var open = ed.style.display === 'none';
     ed.style.display = open ? 'block' : 'none';
     btn.textContent = open ? '✕ Close' : '✏ Edit';
+  };
+
+  // ── Add Artist panel toggle (any logged-in user) ──
+  window.toggleAddArtist = function(){
+    var panel = document.getElementById('add-artist-panel');
+    var btn = document.getElementById('add-artist-btn');
+    if(!panel) return;
+    var open = panel.style.display === 'none';
+    panel.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '✕ Close' : '+ Add Artist';
   };
 
   window.removeLineup = function(e, type, id, el){
@@ -225,7 +399,8 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
       headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
       body:JSON.stringify({action:'remove', type:type, id:id})
     }).then(function(r){return r.json();}).then(function(){
-      el.closest('a').remove();
+      // el is the outer <span data-id> wrapper
+      el.remove();
     });
   };
 
@@ -238,32 +413,190 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
       if(!d.ok) return;
       var listId = type === 'artist' ? 'linked-artists-list' : 'linked-promoters-list';
       var list = document.getElementById(listId);
-      if(!list){
-        // section didn't exist — reload to show it
-        window.location.reload(); return;
-      }
+      if(!list){ window.location.reload(); return; }
       var icon = type === 'artist' ? '🎵' : '📣';
       var href = type === 'artist' ? '/artists/'+(slug||id)+'/' : '/promoters/'+(slug||id)+'/';
-      // avoid duplicates
       if(list.querySelector('[data-id="'+id+'"]')) return;
+      // Outer pill wrapper
+      var pill = document.createElement('span');
+      pill.dataset.id = id;
+      pill.style.cssText = 'display:inline-flex;align-items:center;gap:0;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:20px;font-size:.82em;overflow:hidden';
+      // Clickable link to profile
       var a = document.createElement('a');
-      a.href = href;
-      a.dataset.id = id;
-      a.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:20px;padding:4px 12px;text-decoration:none;color:#ccc;font-size:.82em';
-      a.innerHTML = icon+' '+name+' <span class="rm-btn" onclick="removeLineup(event,\''+type+'\','+id+',this)" style="color:#555;margin-left:4px;cursor:pointer;font-size:.9em" title="Remove">✕</span>';
-      list.appendChild(a);
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;text-decoration:none;color:#ccc;cursor:pointer';
+      a.innerHTML = icon+' '+name;
+      pill.appendChild(a);
+      {% if can_edit_lineup %}
+      var rm = document.createElement('span');
+      rm.className = 'rm-btn';
+      rm.title = 'Remove';
+      rm.style.cssText = 'color:#444;padding:4px 8px 4px 0;cursor:pointer;font-size:.9em;line-height:1';
+      rm.textContent = '✕';
+      rm.onclick = function(e){ removeLineup(e, type, id, pill); };
+      pill.appendChild(rm);
+      {% endif %}
+      list.appendChild(pill);
+      // Also hide any empty-state message
+      var empty = list.closest('#lineup-display').querySelector('p');
+      if(empty) empty.style.display = 'none';
     });
   };
 
-  // Debounced artist/crew search using existing autocomplete endpoints
+  // ── Multi-source artist lookup ──
+  var lookupTimer = null;
+  var lookupInput = document.getElementById('artist-lookup-input');
+  if(lookupInput){
+    lookupInput.addEventListener('keydown', function(e){ if(e.key==='Enter') runArtistLookup(); });
+    lookupInput.addEventListener('input', function(){
+      clearTimeout(lookupTimer);
+      lookupTimer = setTimeout(runArtistLookup, 400);
+    });
+  }
+
+  window.runArtistLookup = function(){
+    var q = (lookupInput||{}).value || '';
+    var resultsEl = document.getElementById('artist-lookup-results');
+    if(!resultsEl) return;
+    if(q.length < 2){ resultsEl.innerHTML=''; return; }
+    resultsEl.innerHTML = '<p style="color:#555;font-size:.78em">Searching…</p>';
+    fetch('/api/artist-lookup/?q='+encodeURIComponent(q))
+      .then(function(r){return r.json();})
+      .then(function(data){
+        var items = data.results || [];
+        if(!items.length){
+          resultsEl.innerHTML = '<div style="font-size:.8em;color:#555;margin-bottom:8px">No matches found.</div>'
+            + '<button onclick="openCreateForm(\''+q.replace(/'/g,"\\'")+'\')" style="background:#1a2a1a;border:1px solid #2a4a2a;color:#4caf50;padding:5px 14px;border-radius:5px;cursor:pointer;font-size:.8em">+ Create "'+q+'" profile</button>';
+          return;
+        }
+        var sourceBadge = {'cp':'<span style="background:#1a2a3a;color:#88aacc;border-radius:4px;padding:1px 5px;font-size:.68em;margin-right:4px">CP</span>',
+                           'mb':'<span style="background:#2a1a3a;color:#aa88cc;border-radius:4px;padding:1px 5px;font-size:.68em;margin-right:4px">MB</span>',
+                           'lastfm':'<span style="background:#3a1a1a;color:#cc4444;border-radius:4px;padding:1px 5px;font-size:.68em;margin-right:4px">FM</span>'};
+        var html = items.map(function(o){
+          var badge = sourceBadge[o.source] || '';
+          var extra = o.city ? ' <span style="color:#555;font-size:.8em">'+o.city+'</span>' : '';
+          var mbNote = o.mb_id ? ' <span style="color:#666;font-size:.72em" title="MusicBrainz ID">✓MB</span>' : '';
+          return '<div onclick="pickArtist('+JSON.stringify(o).replace(/"/g,'&quot;')+')" style="cursor:pointer;display:flex;align-items:center;padding:6px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;margin-bottom:4px">'
+            + badge+'<span style="color:#ddd;font-size:.83em">'+o.name+'</span>'+extra+mbNote
+            + '<span style="margin-left:auto;color:#4caf50;font-size:.75em">Add →</span></div>';
+        }).join('');
+        html += '<div style="margin-top:8px"><button onclick="openCreateForm(\''+q.replace(/'/g,"\\'")+'\')" style="background:transparent;border:1px dashed #333;color:#555;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:.75em">+ Not listed — create new profile</button></div>';
+        resultsEl.innerHTML = html;
+      });
+  };
+
+  window.pickArtist = function(o){
+    if(o.id){
+      // Already in CP DB — just link
+      addLineup('artist', o.id, o.name, o.slug);
+      document.getElementById('artist-lookup-results').innerHTML = '<p style="color:#4caf50;font-size:.8em">✓ '+o.name+' added to lineup.</p>';
+      document.getElementById('artist-lookup-input').value = '';
+    } else {
+      // MB/LastFM stub — open create form pre-filled
+      openCreateForm(o.name, o.mb_id||'', o.city||'');
+    }
+  };
+
+  window.openCreateForm = function(name, mbId, city){
+    var form = document.getElementById('artist-create-form');
+    if(!form) return;
+    form.style.display = 'block';
+    document.getElementById('cf-name').value = name||'';
+    document.getElementById('cf-mb-id').value = mbId||'';
+    document.getElementById('cf-city').value = city||'';
+    var mbLink = document.getElementById('cf-mb-link');
+    if(mbLink) mbLink.href = 'https://musicbrainz.org/search?type=artist&query='+encodeURIComponent(name||'');
+    updateCompleteness();
+    form.scrollIntoView({behavior:'smooth', block:'nearest'});
+    document.getElementById('cf-bio').focus();
+  };
+
+  // ── Completeness bar ──
+  function calcCompleteness(){
+    var score = 0;
+    var tips = [];
+    if((document.getElementById('cf-bio').value||'').trim().length > 20){ score+=30; } else { tips.push('add bio (+30%)'); }
+    if((document.getElementById('cf-website').value||'').trim()){ score+=10; }
+    var socials = ['cf-instagram','cf-soundcloud','cf-bandcamp','cf-spotify','cf-youtube','cf-mixcloud','cf-bluesky','cf-tiktok'];
+    var hasSocial = socials.some(function(id){ return (document.getElementById(id).value||'').trim(); });
+    if(hasSocial){ score+=30; } else { tips.push('add social link (+30%)'); }
+    if((document.getElementById('cf-mb-id').value||'').trim()){ score+=20; } else { tips.push('add MusicBrainz ID (+20%)'); }
+    if((document.getElementById('cf-city').value||'').trim()){ score+=10; }
+    return {score:score, tip: tips[0]||''};
+  }
+
+  function updateCompleteness(){
+    var r = calcCompleteness();
+    var bar = document.getElementById('completeness-bar');
+    var pct = document.getElementById('completeness-pct');
+    var tip = document.getElementById('completeness-tip');
+    if(bar) bar.style.width = r.score+'%';
+    if(pct){
+      pct.textContent = r.score+'% complete';
+      pct.style.color = r.score >= 70 ? '#4caf50' : r.score >= 40 ? '#ff6b35' : '#666';
+    }
+    if(tip) tip.textContent = r.score >= 70 ? '✓ Enough to submit to MusicBrainz' : r.tip;
+  }
+
+  // Attach change listeners to all create form inputs
+  (function attachCompletenessListeners(){
+    var ids=['cf-bio','cf-website','cf-instagram','cf-soundcloud','cf-bandcamp','cf-spotify',
+             'cf-youtube','cf-mixcloud','cf-bluesky','cf-tiktok','cf-mb-id','cf-city'];
+    ids.forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.addEventListener('input', updateCompleteness);
+    });
+  })();
+
+  window.submitCreateArtist = function(){
+    var name = (document.getElementById('cf-name').value||'').trim();
+    if(!name){ alert('Artist name is required.'); return; }
+    var btn = document.getElementById('cf-submit-btn');
+    btn.textContent = '…'; btn.disabled = true;
+
+    var payload = {
+      type:'artist', name:name,
+      bio:(document.getElementById('cf-bio').value||'').trim(),
+      city:(document.getElementById('cf-city').value||'').trim(),
+      website:(document.getElementById('cf-website').value||'').trim(),
+      instagram:(document.getElementById('cf-instagram').value||'').trim(),
+      soundcloud:(document.getElementById('cf-soundcloud').value||'').trim(),
+      bandcamp:(document.getElementById('cf-bandcamp').value||'').trim(),
+      spotify:(document.getElementById('cf-spotify').value||'').trim(),
+      youtube:(document.getElementById('cf-youtube').value||'').trim(),
+      mixcloud:(document.getElementById('cf-mixcloud').value||'').trim(),
+      bluesky:(document.getElementById('cf-bluesky').value||'').trim(),
+      tiktok:(document.getElementById('cf-tiktok').value||'').trim(),
+      mb_id:(document.getElementById('cf-mb-id').value||'').trim(),
+    };
+    fetch('/events/'+eventSlug+'/lineup/create/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCsrf()},
+      body:JSON.stringify(payload)
+    }).then(function(r){return r.json();}).then(function(d){
+      btn.textContent='Create & Add to Lineup'; btn.disabled=false;
+      if(d.error){ alert('Error: '+d.error); return; }
+      // Add to display list
+      addLineup('artist', d.id, d.name, d.slug);
+      // Hide form, show success
+      document.getElementById('artist-create-form').style.display='none';
+      document.getElementById('artist-lookup-results').innerHTML = '<p style="color:#4caf50;font-size:.8em">✓ '+d.name+' created and added! <a href="'+d.profile_url+'" style="color:#ff6b35" target="_blank">Edit profile →</a></p>';
+      document.getElementById('artist-lookup-input').value='';
+    }).catch(function(){
+      btn.textContent='Create & Add to Lineup'; btn.disabled=false;
+      alert('Network error — please try again.');
+    });
+  };
+
+  // ── Owner/staff search (existing autocomplete) ──
   var searchTimers = {};
   window.searchLineup = function(type, query){
     clearTimeout(searchTimers[type]);
     var resultsId = type === 'artist' ? 'artist-search-results' : 'crew-search-results';
     var results = document.getElementById(resultsId);
+    if(!results) return;
     if(query.length < 2){ results.innerHTML = ''; return; }
     searchTimers[type] = setTimeout(function(){
-      // artists → bare array; promoters → {promoters:[...]}
       var url = type === 'artist'
         ? '/artists/?q='+encodeURIComponent(query)
         : '/promoters/?q='+encodeURIComponent(query)+'&format=json';
@@ -282,21 +615,18 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
   };
 
   function createAndLink(type, name, pillEl) {
-    pillEl.textContent = '…';
-    pillEl.style.pointerEvents = 'none';
+    pillEl.textContent = '…'; pillEl.style.pointerEvents = 'none';
     fetch('/events/'+eventSlug+'/lineup/create/', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
       body: JSON.stringify({type: type, name: name})
     }).then(function(r){ return r.json(); }).then(function(d){
       if(d.error){ pillEl.textContent = '❌ '+d.error; return; }
-      // Replace pill with linked version + edit link
       var icon = type === 'artist' ? '🎵' : '📣';
       pillEl.outerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#1a2a3a;border:1px solid #2a4a6a;color:#88aacc;border-radius:20px;padding:3px 10px;font-size:.8em;margin:2px">'
         + icon+' '+d.name
         + ' <a href="'+d.profile_url+'" target="_blank" style="color:#ff6b35;font-size:.85em;text-decoration:none" title="Edit profile">✏</a>'
         + '</span>';
-      // Also add to the linked display list
       addLineup(type, d.id, d.name, d.slug);
     });
   }
@@ -343,14 +673,81 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 })();
 </script>
 
-{% if flyer_photo %}
-<h2 class="section-title" style="margin-top:30px">📸 Event Photos</h2>
-<div class="flyer-wrap">
-  <span class="flyer-label">The Flyer</span>
-  <img class="flyer-img lb-trigger" src="{{ flyer_photo.image.url }}" alt="{{ flyer_photo.caption|default:event.title }}" data-caption="{{ flyer_photo.caption|default:'' }}">
-  {% if flyer_photo.caption %}<p class="flyer-caption">{{ flyer_photo.caption }}</p>{% endif %}
+{% if event.youtube_playlist or event_videos %}
+<div id="event-videos-section" style="margin:24px 0">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <span class="section-title" style="margin:0;border:none;padding:0">🎬 Videos</span>
+    {% if event_videos %}
+    <a href="/player/" style="font-size:.78em;color:#ff6b35;text-decoration:none;border:1px solid #ff6b35;padding:3px 10px;border-radius:5px;opacity:.8" title="Open full player">Open in Player ↗</a>
+    {% endif %}
+  </div>
+
+  {% if yt_playlist_id %}
+  <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;margin-bottom:16px;background:#0a0a0a">
+    <iframe
+      src="https://www.youtube.com/embed/videoseries?list={{ yt_playlist_id }}&rel=0&modestbranding=1"
+      style="position:absolute;top:0;left:0;width:100%;height:100%;border:0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen loading="lazy"></iframe>
+  </div>
+  {% endif %}
+
+  {% if event_videos %}
+  <div id="ev-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+    {% for v in event_videos %}
+    <div class="ev-card" data-vid="{{ v.youtube_video_id }}"
+         style="cursor:pointer;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:8px;overflow:hidden;position:relative;transition:border-color .15s"
+         onclick="evPlay('{{ v.youtube_video_id }}',this)">
+      <div style="position:relative;aspect-ratio:16/9;background:#111;overflow:hidden">
+        <img src="https://i.ytimg.com/vi/{{ v.youtube_video_id }}/mqdefault.jpg"
+             alt="{{ v.title|default:'Video' }}"
+             style="width:100%;height:100%;object-fit:cover;display:block">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);transition:background .15s" class="ev-overlay">
+          <span style="font-size:2.2em;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.8))">▶</span>
+        </div>
+      </div>
+      <div style="padding:8px 10px">
+        <p style="font-size:.78em;color:#ccc;margin:0 0 2px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ v.title|default:'Untitled' }}</p>
+        <p style="font-size:.7em;color:#555;margin:0">
+          {% if v.artist %}{{ v.artist.name }}{% elif v.promoter %}{{ v.promoter.name }}{% endif %}
+        </p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
+<style>
+.ev-card:hover{border-color:#ff6b35!important}
+.ev-card:hover .ev-overlay{background:rgba(0,0,0,.15)!important}
+.ev-card.ev-active{border-color:#ff6b35!important}
+#ev-player-wrap{display:none;margin-bottom:4px;border-radius:10px;overflow:hidden;background:#000}
+#ev-player-wrap iframe{width:100%;aspect-ratio:16/9;border:0;display:block}
+</style>
+<script>
+(function(){
+  var grid = document.getElementById('ev-grid');
+  var wrap = null;
+
+  window.evPlay = function(vid, card){
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.id = 'ev-player-wrap';
+      wrap.innerHTML = '<iframe src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>';
+      grid.parentNode.insertBefore(wrap, grid);
+    }
+    document.querySelectorAll('.ev-card').forEach(function(c){ c.classList.remove('ev-active'); });
+    card.classList.add('ev-active');
+    wrap.querySelector('iframe').src = 'https://www.youtube.com/embed/'+vid+'?autoplay=1&rel=0&modestbranding=1';
+    wrap.style.display = 'block';
+    wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
+  };
+})();
+</script>
+{% endif %}
+
 {% if gallery_photos %}
+<h2 class="section-title" style="margin-top:30px">📸 Event Photos</h2>
 <div class="photo-grid">
 {% for photo in gallery_photos %}
 <div>
@@ -359,7 +756,6 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 </div>
 {% endfor %}
 </div>
-{% endif %}
 {% endif %}
 {% if recurring_instances %}
 <div style="margin-bottom:30px">
@@ -429,4 +825,5 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); }
 {% if user.is_authenticated %}
 {% include "partials/suggest_edit.html" with target_type="event" target_id=event.pk fields=event_edit_fields %}
 {% endif %}
+</div>{# /page-wrap #}
 {% endblock %}

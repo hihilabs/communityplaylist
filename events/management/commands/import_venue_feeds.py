@@ -16,12 +16,53 @@ from events.models import VenueFeed, Event, RecurringEvent, Genre
 from events.enrich import enrich_event, clean_text
 import requests
 from icalendar import Calendar
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import mimetypes
 import os
+import re
 import pytz
 
 PDX_TZ = pytz.timezone('America/Los_Angeles')
+
+# ── Feed health helpers ────────────────────────────────────────────────────────
+
+from events.utils.url_safety import is_hard_feed_failure as _is_hard_failure
+
+
+# ── Cross-feed dedup helpers ──────────────────────────────────────────────────
+
+def _norm_title(title):
+    """Normalize a title for cross-feed duplicate detection.
+
+    Collapses "&" / "and" / "+" variants, strips accidental punctuation,
+    so "Subduction Audio & Friends" and "Subduction Audio and Friends"
+    produce the same fingerprint.
+    """
+    t = title.lower().strip()
+    t = re.sub(r'\s*&\s*', ' and ', t)   # & → and
+    t = re.sub(r'\s*\+\s*', ' and ', t)  # + → and
+    t = re.sub(r"[''`]", '', t)           # smart quotes
+    t = re.sub(r'[^\w\s]', ' ', t)       # strip remaining punctuation
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
+
+def _same_day_title_exists(title, dtstart):
+    """Return an existing Event that has the same normalized title on the same
+    calendar day (±30-hour window to absorb timezone shifts between feeds)."""
+    norm = _norm_title(title)
+    day = dtstart.replace(hour=0, minute=0, second=0, microsecond=0)
+    window_start = day - timedelta(hours=6)
+    window_end   = day + timedelta(hours=30)
+    candidates = Event.objects.filter(
+        start_date__gte=window_start,
+        start_date__lt=window_end,
+    ).only('id', 'title', 'start_date')
+    for ev in candidates:
+        if _norm_title(ev.title) == norm:
+            return ev
+    return None
+
 
 IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
 IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
@@ -113,13 +154,14 @@ def import_ical(feed, now, stdout, stderr):
             if dtstart < now:
                 continue
 
-            # Dedup: UID stored in website field (if set), then slug fallback.
+            # Dedup: slug match → normalized title+day. UID was previously stored
+            # in website but that caused broken links; slug dedup is sufficient.
             existing = None
-            if uid:
-                existing = Event.objects.filter(website=uid[:200]).first()
             if not existing:
-                slug_base = slugify(f"{summary}-{dtstart.strftime('%Y-%m-%d')}")
+                slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', summary)}-{dtstart.strftime('%Y-%m-%d')}")
                 existing = Event.objects.filter(slug__startswith=slug_base).first()
+            if not existing:
+                existing = _same_day_title_exists(summary, dtstart)
 
             if existing:
                 # Patch mutable fields if the upstream event was edited
@@ -130,8 +172,9 @@ def import_ical(feed, now, stdout, stderr):
                     changed['start_date'] = dtstart
                 if dtend and existing.end_date != dtend:
                     changed['end_date'] = dtend
-                if uid and existing.website != uid[:200]:
-                    changed['website'] = uid[:200]
+                real_url_patch = url_prop[:200] if (url_prop and url_prop.startswith('http')) else ''
+                if real_url_patch and existing.website != real_url_patch:
+                    changed['website'] = real_url_patch
                 if changed:
                     for k, v in changed.items():
                         setattr(existing, k, v)
@@ -143,6 +186,9 @@ def import_ical(feed, now, stdout, stderr):
             if url_prop and url_prop not in description:
                 description = f'{description}\n\nEvent link: {url_prop}'.strip()
 
+            # Prefer a real event URL for the website field; fall back to UID
+            # only if no URL is available (UID is used as the dedup key).
+            real_url = url_prop[:200] if (url_prop and url_prop.startswith('http')) else ''
             ev = Event.objects.create(
                 title=summary[:200],
                 description=description[:2000],
@@ -154,8 +200,7 @@ def import_ical(feed, now, stdout, stderr):
                 status=status,
                 is_free=False,
                 category=feed.default_category,
-                # Store UID as stable dedup key; url_prop already in description
-                website=uid[:200] if uid else (url_prop[:200] if url_prop else ''),
+                website=real_url,
             )
             if image_url:
                 fname, content = download_image(image_url)
@@ -261,7 +306,7 @@ def import_musicbrainz(feed, now, stdout, stderr):
                 mb_url = f"https://musicbrainz.org/event/{ev.get('id', '')}"
                 display_title = title[:200]
 
-                slug_base = slugify(f"{display_title}-{dtstart.strftime('%Y-%m-%d')}")
+                slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', display_title)}-{dtstart.strftime('%Y-%m-%d')}")
                 if Event.objects.filter(slug__startswith=slug_base).exists():
                     skipped += 1
                     continue
@@ -366,9 +411,11 @@ def import_squarespace(feed, now, stdout, stderr):
         return 0, 0, ''
 
     # ── Identify truly recurring titles ───────────────────────────────────────
-    # A title qualifies if it appears >= RECURRING_MIN_OCCURRENCES times AND
-    # each occurrence has a short duration (i.e. it's a regular weekly night,
-    # not a single multi-week festival listed multiple times by mistake).
+    # Only count FUTURE occurrences — past events in the feed (e.g. last year's
+    # Halloween party) would otherwise trigger false recurring detection.
+    # A title qualifies if it appears >= RECURRING_MIN_OCCURRENCES times in the
+    # future AND each occurrence has a short duration (<= 1 day).
+    now_ms = now.timestamp() * 1000
     title_entries: dict = {}
     for ev in all_raw:
         title = (ev.get('title') or '').strip()
@@ -376,7 +423,7 @@ def import_squarespace(feed, now, stdout, stderr):
             continue
         start_ms = ev.get('startDate') or 0
         end_ms   = ev.get('endDate') or 0
-        if not start_ms:
+        if not start_ms or start_ms < now_ms:
             continue
         hours = (end_ms - start_ms) / 3_600_000 if end_ms else 0
         title_entries.setdefault(title, []).append(hours)
@@ -457,7 +504,7 @@ def import_squarespace(feed, now, stdout, stderr):
             if event_url:
                 existing = Event.objects.filter(website=event_url[:200]).first()
             if not existing:
-                slug_base = slugify(f"{title}-{dtstart.strftime('%Y-%m-%d')}")
+                slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{dtstart.strftime('%Y-%m-%d')}")
                 existing = Event.objects.filter(slug__startswith=slug_base).first()
 
             if existing:
@@ -580,7 +627,7 @@ def import_eventbrite(feed, now, stdout, stderr):
 
                 is_free = ev.get('is_free', False)
 
-                slug_base = slugify(f"{title}-{dtstart.strftime('%Y-%m-%d')}")
+                slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{dtstart.strftime('%Y-%m-%d')}")
                 if Event.objects.filter(slug__startswith=slug_base).exists():
                     skipped += 1
                     continue
@@ -744,7 +791,7 @@ def import_19hz(feed, now, stdout, stderr):
             organiser = nested_tds[2].get_text(strip=True) if len(nested_tds) > 2 else ''
 
             # ── Dedup ─────────────────────────────────────────────────────────
-            slug_base = slugify(f"{title}-{event_date.strftime('%Y-%m-%d')}")
+            slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{event_date.strftime('%Y-%m-%d')}")
             if Event.objects.filter(slug__startswith=slug_base).exists():
                 skipped += 1
                 continue
@@ -799,6 +846,107 @@ def import_19hz(feed, now, stdout, stderr):
     return created, skipped, ''
 
 
+def import_eael(feed, now, stdout, stderr):
+    """
+    Scrape an EAEL (Essential Addons for Elementor) WordPress Event Calendar.
+
+    The calendar widget embeds all upcoming events as JSON in a `data-events`
+    attribute on its container div.  We fetch the page, extract that JSON, and
+    import upcoming events.
+
+    Expected JSON shape per item:
+        {"id": 1, "title": "...", "start": "2026-04-23T18:00:00-07:00",
+         "end": "...", "location": "...", "description": "...", "url": "..."}
+    """
+    import re as _re
+    import json
+    import html as html_mod
+    from datetime import datetime as dt_class
+    from dateutil import parser as du_parser
+
+    try:
+        r = requests.get(
+            feed.url, timeout=20,
+            headers={'User-Agent': 'CommunityPlaylist/1.0 (communityplaylist.com)'},
+        )
+        r.raise_for_status()
+    except Exception as e:
+        return 0, 0, str(e)
+
+    # data-events='[{...}]'  or  data-events="[{...}]"
+    m = _re.search(r"data-events='([^']+)'", r.text)
+    if not m:
+        m = _re.search(r'data-events="([^"]+)"', r.text)
+    if not m:
+        return 0, 0, 'No data-events attribute found on page'
+
+    try:
+        events_data = json.loads(html_mod.unescape(m.group(1)))
+    except json.JSONDecodeError as e:
+        return 0, 0, f'JSON parse error: {e}'
+
+    created = skipped = 0
+    status = 'approved' if feed.auto_approve else 'pending'
+
+    for item in events_data:
+        try:
+            title = (item.get('title') or '').strip()
+            if not title:
+                skipped += 1
+                continue
+
+            start_raw = item.get('start') or ''
+            if not start_raw:
+                skipped += 1
+                continue
+
+            try:
+                dtstart = du_parser.parse(start_raw)
+                # Ensure timezone-aware
+                if dtstart.tzinfo is None:
+                    import pytz as _pytz
+                    dtstart = _pytz.timezone('America/Los_Angeles').localize(dtstart)
+            except Exception:
+                skipped += 1
+                continue
+
+            if dtstart < now:
+                skipped += 1
+                continue
+
+            location = (item.get('location') or '').strip() or feed.name or ''
+            description = (item.get('description') or '').strip()
+            website = (item.get('url') or '').strip()
+
+            # Dedup by title + date
+            event_date = dtstart.date()
+            slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{event_date.strftime('%Y-%m-%d')}")
+            if Event.objects.filter(slug__startswith=slug_base).exists():
+                skipped += 1
+                continue
+
+            ev = Event.objects.create(
+                title           = title[:200],
+                description     = description[:2000],
+                location        = location[:300],
+                start_date      = dtstart,
+                submitted_by    = feed.name,
+                submitted_email = '',
+                status          = status,
+                category        = feed.default_category or 'music',
+                website         = website[:200] if website else '',
+            )
+            enrich_event(ev, geocode=False, save=True)
+            tag_feed_defaults(ev, feed)
+            created += 1
+
+        except Exception as e:
+            stderr.write(f'    skipping eael item: {e}')
+            continue
+
+    return created, skipped, ''
+
+
 class Command(BaseCommand):
     help = 'Import events from admin-managed venue/source feeds'
 
@@ -834,17 +982,35 @@ class Command(BaseCommand):
                 created, skipped, error = import_squarespace(feed, now, self.stdout, self.stderr)
             elif feed.source_type == VenueFeed.SOURCE_19HZ:
                 created, skipped, error = import_19hz(feed, now, self.stdout, self.stderr)
+            elif feed.source_type == VenueFeed.SOURCE_EAEL:
+                if not feed.url:
+                    self.stderr.write('  no URL — skipping')
+                    continue
+                created, skipped, error = import_eael(feed, now, self.stdout, self.stderr)
             else:
                 error = f'unsupported source_type: {feed.source_type}'
                 created = skipped = 0
 
+            prev_error = feed.last_error  # capture before overwrite
             feed.last_synced = now
             feed.last_error = error
-            feed.save(update_fields=['last_synced', 'last_error'])
+            update_fields = ['last_synced', 'last_error']
 
-            if error:
+            # Auto-deactivate on consecutive hard failures (403/404/SSL gone)
+            if error and prev_error and _is_hard_failure(error) and _is_hard_failure(prev_error):
+                feed.active = False
+                update_fields.append('active')
+                self.stderr.write(
+                    self.style.ERROR(
+                        f'  AUTO-DEACTIVATED: consecutive hard failure — {error[:80]}'
+                    )
+                )
+
+            feed.save(update_fields=update_fields)
+
+            if error and feed.active:
                 self.stderr.write(f'  ERROR: {error}')
-            else:
+            elif not error:
                 self.stdout.write(f'  ✓ {created} created, {skipped} skipped')
 
             total_created += created

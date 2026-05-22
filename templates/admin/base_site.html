@@ -1,8 +1,19 @@
 {% extends "admin/base.html" %}
+
+{% block footer %}
+{{ block.super }}
+<div style="text-align:center;padding:10px 24px 14px;border-top:1px solid rgba(255,255,255,.06);font-size:.78em;color:#555;font-family:'Courier New',monospace">
+  <a href="https://hihi.communityplaylist.com/portfolio.html" target="_blank" style="color:#ff6b35;text-decoration:none;font-weight:700;font-size:1.1em" title="HiHi Labs Portfolio">◉</a>
+  &nbsp;Built by <a href="https://hihi.communityplaylist.com" target="_blank" style="color:#ff6b35;text-decoration:none;font-weight:600">HiHi Labs</a>
+  &nbsp;·&nbsp;
+  Hosted at <a href="https://communityplaylist.com" target="_blank" style="color:#555;text-decoration:none;transition:color .15s">Community Playlist</a>
+</div>
+{% endblock %}
+
 {% block branding %}
 <h1 id="site-name">
   <a href="{% url 'admin:index' %}">🎵 Community Playlist</a>
-  <a href="/admin/dashboard/" style="margin-left:16px;font-size:.65em;font-weight:400;color:#ff6b35;text-decoration:none;border:1px solid #ff6b35;padding:2px 10px;border-radius:4px;vertical-align:middle">⚡ Dashboard</a>
+  <a href="/cp-manage/dashboard/" style="margin-left:16px;font-size:.65em;font-weight:400;color:#ff6b35;text-decoration:none;border:1px solid #ff6b35;padding:2px 10px;border-radius:4px;vertical-align:middle">⚡ Dashboard</a>
 </h1>
 {% endblock %}
 
@@ -11,17 +22,17 @@
 <div style="background:#1a0800;border-bottom:2px solid #ff6b35;padding:7px 24px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:.82em">
   <span style="color:#ff6b35;font-weight:700;letter-spacing:.04em">⚠ NEEDS ATTENTION</span>
   {% if pending_events %}
-  <a href="/admin/events/event/?status__exact=pending" style="color:#ddaa33;text-decoration:none">
+  <a href="/cp-manage/events/event/?status__exact=pending" style="color:#ddaa33;text-decoration:none">
     📋 {{ pending_events }} event{{ pending_events|pluralize }} pending
   </a>
   {% endif %}
   {% if pending_venues %}
-  <a href="/admin/events/venue/?verified__exact=0" style="color:#ddaa33;text-decoration:none">
+  <a href="/cp-manage/events/venue/?verified__exact=0" style="color:#ddaa33;text-decoration:none">
     🏛 {{ pending_venues }} venue{{ pending_venues|pluralize }} unverified
   </a>
   {% endif %}
   {% if pending_suggestions %}
-  <a href="/admin/events/editsuggestion/?status__exact=pending" style="color:#ddaa33;text-decoration:none">
+  <a href="/cp-manage/events/editsuggestion/?status__exact=pending" style="color:#ddaa33;text-decoration:none">
     ✏ {{ pending_suggestions }} edit suggestion{{ pending_suggestions|pluralize }}
   </a>
   {% endif %}

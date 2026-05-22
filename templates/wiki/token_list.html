@@ -1,0 +1,77 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}Genre Token Index{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom: 32px;">
+  <h1>Genre Token Index</h1>
+  <p>
+    {{ total_tokens }} atomic token{{ total_tokens|pluralize }} ·
+    {{ total_compounds }} compound genre{{ total_compounds|pluralize }} ·
+    built from your library, cross-referenced with MusicBrainz, Last.fm, Discogs &amp; more.
+  </p>
+  {% if q %}
+    <p>Showing results for <strong style="color:var(--text)">{{ q }}</strong> —
+      <a href="{% url 'wiki:token_list' %}">clear</a></p>
+  {% endif %}
+</div>
+
+{% if tokens %}
+<h2>Atomic Tokens</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px;">
+  {% for token in tokens %}
+    <a href="{{ token.get_absolute_url }}" style="
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: var(--text);
+      text-decoration: none;
+      transition: border-color 0.15s;
+    " onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      {{ token.name }}
+      {% if token.compound_count %}
+        <span style="font-size: 10px; color: var(--muted)">{{ token.compound_count }}</span>
+      {% endif %}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if compounds %}
+<h2>Compound Genres</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;">
+  {% for g in compounds %}
+    <a href="{{ g.get_absolute_url }}" style="
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      text-decoration: none;
+      display: block;
+    " onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="font-size: 13px; color: var(--text); margin-bottom: 4px;">{{ g.name }}</div>
+      <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+        {% for t in g.tokens.all %}
+          <span class="chip accent" style="font-size: 10px; padding: 1px 5px;">{{ t.name }}</span>
+        {% endfor %}
+      </div>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not tokens and not compounds %}
+  <div style="text-align: center; padding: 60px 0; color: var(--muted);">
+    {% if q %}
+      <p>No results for "{{ q }}".</p>
+    {% else %}
+      <p>No genres yet. Run <code>python manage.py import_genre_map /path/to/genre-map.json</code> to seed.</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}

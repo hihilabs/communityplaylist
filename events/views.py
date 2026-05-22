@@ -6,10 +6,11 @@ from django.utils.timezone import localtime
 from django.db.models import Prefetch
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import admin, messages
 from django.template.response import TemplateResponse
-from .models import Event, EventPhoto, Genre, Artist, SiteStats, CalendarFeed, Venue, Neighborhood, UserProfile, Follow, EditSuggestion, PromoterProfile, PlaylistTrack, SavedTrack, RecordListing, RecordReservation, VideoTrack
+from .models import Event, EventPhoto, Genre, Artist, SiteStats, CalendarFeed, Venue, Neighborhood, UserProfile, Follow, EditSuggestion, PromoterProfile, PlaylistTrack, SavedTrack, TrackReaction, TrackComment, RecordListing, RecordReservation, VideoTrack, Shelter, FlyerBackground, VideoRoomMessage, CommunitySpace, CommunityAsk
 from .forms import EventSubmitForm, EventPhotoForm, RegisterForm, StyledAuthForm, VenueForm
 from .geocode import geocode_location
 from urllib.parse import quote
@@ -18,10 +19,31 @@ import requests
 import math
 import re
 
-CP_VERSION = '0.9.3'   # bump on each deploy
+CP_VERSION = '0.9.4'   # bump on each deploy
 
 # Portland city center
 PDX_LAT, PDX_LNG = 45.5051, -122.6750
+
+# ── Auth rate limiting ────────────────────────────────────────────────────────
+def _client_ip(request):
+    cf = request.META.get('HTTP_CF_CONNECTING_IP', '').strip()
+    if cf:
+        return cf
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.split(',')[-1].strip()
+    return request.META.get('REMOTE_ADDR', '')
+
+def _auth_rate_limited(request, action, limit=10, window=300):
+    """Return True (and increment) if this IP has exceeded limit within window seconds."""
+    from django.core.cache import cache
+    ip  = _client_ip(request)
+    key = f'auth_rl_{action}_{ip}'
+    count = cache.get(key, 0)
+    if count >= limit:
+        return True
+    cache.set(key, count + 1, window)
+    return False
 
 def haversine_miles(lat1, lng1, lat2, lng2):
     """Great-circle distance in miles between two lat/lng points."""
@@ -32,12 +54,19 @@ def haversine_miles(lat1, lng1, lat2, lng2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1487255057257857105/tv3mMFyLyx86r4sKma-1zFvM-4-qt43jhWqf7nJm3N_LzAvq3ZWIVpmNTL5LeKUKKBiz"
+def _get_discord_webhook():
+    from django.conf import settings as _s
+    return (getattr(_s, 'DISCORD_WEBHOOK_OPS', '')
+            or getattr(_s, 'DISCORD_WEBHOOK_BOARD', '')
+            or getattr(_s, 'DISCORD_WEBHOOK', ''))
 
 def notify_discord(message):
+    webhook = _get_discord_webhook()
+    if not webhook:
+        return
     try:
-        requests.post(DISCORD_WEBHOOK, json={"content": message})
-    except:
+        requests.post(webhook, json={"content": message})
+    except Exception:
         pass
 
 
@@ -137,8 +166,22 @@ def event_list(request):
     visit_count = f"{visit_count:,}"
     daily_count = f"{daily_count:,}"
 
+    import json as _json
     from board.models import BannerMessage
     banners = list(BannerMessage.objects.filter(active=True).order_by('created_at'))
+    community_items = [{'type': 'aid', 'text': b.text, 'url': '/board/aid/'} for b in banners]
+    try:
+        from events.models import RecordListing
+        rec = RecordListing.objects.filter(is_available=True).order_by('?').first()
+        if rec:
+            community_items.append({
+                'type': 'record', 'artist': rec.artist,
+                'title': rec.title, 'price': getattr(rec, 'price_display', ''),
+                'url': '/shop/',
+            })
+    except Exception:
+        pass
+    community_json = _json.dumps(community_items)
 
     # {name_lower: slug} for neighborhood page links in event cards
     neighborhood_pages = {
@@ -155,7 +198,7 @@ def event_list(request):
         models.Q(end_date__isnull=True, start_date__gte=now - timedelta(hours=3))
     ).order_by('start_date')
 
-    return render(request, 'events/event_list.html', {
+    response = render(request, 'events/event_list.html', {
         'events': events_list,
         'neighborhoods': neighborhoods,
         'genres': genres,
@@ -172,10 +215,79 @@ def event_list(request):
         'search_all_time': bool(search_query and not date_explicitly_set),
         'cp_version': CP_VERSION,
         'banners': banners,
+        'community_json': community_json,
         'happening_now': happening_now,
         'selected_radius': radius,
         'neighborhood_pages': neighborhood_pages,
     })
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    response['Pragma'] = 'no-cache'
+    return response
+
+
+def api_events(request):
+    """JSON feed for the React event list — returns upcoming approved events."""
+    now = timezone.now()
+    today = localtime(now).date()
+    tomorrow = today + timedelta(days=1)
+
+    qs = (
+        Event.objects
+        .filter(status='approved', start_date__gte=now)
+        .prefetch_related('genres', 'artists', 'photos')
+        .order_by('start_date')[:400]
+    )
+
+    def _flyer(e):
+        photos = list(e.photos.filter(approved=True).order_by('created_at')[:1])
+        if photos:
+            return photos[0].image.url
+        if e.photo:
+            return e.photo.url
+        return ''
+
+    def _serialize(e):
+        ld = localtime(e.start_date)
+        edate = ld.date()
+        if edate == today:
+            day_label = 'Today'
+        elif edate == tomorrow:
+            day_label = 'Tomorrow'
+        else:
+            day_label = ld.strftime('%a %b %-d')
+        hour = ld.hour
+        minute = ld.minute
+        time_label = ld.strftime('%I:%M %p').lstrip('0') if minute else ld.strftime('%I %p').lstrip('0')
+        return {
+            'id': e.id,
+            'title': e.title,
+            'slug': e.slug,
+            'start_date': e.start_date.isoformat(),
+            'end_date': e.end_date.isoformat() if e.end_date else None,
+            'location': e.location or '',
+            'neighborhood': e.neighborhood or '',
+            'category': e.category or '',
+            'is_free': bool(e.is_free),
+            'price_info': e.price_info or '',
+            'genres': [g.name for g in e.genres.all()],
+            'artists': [a.name for a in e.artists.all()],
+            'website': e.website or '',
+            'latitude': float(e.latitude) if e.latitude else None,
+            'longitude': float(e.longitude) if e.longitude else None,
+            'flyer_url': _flyer(e),
+            'day_label': day_label,
+            'time_label': time_label,
+        }
+
+    events = [_serialize(e) for e in qs]
+    neighborhoods = sorted(set(e['neighborhood'] for e in events if e['neighborhood']))
+    genres = sorted(set(g for e in events for g in e['genres']))
+
+    return JsonResponse({
+        'events': events,
+        'neighborhoods': neighborhoods,
+        'genres': genres,
+    }, headers={'Cache-Control': 'no-store'})
 
 
 def api_genre_filter(request):
@@ -360,8 +472,42 @@ def event_detail(request, slug):
 
     venue = Venue.for_location(event.location)
 
+    # Guard against DB rows that reference a deleted/missing photo file.
+    # Django templates don't catch ValueError, so we compute a safe URL here.
+    try:
+        photo_url = event.photo.url if event.photo else ''
+    except ValueError:
+        photo_url = ''
+        event.photo = None  # also clear so {% if event.photo %} is False
+
     can_edit_lineup = request.user.is_authenticated and (
         request.user.is_staff or event.submitted_user == request.user
+    )
+    can_add_lineup = request.user.is_authenticated
+
+    # Extract YouTube playlist ID for embed
+    yt_playlist_id = ''
+    if event.youtube_playlist:
+        from urllib.parse import urlparse, parse_qs as _parse_qs
+        _parsed = urlparse(event.youtube_playlist)
+        yt_playlist_id = _parse_qs(_parsed.query).get('list', [''])[0]
+
+    # Pull YouTube videos from all linked artists + promoters (max 24)
+    artist_ids   = list(event.artists.values_list('pk', flat=True))
+    promoter_ids = list(event.promoters.values_list('pk', flat=True))
+    event_videos = list(
+        VideoTrack.objects
+        .filter(
+            is_active=True,
+            source_type=VideoTrack.SOURCE_YOUTUBE,
+            yt_embeddable=True,
+        )
+        .filter(
+            models.Q(artist_id__in=artist_ids) |
+            models.Q(promoter_id__in=promoter_ids)
+        )
+        .select_related('artist', 'promoter')
+        .order_by('-published_at')[:24]
     )
 
     return render(request, 'events/event_detail.html', {
@@ -375,16 +521,20 @@ def event_detail(request, slug):
         'maps_url': maps_url,
         'recurring_instances': recurring_instances,
         'now': timezone.now(),
+        'photo_url': photo_url,
         'venue': venue,
         'event_edit_fields': EditSuggestion.FIELDS['event'],
         'can_edit_lineup': can_edit_lineup,
+        'can_add_lineup': can_add_lineup,
         'linked_artists': event.artists.all(),
         'linked_promoters': event.promoters.all(),
+        'event_videos': event_videos,
+        'yt_playlist_id': yt_playlist_id,
     })
 
 
 _CREW_KEYWORDS = re.compile(
-    r'\b(crew|kru|collective|sound|system|records|productions|booking|presents|djs?|music|pdx|posse|squad)\b',
+    r'\b(crew|kru|collective|sound|system|records|productions|booking|presents|DJs|music|pdx|posse|squad)\b',
     re.IGNORECASE,
 )
 
@@ -446,16 +596,173 @@ def api_parse_lineup(request):
     })
 
 
+def api_global_search(request):
+    """GET /api/search/?q=<query> — search events, artists, and crews for the header search bar."""
+    from django.db.models import Q
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'events': [], 'artists': [], 'crews': []})
+
+    events = (
+        Event.objects
+        .filter(Q(title__icontains=q) | Q(location__icontains=q), status='approved')
+        .order_by('-start_date')
+        .only('title', 'slug', 'start_date', 'location')[:6]
+    )
+    artists = (
+        Artist.objects
+        .filter(name__icontains=q)
+        .only('name', 'slug')[:5]
+    )
+    crews = (
+        PromoterProfile.objects
+        .filter(Q(name__icontains=q), is_public=True)
+        .only('name', 'slug')[:4]
+    )
+
+    return JsonResponse({
+        'events': [
+            {'title': e.title, 'slug': e.slug,
+             'date': e.start_date.strftime('%-m/%-d/%y'),
+             'loc':  (e.location or '')[:40]}
+            for e in events
+        ],
+        'artists': [{'name': a.name, 'slug': a.slug} for a in artists],
+        'crews':   [{'name': p.name, 'slug': p.slug} for p in crews],
+    })
+
+
+def api_route_proxy(request):
+    """
+    GET /api/route/?from=lat,lng&to=lat,lng
+    Server-side OSRM proxy with long-lived cache. Offloads external API calls
+    from the browser to Unraid and shares the cache across all users/sessions.
+    Returns {pts: [[lat,lng], ...]} or {pts: null} on failure.
+    """
+    from django.core.cache import cache as _cache
+    import re as _re
+
+    coord_re = _re.compile(r'^-?\d+(\.\d+)?,-?\d+(\.\d+)?$')
+    frm = request.GET.get('from', '').strip()
+    to  = request.GET.get('to', '').strip()
+    if not coord_re.match(frm) or not coord_re.match(to):
+        return JsonResponse({'pts': None}, status=400)
+
+    cache_key = f'osrm:{frm}:{to}'
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse({'pts': cached})
+
+    try:
+        flat, flng = frm.split(',')
+        tlat, tlng = to.split(',')
+        url = (f'https://router.project-osrm.org/route/v1/driving/'
+               f'{flng},{flat};{tlng},{tlat}?overview=full&geometries=geojson')
+        r = requests.get(url, timeout=8)
+        d = r.json()
+        if d.get('routes'):
+            pts = [[c[1], c[0]] for c in d['routes'][0]['geometry']['coordinates']]
+        else:
+            pts = None
+    except Exception:
+        pts = None
+
+    _cache.set(cache_key, pts, timeout=86400 * 7)  # cache 7 days
+    return JsonResponse({'pts': pts})
+
+
+def api_artist_lookup(request):
+    """
+    GET /api/artist-lookup/?q=<name>
+    Searches CP DB → MusicBrainz → Last.fm and returns labeled candidates.
+    Response: {results: [{source, id?, name, slug?, mb_id?, tags?, image?}]}
+    """
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'results': []})
+
+    results = []
+    seen_names = set()
+
+    # 1. CP database
+    for a in Artist.objects.filter(name__icontains=q)[:8]:
+        seen_names.add(a.name.lower())
+        results.append({
+            'source': 'cp', 'id': a.pk, 'name': a.name, 'slug': a.slug,
+            'mb_id': a.mb_id, 'city': a.city,
+        })
+
+    # 2. MusicBrainz
+    try:
+        mb_resp = requests.get(
+            'https://musicbrainz.org/ws/2/artist',
+            params={'query': q, 'fmt': 'json', 'limit': 6},
+            headers={'User-Agent': 'CommunityPlaylist/1.0 (hello@communityplaylist.com)'},
+            timeout=5,
+        )
+        for a in mb_resp.json().get('artists', []):
+            name = a.get('name', '').strip()
+            mb_id = a.get('id', '')
+            if not name or name.lower() in seen_names:
+                continue
+            # Check if already in CP DB under this mb_id
+            existing = Artist.objects.filter(mb_id=mb_id).first() if mb_id else None
+            if existing:
+                if existing.name.lower() not in seen_names:
+                    seen_names.add(existing.name.lower())
+                    results.append({
+                        'source': 'cp', 'id': existing.pk, 'name': existing.name,
+                        'slug': existing.slug, 'mb_id': existing.mb_id, 'city': existing.city,
+                    })
+            else:
+                seen_names.add(name.lower())
+                area = a.get('area', {})
+                tags = [t['name'] for t in a.get('tags', [])[:5]] if a.get('tags') else []
+                results.append({
+                    'source': 'mb', 'name': name, 'mb_id': mb_id,
+                    'city': area.get('name', ''),
+                    'tags': tags,
+                })
+    except Exception:
+        pass
+
+    # 3. Last.fm (only if CP+MB returned < 3 results)
+    if len(results) < 3:
+        try:
+            from django.conf import settings as _s
+            lfm_key = getattr(_s, 'LASTFM_API_KEY', '')
+            if lfm_key:
+                lfm_resp = requests.get(
+                    'https://ws.audioscrobbler.com/2.0/',
+                    params={'method': 'artist.search', 'artist': q, 'api_key': lfm_key,
+                            'format': 'json', 'limit': 5},
+                    timeout=5,
+                )
+                matches = lfm_resp.json().get('results', {}).get('artistmatches', {}).get('artist', [])
+                for a in matches:
+                    name = a.get('name', '').strip()
+                    if not name or name.lower() in seen_names:
+                        continue
+                    seen_names.add(name.lower())
+                    results.append({
+                        'source': 'lastfm', 'name': name,
+                        'image': next((img['#text'] for img in reversed(a.get('image', [])) if img.get('#text')), ''),
+                    })
+        except Exception:
+            pass
+
+    return JsonResponse({'results': results[:12]})
+
+
 @login_required
 def event_lineup_create(request, slug):
     """
-    POST {type: 'artist'|'promoter', name: '...'} — creates a minimal profile,
-    links it to the event, and claims it for the requesting user.
-    Returns {id, name, profile_url, type}.
+    POST {type: 'artist'|'promoter', name, bio?, website?, instagram?, ...} —
+    creates or finds an artist/promoter profile, links to event, claims for user.
+    Any logged-in user can add; full artist fields accepted for richer profiles.
+    Returns {id, name, slug, profile_url, type}.
     """
     event = get_object_or_404(Event, slug=slug)
-    if not (request.user.is_staff or event.submitted_user == request.user):
-        return JsonResponse({'error': 'forbidden'}, status=403)
 
     import json as _json
     body = _json.loads(request.body)
@@ -465,15 +772,36 @@ def event_lineup_create(request, slug):
         return JsonResponse({'error': 'name required'}, status=400)
 
     if obj_type == 'artist':
-        # Try exact-case first, then case-insensitive
         obj = Artist.objects.filter(name__iexact=name).first()
         if obj:
             if not obj.claimed_by:
                 obj.claimed_by = request.user
                 obj.save(update_fields=['claimed_by'])
         else:
-            obj = Artist(name=name, claimed_by=request.user)
-            obj.save()  # triggers slug auto-generation
+            str_field = lambda k, n=200: body.get(k, '').strip()[:n]
+            url_field  = lambda k: body.get(k, '').strip()[:500]
+            obj = Artist(
+                name=name,
+                claimed_by=request.user,
+                bio=body.get('bio', '').strip()[:4000],
+                website=url_field('website'),
+                instagram=str_field('instagram', 100),
+                soundcloud=str_field('soundcloud', 100),
+                bandcamp=url_field('bandcamp'),
+                mixcloud=str_field('mixcloud', 100),
+                youtube=url_field('youtube'),
+                spotify=url_field('spotify'),
+                mastodon=url_field('mastodon'),
+                bluesky=str_field('bluesky', 100),
+                tiktok=str_field('tiktok', 100),
+                twitch=str_field('twitch', 100),
+                beatport=url_field('beatport'),
+                discogs=url_field('discogs'),
+                mb_id=str_field('mb_id', 100),
+                city=str_field('city', 100),
+                is_stub=False,
+            )
+            obj.save()
         event.artists.add(obj)
         return JsonResponse({'id': obj.pk, 'name': obj.name, 'slug': obj.slug, 'type': 'artist',
                              'profile_url': f'/artists/{obj.slug}/'})
@@ -506,16 +834,15 @@ def event_lineup_edit(request, slug):
     """
     POST to add/remove artist or promoter from an event.
     Body: {action: 'add'|'remove', type: 'artist'|'promoter', id: pk}
+    Add: any authenticated user. Remove: owner or staff only.
     """
-    if not request.user.is_staff and not request.user.is_authenticated:
-        return JsonResponse({'error': 'forbidden'}, status=403)
     event = get_object_or_404(Event, slug=slug)
-    if not (request.user.is_staff or event.submitted_user == request.user):
-        return JsonResponse({'error': 'forbidden'}, status=403)
-
     import json as _json
     body = _json.loads(request.body)
     action = body.get('action')
+    if action == 'remove' and not (request.user.is_staff or event.submitted_user == request.user):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
     obj_type = body.get('type')
     obj_id = int(body.get('id', 0))
 
@@ -544,15 +871,33 @@ def event_submit(request):
         form = EventSubmitForm(request.POST, request.FILES)
         if form.is_valid():
             event = form.save(commit=False)
-            lat, lng = geocode_location(event.location)
-            event.latitude = lat
-            event.longitude = lng
             extra = [u.strip() for u in request.POST.getlist('extra_links') if u.strip()]
             event.extra_links = extra[:10]
             if request.user.is_authenticated:
                 event.submitted_user = request.user
             event.save()
             form.save_m2m()
+            # Save flyer URL if provided (http/https only — block javascript: etc.)
+            flyer_url = request.POST.get('flyer_url', '').strip()
+            if flyer_url and flyer_url.lower().startswith(('http://', 'https://')):
+                event.flyer_url = flyer_url
+                event.save(update_fields=['flyer_url'])
+            else:
+                flyer_url = ''
+
+            # Queue geocoding async — Unraid worker fills lat/lng without blocking this request
+            from .models import WorkerTask
+            if event.location:
+                WorkerTask.objects.create(
+                    task_type="geocode_event",
+                    payload={"event_id": event.id, "address": event.location},
+                )
+            # Queue flyer scan async — tokyo7 Ollama enriches missing fields overnight
+            if flyer_url:
+                WorkerTask.objects.create(
+                    task_type="enrich_flyer",
+                    payload={"event_id": event.id, "flyer_url": flyer_url},
+                )
             genre_ids = request.POST.getlist('genre_ids')
             if genre_ids:
                 event.genres.set(Genre.objects.filter(id__in=genre_ids))
@@ -713,7 +1058,20 @@ def artist_profile(request, slug):
     saved_ids = set(
         SavedTrack.objects.filter(user=request.user, track_id__in={t.pk for t in tracks}).values_list('track_id', flat=True)
     ) if request.user.is_authenticated and tracks else set()
+    # Comment counts: {track_pk: count}
+    from django.db.models import Count as _Count
+    _comment_rows = (
+        TrackComment.objects
+        .filter(track_id__in=[t.pk for t in tracks])
+        .values('track_id')
+        .annotate(n=_Count('id'))
+    ) if tracks else []
+    comment_counts = {r['track_id']: r['n'] for r in _comment_rows}
     yt_embed_html = _get_yt_embed_cached(artist.youtube) if _is_yt_channel(artist.youtube) else ''
+    _twitch_data  = _get_twitch_clips_cached(artist.twitch) if artist.twitch and not artist.is_live else {}
+    twitch_clips  = _twitch_data.get('clips', [])
+    twitch_vods   = _twitch_data.get('vods', [])
+    house_mixes_tracks = _get_house_mixes_tracks(artist.house_mixes, sort=artist.house_mixes_sort or 'newest') if artist.house_mixes else []
     return render(request, 'events/artist_profile.html', {
         'artist': artist, 'upcoming': upcoming, 'past': past, 'recurring': recurring,
         'is_following': is_following,
@@ -722,7 +1080,11 @@ def artist_profile(request, slug):
         'cross_pks': cross_pks,
         'can_edit': can_edit,
         'saved_ids': saved_ids,
+        'comment_counts': comment_counts,
         'yt_embed_html': yt_embed_html,
+        'twitch_clips': twitch_clips,
+        'twitch_vods': twitch_vods,
+        'house_mixes_tracks': house_mixes_tracks,
         'crews': artist.crews.filter(is_public=True).order_by('name'),
     })
 
@@ -772,6 +1134,9 @@ def _send_verification_email(user, profile):
 def register_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
+    if request.method == 'POST' and _auth_rate_limited(request, 'register', limit=5, window=600):
+        messages.error(request, 'Too many attempts. Please wait a few minutes.')
+        return render(request, 'accounts/register.html', {'form': RegisterForm()})
     form = RegisterForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         from django.contrib.auth.models import User
@@ -792,17 +1157,24 @@ def register_view(request):
         claimed.update(submitted_user=user)
         login(request, user)
         messages.success(request, f'Welcome! Check your email to verify your account.')
-        return redirect('dashboard')
+        return redirect('onboarding')
     return render(request, 'accounts/register.html', {'form': form})
 
 
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
+    if request.method == 'POST' and _auth_rate_limited(request, 'login', limit=10, window=300):
+        messages.error(request, 'Too many login attempts. Please wait a few minutes.')
+        return render(request, 'accounts/login.html', {'form': StyledAuthForm()})
     form = StyledAuthForm(request, data=request.POST or None)
     if request.method == 'POST' and form.is_valid():
         login(request, form.get_user())
-        return redirect(request.GET.get('next', 'dashboard'))
+        from django.utils.http import url_has_allowed_host_and_scheme
+        next_url = request.GET.get('next', '')
+        if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=not settings.DEBUG):
+            return redirect(next_url)
+        return redirect('dashboard')
     return render(request, 'accounts/login.html', {'form': form})
 
 
@@ -812,8 +1184,137 @@ def logout_view(request):
 
 
 @login_required(login_url='/login/')
+def onboarding_view(request):
+    """Post-signup: pick what kind of profiles you want."""
+    profile, _ = UserProfile.objects.get_or_create(
+        user=request.user,
+        defaults={'handle': UserProfile.handle_from_email(request.user.email)},
+    )
+    if request.method == 'POST':
+        profile.wants_artist   = 'wants_artist'   in request.POST
+        profile.wants_promoter = 'wants_promoter' in request.POST
+        profile.wants_venue    = 'wants_venue'    in request.POST
+        profile.onboarded      = True
+        profile.save(update_fields=['wants_artist', 'wants_promoter', 'wants_venue', 'onboarded'])
+        messages.success(request, "You're all set. Add your profiles from the dashboard.")
+        return redirect('dashboard')
+    return render(request, 'accounts/onboarding.html', {'profile': profile})
+
+
+def _build_activity_feed(user, follows):
+    """
+    Aggregate a community activity feed for the dashboard.
+    Returns a list of dicts with keys: type, title, blurb, url, date, source_name.
+    Types: board_give | board_iso | ask | event_artist | event_venue | event_space
+    """
+    from datetime import timedelta
+    from django.utils import timezone as _tz
+    cutoff = _tz.now() - timedelta(days=60)
+
+    feed = []
+
+    # ── Board offerings (give / ISO / trade) ──────────────────────────────────
+    try:
+        from board.models import Offering
+        for off in Offering.objects.filter(
+            created_at__gte=cutoff, is_claimed=False,
+        ).order_by('-created_at')[:40]:
+            if off.category == Offering.CATEGORY_GIVE:
+                ftype = 'board_give'
+            elif off.category == Offering.CATEGORY_ISO:
+                ftype = 'board_iso'
+            else:
+                ftype = 'board_trade'
+            feed.append({
+                'type':        ftype,
+                'title':       off.title,
+                'blurb':       (off.description or '')[:100],
+                'url':         off.get_absolute_url() if hasattr(off, 'get_absolute_url') else '/board/',
+                'date':        off.created_at,
+                'source_name': off.poster_name or 'Community Board',
+            })
+    except Exception:
+        pass
+
+    # ── Community Asks from any public space/venue ─────────────────────────────
+    try:
+        for ask in CommunityAsk.objects.filter(
+            status='open', created_at__gte=cutoff,
+        ).select_related('community_space', 'venue').order_by('-created_at')[:30]:
+            source = ask.community_space or ask.venue
+            if not source:
+                continue
+            url = (f'/spaces/{source.slug}/' if ask.community_space
+                   else f'/venues/{source.slug}/')
+            feed.append({
+                'type':        'ask',
+                'title':       ask.title,
+                'blurb':       (ask.description or '')[:100],
+                'url':         url,
+                'date':        ask.created_at,
+                'source_name': source.name,
+            })
+    except Exception:
+        pass
+
+    # ── Recent events from followed entities ──────────────────────────────────
+    follow_map = {(f['follow'].target_type, f['follow'].target_id): f['target'] for f in follows}
+    followed_artist_pks  = [tid for (tt, tid) in follow_map if tt == Follow.TYPE_ARTIST]
+    followed_venue_pks   = [tid for (tt, tid) in follow_map if tt == Follow.TYPE_VENUE]
+    followed_space_pks   = [tid for (tt, tid) in follow_map if tt == Follow.TYPE_SPACE]
+
+    try:
+        for ev in Event.objects.filter(
+            submitted_artist__pk__in=followed_artist_pks,
+            status='approved', start_date__gte=_tz.now().date(),
+        ).select_related('submitted_artist')[:20]:
+            feed.append({
+                'type':        'event_artist',
+                'title':       ev.title,
+                'blurb':       f'{ev.start_date}',
+                'url':         f'/events/{ev.slug}/',
+                'date':        ev.created_at,
+                'source_name': ev.submitted_artist.name if ev.submitted_artist else '',
+            })
+    except Exception:
+        pass
+
+    try:
+        for ev in Event.objects.filter(
+            venue__pk__in=followed_venue_pks,
+            status='approved', start_date__gte=_tz.now().date(),
+        ).select_related('venue')[:20]:
+            feed.append({
+                'type':        'event_venue',
+                'title':       ev.title,
+                'blurb':       f'{ev.start_date}',
+                'url':         f'/events/{ev.slug}/',
+                'date':        ev.created_at,
+                'source_name': ev.venue.name if ev.venue else '',
+            })
+    except Exception:
+        pass
+
+    feed.sort(key=lambda x: x['date'], reverse=True)
+    return feed[:80]
+
+
+@login_required(login_url='/login/')
 def dashboard(request):
-    # Handle calendar feed add/remove
+    profile, _ = UserProfile.objects.get_or_create(
+        user=request.user,
+        defaults={'handle': UserProfile.handle_from_email(request.user.email)},
+    )
+
+    # Redirect new users to onboarding (skip param bypasses it)
+    if not profile.onboarded:
+        if request.GET.get('skip'):
+            profile.onboarded = True
+            profile.save(update_fields=['onboarded'])
+        else:
+            return redirect('onboarding')
+
+    # Handle POST actions
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'add_feed':
@@ -827,32 +1328,112 @@ def dashboard(request):
         elif action == 'remove_feed':
             feed_id = request.POST.get('feed_id')
             CalendarFeed.objects.filter(pk=feed_id, user=request.user).delete()
+        elif action == 'save_contact':
+            profile.messenger_telegram = request.POST.get('messenger_telegram', '').strip().lstrip('@')[:100]
+            profile.messenger_discord  = request.POST.get('messenger_discord', '').strip()[:30]
+            profile.messenger_signal   = request.POST.get('messenger_signal', '').strip().lstrip('+')[:100]
+            profile.sol_wallet         = request.POST.get('sol_wallet', '').strip()[:120]
+            profile.save(update_fields=['messenger_telegram', 'messenger_discord', 'messenger_signal', 'sol_wallet'])
+            messages.success(request, 'Contact info saved.')
+        elif action == 'toggle_profile_type':
+            field = request.POST.get('field', '')
+            if field in ('wants_artist', 'wants_promoter', 'wants_venue'):
+                setattr(profile, field, not getattr(profile, field))
+                profile.save(update_fields=[field])
+        elif action == 'release_artist':
+            pk = request.POST.get('pk')
+            Artist.objects.filter(pk=pk, claimed_by=request.user).update(claimed_by=None)
+            messages.success(request, 'Artist claim released.')
+        elif action == 'release_promoter':
+            pk = request.POST.get('pk')
+            PromoterProfile.objects.filter(pk=pk, claimed_by=request.user).update(claimed_by=None)
+            messages.success(request, 'Crew claim released.')
+        elif action == 'release_venue':
+            pk = request.POST.get('pk')
+            Venue.objects.filter(pk=pk, claimed_by=request.user).update(claimed_by=None)
+            messages.success(request, 'Venue claim released.')
+        elif action == 'release_space':
+            pk = request.POST.get('pk')
+            CommunitySpace.objects.filter(pk=pk, claimed_by=request.user).update(claimed_by=None)
+            messages.success(request, 'Space claim released.')
         return redirect('dashboard')
+
+    # Claimed profiles
+    claimed_artists   = list(request.user.claimed_artists.all())
+    claimed_promoters = list(request.user.claimed_promoters.all())
+    claimed_venues    = list(request.user.claimed_venues.all())
+    claimed_spaces    = list(CommunitySpace.objects.filter(claimed_by=request.user))
+
+    # If user has claimed profiles, auto-activate the matching flag
+    if claimed_artists and not profile.wants_artist:
+        profile.wants_artist = True
+        profile.save(update_fields=['wants_artist'])
+    if claimed_promoters and not profile.wants_promoter:
+        profile.wants_promoter = True
+        profile.save(update_fields=['wants_promoter'])
+    if claimed_venues and not profile.wants_venue:
+        profile.wants_venue = True
+        profile.save(update_fields=['wants_venue'])
+
+    # Stats
+    artist_views   = sum(a.view_count for a in claimed_artists)
+    promoter_views = sum(p.view_count for p in claimed_promoters)
+    venue_views    = sum(v.view_count for v in claimed_venues)
 
     events  = Event.objects.filter(submitted_user=request.user).order_by('-created_at')
     feeds   = CalendarFeed.objects.filter(user=request.user)
-    profile, _ = UserProfile.objects.get_or_create(
-        user=request.user,
-        defaults={'handle': UserProfile.handle_from_email(request.user.email)},
-    )
-    follows = Follow.objects.filter(user=request.user).select_related()
+
+    follows = Follow.objects.filter(user=request.user)
     follow_data = [{'follow': f, 'target': f.get_target()} for f in follows]
     follow_data = [x for x in follow_data if x['target'] is not None]
+
     saved_tracks = SavedTrack.objects.filter(user=request.user).select_related(
         'track__genre', 'track__artist', 'track__promoter', 'track__venue'
     ).order_by('-created_at')
-    my_reservations = (RecordReservation.objects
+
+    # Outgoing: reservations I made as a buyer
+    outgoing_orders = (RecordReservation.objects
                        .filter(buyer=request.user)
                        .select_related('listing__promoter')
                        .order_by('-created_at'))
-    return render(request, 'accounts/dashboard.html', {
+
+    # Incoming: reservations on shops I own (promoter claimed by me)
+    my_promoter_pks = [p.pk for p in claimed_promoters]
+    incoming_orders = (RecordReservation.objects
+                       .filter(listing__promoter__pk__in=my_promoter_pks)
+                       .select_related('listing__promoter')
+                       .order_by('-created_at')) if my_promoter_pks else []
+
+    space_views     = sum(s.view_count for s in claimed_spaces)
+    active_profiles = len(claimed_artists) + len(claimed_promoters) + len(claimed_venues) + len(claimed_spaces)
+
+    activity_feed = _build_activity_feed(request.user, follow_data)
+
+    response = render(request, 'accounts/dashboard.html', {
+        'profile': profile,
         'events': events,
         'feeds': feeds,
-        'profile': profile,
         'follow_data': follow_data,
         'saved_tracks': saved_tracks,
-        'my_reservations': my_reservations,
+        'outgoing_orders': outgoing_orders,
+        'incoming_orders': incoming_orders,
+        'claimed_artists': claimed_artists,
+        'claimed_promoters': claimed_promoters,
+        'claimed_venues': claimed_venues,
+        'claimed_spaces': claimed_spaces,
+        'artist_views': artist_views,
+        'promoter_views': promoter_views,
+        'venue_views': venue_views,
+        'space_views': space_views,
+        'total_views': artist_views + promoter_views + venue_views + space_views,
+        'events_pending': events.filter(status='pending').count(),
+        'events_approved': events.filter(status='approved').count(),
+        'active_profiles':  active_profiles,
+        'activity_feed':    activity_feed,
     })
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    response['Pragma'] = 'no-cache'
+    return response
 
 
 @login_required(login_url='/login/')
@@ -944,6 +1525,138 @@ def calendar_feed(request):
     return resp
 
 
+def rss_feed(request):
+    from django.utils.feedgenerator import Rss201rev2Feed
+
+    feed = Rss201rev2Feed(
+        title='Community Playlist — PDX Events',
+        link='https://communityplaylist.com/',
+        description='Portland community events submitted by the people, for the people.',
+        language='en',
+        feed_url='https://communityplaylist.com/feed/events.rss',
+    )
+
+    now = timezone.now()
+    events = Event.objects.filter(status='approved', start_date__gte=now).order_by('start_date')[:100]
+
+    category = request.GET.get('category')
+    genre_id = request.GET.get('genre')
+    free_only = request.GET.get('free')
+    if category:
+        events = events.filter(category=category)
+    if genre_id:
+        events = events.filter(genres__id=genre_id)
+    if free_only:
+        events = events.filter(is_free=True)
+
+    for event in events:
+        location = getattr(event, 'location', '') or ''
+        description = event.description[:500] if event.description else ''
+        if location and not location.startswith(('http', 'www')):
+            description = f'{location} — {description}' if description else location
+
+        feed.add_item(
+            title=event.title,
+            link=f'https://communityplaylist.com/events/{event.slug}/',
+            unique_id=f'https://communityplaylist.com/events/{event.slug}/',
+            description=description,
+            pubdate=event.start_date if timezone.is_aware(event.start_date) else timezone.make_aware(event.start_date),
+            categories=[event.get_category_display()] if event.category else [],
+        )
+
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
+def venue_rss(request, slug):
+    from django.utils.feedgenerator import Rss201rev2Feed
+    venue = get_object_or_404(Venue, slug=slug)
+    base  = 'https://communityplaylist.com'
+    feed  = Rss201rev2Feed(
+        title=f'{venue.name} — Events on Community Playlist',
+        link=f'{base}/venues/{venue.slug}/',
+        description=f'Upcoming events at {venue.name} in Portland, OR.',
+        language='en',
+        feed_url=f'{base}/venues/{venue.slug}/feed.rss',
+    )
+    events = Event.objects.filter(
+        venue=venue, status='approved', start_date__gte=timezone.now()
+    ).order_by('start_date')[:60]
+    for event in events:
+        desc = event.description[:500] if event.description else ''
+        feed.add_item(
+            title=event.title,
+            link=f'{base}/events/{event.slug}/',
+            unique_id=f'{base}/events/{event.slug}/',
+            description=desc,
+            pubdate=event.start_date if timezone.is_aware(event.start_date) else timezone.make_aware(event.start_date),
+        )
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
+def artist_rss(request, slug):
+    from django.utils.feedgenerator import Rss201rev2Feed
+    artist = get_object_or_404(Artist, slug=slug)
+    base   = 'https://communityplaylist.com'
+    feed   = Rss201rev2Feed(
+        title=f'{artist.name} — Events on Community Playlist',
+        link=f'{base}/artists/{artist.slug}/',
+        description=f'Upcoming events featuring {artist.name} in Portland, OR.',
+        language='en',
+        feed_url=f'{base}/artists/{artist.slug}/feed.rss',
+    )
+    events = Event.objects.filter(
+        artists=artist, status='approved', start_date__gte=timezone.now()
+    ).order_by('start_date')[:60]
+    for event in events:
+        desc = event.description[:500] if event.description else ''
+        feed.add_item(
+            title=event.title,
+            link=f'{base}/events/{event.slug}/',
+            unique_id=f'{base}/events/{event.slug}/',
+            description=desc,
+            pubdate=event.start_date if timezone.is_aware(event.start_date) else timezone.make_aware(event.start_date),
+        )
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
+def space_rss(request, slug):
+    from django.utils.feedgenerator import Rss201rev2Feed
+    from .models import KofiPost
+    space = get_object_or_404(CommunitySpace, slug=slug, is_public=True)
+    base  = 'https://communityplaylist.com'
+    feed  = Rss201rev2Feed(
+        title=f'{space.name} — Updates on Community Playlist',
+        link=f'{base}/spaces/{space.slug}/',
+        description=space.description[:200] if space.description else f'{space.name} — community space in Portland, OR.',
+        language='en',
+        feed_url=f'{base}/spaces/{space.slug}/feed.rss',
+    )
+    posts = KofiPost.objects.filter(
+        community_space=space, is_public=True
+    ).order_by('-timestamp')[:40]
+    for post in posts:
+        emoji = {'Subscription': '⭐', 'Shop_Order': '🛒', 'Commission': '🎨', 'Blog_Post': '📝'}.get(post.kofi_type, '☕')
+        title = f'{emoji} {post.from_name}' if post.kofi_type != 'Blog_Post' else (post.message[:80] or 'Update')
+        desc  = post.message or ''
+        pub   = post.timestamp or post.created_at
+        feed.add_item(
+            title=title,
+            link=post.url or f'{base}/spaces/{space.slug}/',
+            unique_id=post.url or f'{base}/spaces/{space.slug}/#{post.pk}',
+            description=desc,
+            pubdate=pub if timezone.is_aware(pub) else timezone.make_aware(pub),
+        )
+    resp = HttpResponse(content_type='application/rss+xml; charset=utf-8')
+    feed.write(resp, 'utf-8')
+    return resp
+
+
 def calendar_subscribe(request):
     genres = Genre.objects.filter(
         events__status='approved', events__start_date__gte=timezone.now()
@@ -953,6 +1666,33 @@ def calendar_subscribe(request):
 
 def features_page(request):
     return render(request, 'events/features.html')
+
+
+def credits_page(request):
+    return render(request, 'events/credits.html')
+
+
+@login_required
+def save_profile_playlist(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        data = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    items = data.get('items', [])
+    if not items:
+        return JsonResponse({'error': 'No items'}, status=400)
+    from .models import UserPlaylist
+    profile = request.user.profile
+    name = f"@{profile.handle}'s Community Playlist"
+    pl, created = UserPlaylist.objects.update_or_create(
+        user=request.user,
+        name=name,
+        defaults={'items': items},
+    )
+    return JsonResponse({'ok': True, 'created': created, 'id': pl.pk, 'name': pl.name, 'count': len(items)})
 
 
 # ── Venue profiles ──
@@ -979,6 +1719,7 @@ def venue_detail(request, slug):
         request.user.is_authenticated and
         Follow.objects.filter(user=request.user, target_type=Follow.TYPE_VENUE, target_id=venue.pk).exists()
     )
+    asks = list(venue.asks.exclude(status='fulfilled'))
     return render(request, 'events/venue_detail.html', {
         'venue': venue,
         'upcoming': upcoming,
@@ -986,6 +1727,7 @@ def venue_detail(request, slug):
         'now': now,
         'is_following': is_following,
         'venue_edit_fields': EditSuggestion.FIELDS['venue'],
+        'asks': asks,
     })
 
 
@@ -1106,6 +1848,13 @@ def venue_register(request):
 @login_required(login_url='/login/')
 def venue_edit(request, slug):
     venue = get_object_or_404(Venue, slug=slug, claimed_by=request.user)
+
+    if request.method == 'POST' and request.POST.get('_asks_only') == '1':
+        # Asks-only form submitted — rebuild asks without touching VenueForm
+        _save_asks_for_venue(venue, request.POST, user=request.user)
+        messages.success(request, 'Community Asks saved.')
+        return redirect('venue_edit', slug=venue.slug)
+
     form = VenueForm(request.POST or None, request.FILES or None, instance=venue)
     if request.method == 'POST' and form.is_valid():
         v = form.save(commit=False)
@@ -1116,23 +1865,130 @@ def venue_edit(request, slug):
         v.save()
         messages.success(request, 'Venue updated.')
         return redirect('venue_detail', slug=venue.slug)
-    return render(request, 'events/venue_register.html', {'form': form, 'venue': venue, 'editing': True})
+    asks = list(venue.asks.all())
+    return render(request, 'events/venue_register.html', {'form': form, 'venue': venue, 'editing': True, 'asks': asks})
+
+
+def _parse_asks_from_post(post):
+    """Return list of dicts from parallel ask arrays in POST data."""
+    titles        = post.getlist('ask_title')
+    types         = post.getlist('ask_type')
+    descriptions  = post.getlist('ask_description')
+    amounts       = post.getlist('ask_target')
+    don_urls      = post.getlist('ask_donation_url')
+    statuses      = post.getlist('ask_status')
+    product_urls  = post.getlist('ask_product_url')
+    product_imgs  = post.getlist('ask_product_image_url')
+    product_prices = post.getlist('ask_product_price')
+    post_to_board = post.getlist('ask_post_to_board')  # value = index str when checked
+    valid_types   = [k for k, _ in CommunityAsk.TYPE_CHOICES]
+    valid_status  = [k for k, _ in CommunityAsk.STATUS_CHOICES]
+    result = []
+    for i, title in enumerate(titles):
+        title = title.strip()
+        if not title:
+            continue
+        ask_type  = types[i] if i < len(types) and types[i] in valid_types else CommunityAsk.TYPE_ITEM
+        status    = statuses[i] if i < len(statuses) and statuses[i] in valid_status else CommunityAsk.STATUS_OPEN
+        amount_raw = amounts[i].strip() if i < len(amounts) else ''
+        price_raw  = product_prices[i].strip() if i < len(product_prices) else ''
+        try:
+            amount = int(amount_raw) if amount_raw else None
+        except ValueError:
+            amount = None
+        try:
+            price = float(price_raw) if price_raw else None
+        except ValueError:
+            price = None
+        result.append({
+            'title':             title,
+            'ask_type':          ask_type,
+            'description':       descriptions[i].strip() if i < len(descriptions) else '',
+            'target_amount':     amount,
+            'donation_url':      don_urls[i].strip() if i < len(don_urls) else '',
+            'product_url':       product_urls[i].strip() if i < len(product_urls) else '',
+            'product_image_url': product_imgs[i].strip() if i < len(product_imgs) else '',
+            'product_price':     price,
+            'status':            status,
+            'post_to_board':     str(i) in post_to_board,
+            'sort_order':        i,
+        })
+    return result
+
+
+def _create_iso_offering(ask_data, owner_name, neighborhood_name, user, profile_url=''):
+    """Create a Buy Nothing ISO Offering for an item ask. Returns the Offering or None."""
+    from board.models import Offering
+    from django.utils import timezone as _tz
+    hood = Neighborhood.objects.filter(name__iexact=neighborhood_name).first() if neighborhood_name else None
+    body_parts = []
+    if ask_data['description']:
+        body_parts.append(ask_data['description'])
+    if ask_data['product_url']:
+        body_parts.append(f"Product link: {ask_data['product_url']}")
+    if profile_url:
+        body_parts.append(f"Posted by {owner_name} — {profile_url}")
+    offering = Offering.objects.create(
+        title=ask_data['title'],
+        body='\n'.join(body_parts),
+        category=Offering.CATEGORY_ISO,
+        neighborhood=hood,
+        author_name=owner_name,
+        poster_user=user,
+        expires_at=_tz.now() + _tz.timedelta(days=180),
+        active=True,
+    )
+    return offering
+
+
+def _save_asks_for_venue(venue, post, user=None):
+    parsed = _parse_asks_from_post(post)
+    new_asks = []
+    for d in parsed:
+        offering = None
+        if d['post_to_board'] and d['ask_type'] == CommunityAsk.TYPE_ITEM and user:
+            profile_url = f'https://communityplaylist.com/venues/{venue.slug}/'
+            offering = _create_iso_offering(d, venue.name, venue.neighborhood, user, profile_url)
+        new_asks.append(CommunityAsk(
+            venue=venue,
+            title=d['title'],
+            description=d['description'],
+            ask_type=d['ask_type'],
+            target_amount=d['target_amount'],
+            donation_url=d['donation_url'],
+            product_url=d['product_url'],
+            product_image_url=d['product_image_url'],
+            product_price=d['product_price'],
+            board_offering=offering,
+            status=d['status'],
+            sort_order=d['sort_order'],
+        ))
+    CommunityAsk.objects.filter(venue=venue).delete()
+    CommunityAsk.objects.bulk_create(new_asks)
 
 
 # ── Neighborhood pages ────────────────────────────────────────────────────────
 
 def neighborhood_list(request):
     """All active neighborhoods with upcoming event counts."""
+    from django.db.models import Q
+    from events.geocode import PDX_BOUNDS
     now = timezone.now()
     hoods = Neighborhood.objects.filter(active=True)
-    # Annotate with upcoming event count
-    from django.db.models import Count
+    # Events with coordinates must be within the PDX geo fence;
+    # events without coordinates are kept (may simply not have been geocoded yet).
+    in_fence = Q(latitude__isnull=True) | (
+        Q(latitude__gte=PDX_BOUNDS['lat_min']) &
+        Q(latitude__lte=PDX_BOUNDS['lat_max']) &
+        Q(longitude__gte=PDX_BOUNDS['lng_min']) &
+        Q(longitude__lte=PDX_BOUNDS['lng_max'])
+    )
     hood_data = []
     for h in hoods:
         count = Event.objects.filter(
             status='approved',
             start_date__gte=now,
-        ).filter(h.event_q()).count()
+        ).filter(in_fence).filter(h.event_q()).count()
         hood_data.append({'hood': h, 'count': count})
     # Sort by event count descending, then name
     hood_data.sort(key=lambda x: (-x['count'], x['hood'].name))
@@ -1160,6 +2016,12 @@ def neighborhood_detail(request, slug):
 
     # Board topics tagged to this neighborhood
     topics = Topic.objects.filter(neighborhood=hood).order_by('-pinned', '-created_at')[:20]
+
+    # Free & Trade offerings for this neighborhood
+    from board.models import Offering
+    offerings = Offering.objects.filter(
+        neighborhood=hood, active=True, is_claimed=False, expires_at__gt=now,
+    ).order_by('-created_at')[:12]
 
     # Handle new topic post
     post_error = None
@@ -1211,6 +2073,7 @@ def neighborhood_detail(request, slug):
         'hood': hood,
         'upcoming': upcoming,
         'topics': topics,
+        'offerings': offerings,
         'post_error': post_error,
         'now': now,
         'is_following': is_following,
@@ -1264,7 +2127,15 @@ def profile_settings(request):
             profile.handle   = handle
             profile.pronouns = request.POST.get('pronouns', '').strip()[:40]
             profile.bio      = request.POST.get('bio', '').strip()[:500]
-            profile.is_public = bool(request.POST.get('is_public'))
+            profile.is_public              = bool(request.POST.get('is_public'))
+            profile.lastfm_username        = request.POST.get('lastfm_username', '').strip()[:100]
+            profile.listenbrainz_username  = request.POST.get('listenbrainz_username', '').strip()[:100]
+            profile.discogs_username       = request.POST.get('discogs_username', '').strip()[:100]
+            profile.show_embeds          = bool(request.POST.get('show_embeds'))
+            profile.show_rss_feed        = bool(request.POST.get('show_rss_feed'))
+            profile.show_following       = bool(request.POST.get('show_following'))
+            profile.show_saved_tracks    = bool(request.POST.get('show_saved_tracks'))
+            profile.show_upcoming_events = bool(request.POST.get('show_upcoming_events'))
             # Links: up to 5 {label, url} pairs
             labels = request.POST.getlist('link_label')[:5]
             urls   = request.POST.getlist('link_url')[:5]
@@ -1324,6 +2195,187 @@ def _is_yt_channel(url):
     return bool(_re_yt.search(r'youtube\.com/([A-Za-z0-9_]+)/?$', url))
 
 
+# ── Twitch clips helper ───────────────────────────────────────────────────────
+_twitch_clips_cache: dict = {}
+_TWITCH_CLIPS_TTL = 3600
+
+# ── House-Mixes.com ───────────────────────────────────────────────────────────
+_HM_CACHE: dict = {}
+_HM_TTL = 900  # 15 min
+
+
+def _get_house_mixes_tracks(username, sort='newest', limit=12):
+    """Fetch mix list for a house-mixes.com username via RSC payload. Cached 15 min.
+    sort: 'newest' | 'oldest' | 'downloads' | 'plays'
+    """
+    import re, time, json as _json
+    if not username:
+        return []
+    cache_key = username
+    cached = _HM_CACHE.get(cache_key)
+    if cached and time.time() - cached['ts'] < _HM_TTL:
+        raw = cached['raw']
+    else:
+        try:
+            r = requests.get(
+                f'https://www.house-mixes.com/{username}',
+                headers={'User-Agent': 'Mozilla/5.0 Chrome/120.0.0.0', 'RSC': '1'},
+                timeout=8,
+            )
+            if r.status_code != 200:
+                return []
+            data = r.text
+            # Parse initialMixes array which contains full track objects
+            m = re.search(r'"initialMixes":\[(.+?)\],"initialPag', data, re.S)
+            if m:
+                try:
+                    raw = _json.loads('[' + m.group(1) + ']')
+                except Exception:
+                    raw = []
+            else:
+                raw = []
+            # Fallback: build minimal records from regex if JSON parse failed
+            if not raw:
+                uuids = re.findall(
+                    rf'/{re.escape(username)}/([0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}})(?!\w)', data)
+                META = {username, 'House-Mixes.com', 'viewport', 'description', 'keywords',
+                        'robots', 'msapplication-TileColor', 'msapplication-config'}
+                names = [n for n in re.findall(r'"name":"([^"]+)"', data) if n not in META]
+                artworks = re.findall(
+                    r'https://ik\.imagekit\.io/housemixes/tr:n-athumb7/[^"]+artwork[^"]+\.jpg', data)
+                raw = [{'name': names[i] if i < len(names) else f'Mix {i+1}',
+                        'waveformUrl': f'https://files.house-mixes.com/mp3/{username}/{uuid}.mp3',
+                        'artwork': artworks[i] if i < len(artworks) else '',
+                        'dateAdded': '', 'totalDownloads': 0, 'totalPlays': 0}
+                       for i, uuid in enumerate(uuids)]
+            _HM_CACHE[cache_key] = {'ts': time.time(), 'raw': raw}
+        except Exception:
+            return []
+
+    # Sort
+    if sort == 'oldest':
+        raw = sorted(raw, key=lambda x: x.get('dateAdded') or '', reverse=False)
+    elif sort == 'downloads':
+        raw = sorted(raw, key=lambda x: x.get('totalDownloads') or 0, reverse=True)
+    elif sort == 'plays':
+        raw = sorted(raw, key=lambda x: x.get('totalPlays') or 0, reverse=True)
+    # 'newest' = default order from API (already newest-first)
+
+    tracks = []
+    for mix in raw[:limit]:
+        # waveformUrl is like https://files.house-mixes.com/mp3/user/uuid.mp3 — reuse as stream_url
+        waveform = mix.get('waveformUrl', '')
+        uuid_m = re.search(
+            rf'/{re.escape(username)}/([0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}})',
+            waveform)
+        if not uuid_m:
+            continue
+        uuid = uuid_m.group(1)
+        artwork = (mix.get('artworkUrl') or mix.get('artwork') or
+                   mix.get('coverUrl') or mix.get('coverImageUrl') or '')
+        tracks.append({
+            'title':      mix.get('name') or mix.get('title') or f'Mix',
+            'stream_url': f'https://files.house-mixes.com/mp3/{username}/{uuid}.mp3',
+            'thumbnail':  artwork,
+            'source_url': f'https://www.house-mixes.com/{username}',
+            'downloads':  mix.get('totalDownloads', 0),
+            'plays':      mix.get('totalPlays', 0),
+        })
+    return tracks
+
+
+_TWITCH_EMPTY = {'clips': [], 'vods': []}
+
+def _get_twitch_clips_cached(channel):
+    """Return {'clips': [...], 'vods': [...]} for a Twitch channel, cached 1h."""
+    if not channel:
+        return _TWITCH_EMPTY
+    now = _time.time()
+    entry = _twitch_clips_cache.get(channel)
+    if entry and now - entry[1] < _TWITCH_CLIPS_TTL:
+        return entry[0]
+    data = _fetch_twitch_clips(channel)
+    _twitch_clips_cache[channel] = (data, now)
+    return data
+
+def _fetch_twitch_clips(channel):
+    """Return up to 4 clips for a channel; falls back to past VODs if no clips."""
+    from django.conf import settings as _s
+    cid = getattr(_s, 'TWITCH_CLIENT_ID', '')
+    csec = getattr(_s, 'TWITCH_CLIENT_SECRET', '')
+    _empty = {'clips': [], 'vods': []}
+    if not cid or not csec:
+        return _empty
+    try:
+        tok_r = requests.post(
+            'https://id.twitch.tv/oauth2/token',
+            params={'client_id': cid, 'client_secret': csec, 'grant_type': 'client_credentials'},
+            timeout=5,
+        )
+        token = tok_r.json().get('access_token', '')
+        if not token:
+            return _empty
+        hdrs = {'Client-ID': cid, 'Authorization': f'Bearer {token}'}
+        user_r = requests.get(
+            'https://api.twitch.tv/helix/users',
+            params={'login': channel}, headers=hdrs, timeout=5,
+        )
+        users = user_r.json().get('data', [])
+        if not users:
+            return _empty
+        broadcaster_id = users[0]['id']
+
+        import re as _re
+
+        def _parse_dur(dur_str):
+            dur = 0
+            for unit, mult in [('h', 3600), ('m', 60), ('s', 1)]:
+                m = _re.search(r'(\d+)' + unit, dur_str or '0s')
+                if m:
+                    dur += int(m.group(1)) * mult
+            return dur
+
+        # Top clips
+        clips_r = requests.get(
+            'https://api.twitch.tv/helix/clips',
+            params={'broadcaster_id': broadcaster_id, 'first': 4},
+            headers=hdrs, timeout=5,
+        )
+        clips = []
+        for c in clips_r.json().get('data', []):
+            clips.append({
+                'id':        c['id'],
+                'title':     c['title'],
+                'thumbnail': c['thumbnail_url'],
+                'views':     c['view_count'],
+                'duration':  int(c.get('duration', 0)),
+                'url':       c['url'],
+                'type':      'clip',
+            })
+
+        # Past VODs / archives (always fetch — shown as separate section)
+        vods_r = requests.get(
+            'https://api.twitch.tv/helix/videos',
+            params={'user_id': broadcaster_id, 'first': 4, 'type': 'archive'},
+            headers=hdrs, timeout=5,
+        )
+        vods = []
+        for v in vods_r.json().get('data', []):
+            thumb = v.get('thumbnail_url', '').replace('%{width}', '320').replace('%{height}', '180')
+            vods.append({
+                'id':        v['id'],
+                'title':     v['title'],
+                'thumbnail': thumb,
+                'views':     v.get('view_count', 0),
+                'duration':  _parse_dur(v.get('duration', '0s')),
+                'url':       v['url'],
+                'type':      'vod',
+            })
+        return {'clips': clips, 'vods': vods}
+    except Exception:
+        return _empty
+
+
 # ── Discogs API helper ────────────────────────────────────────────────────────
 _discogs_cache: dict = {}
 _DISCOGS_TTL = 86400  # 24h — release metadata doesn't change often
@@ -1366,6 +2418,13 @@ def _discogs_search(artist, title):
         return {}
 
 
+_EMBED_ALLOWED_HOSTS = {
+    'youtube.com', 'www.youtube.com',
+    'bandcamp.com', 'soundcloud.com', 'www.soundcloud.com',
+    'open.spotify.com', 'twitch.tv', 'www.twitch.tv',
+    'mixcloud.com', 'www.mixcloud.com',
+}
+
 def _fetch_embed_html(url, max_width=600):
     """
     Fetch embeddable HTML for Bandcamp, SoundCloud, or YouTube channel URLs.
@@ -1373,7 +2432,16 @@ def _fetch_embed_html(url, max_width=600):
     """
     import requests as _req
     import html as _html
+    from urllib.parse import urlparse as _urlparse
     _HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; CommunityPlaylist/1.0; +https://communityplaylist.com)'}
+
+    # Allowlist guard — prevents SSRF against internal hosts
+    try:
+        _parsed_host = _urlparse(url).hostname or ''
+    except Exception:
+        return None
+    if _parsed_host not in _EMBED_ALLOWED_HOSTS and not any(_parsed_host.endswith('.' + h) for h in _EMBED_ALLOWED_HOSTS):
+        return None
 
     # ── YouTube channel (handle /@x, /channel/UCx, /c/x) ────────────
     if 'youtube.com' in url and ('/@' in url or '/channel/UC' in url or '/c/' in url):
@@ -1522,11 +2590,13 @@ def public_profile(request, handle):
 
     saved_tracks = SavedTrack.objects.filter(user=profile.user).select_related(
         'track__genre', 'track__artist', 'track__promoter', 'track__venue'
-    ).order_by('-created_at')
+    ).order_by('-created_at') if profile.show_saved_tracks else []
+    public_follow_data   = follow_data if profile.show_following else []
+    public_events        = events if profile.show_upcoming_events else []
     return render(request, 'accounts/public_profile.html', {
         'profile': profile,
-        'events': events,
-        'follow_data': follow_data,
+        'events': public_events,
+        'follow_data': public_follow_data,
         'oembed_embeds': oembed_embeds,
         'saved_tracks': saved_tracks,
     })
@@ -1545,7 +2615,7 @@ def toggle_follow(request):
         return JsonResponse({'error': 'invalid JSON'}, status=400)
     target_type = body.get('type')
     target_id   = body.get('id')
-    valid_types = {Follow.TYPE_ARTIST, Follow.TYPE_VENUE, Follow.TYPE_NEIGHBORHOOD, Follow.TYPE_PROMOTER}
+    valid_types = {Follow.TYPE_ARTIST, Follow.TYPE_VENUE, Follow.TYPE_NEIGHBORHOOD, Follow.TYPE_PROMOTER, Follow.TYPE_SPACE}
     if target_type not in valid_types or not target_id:
         return JsonResponse({'error': 'invalid params'}, status=400)
     try:
@@ -1565,7 +2635,7 @@ def toggle_follow(request):
 
 def profile_feed(request, handle):
     """Atom/RSS feed of upcoming events from the user's followed entities."""
-    from django.utils.feedgenerator import Rss201rev2Feed
+    from django.utils.feedgenerator import Rss201rev2Feed, Enclosure
     from django.db.models import Q
     profile = get_object_or_404(UserProfile, handle=handle, is_public=True)
     follows = Follow.objects.filter(user=profile.user)
@@ -1857,18 +2927,96 @@ def artist_edit(request, slug):
         return redirect('artist_profile', slug=artist.slug)
 
     SOCIAL_FIELDS = ['instagram', 'soundcloud', 'bandcamp', 'mixcloud', 'youtube',
-                     'spotify', 'mastodon', 'bluesky', 'tiktok', 'twitch']
+                     'spotify', 'mastodon', 'bluesky', 'kofi', 'tiktok', 'twitch',
+                     'house_mixes']
 
     if request.method == 'GET':
         return render(request, 'events/artist_edit.html', {'artist': artist})
 
+    import re as _re
+    old_drive = artist.drive_folder_url or ''
+    # brand_color — validate hex before saving
+    bc = request.POST.get('brand_color', '').strip()
+    if _re.fullmatch(r'#[0-9a-fA-F]{6}', bc):
+        artist.brand_color = bc.lower()
+    elif not bc:
+        artist.brand_color = ''
     for field in ['bio', 'website', 'drive_folder_url'] + SOCIAL_FIELDS:
         val = request.POST.get(field, '').strip()
         setattr(artist, field, val)
+    sort = request.POST.get('house_mixes_sort', '').strip()
+    if sort in ('newest', 'oldest', 'downloads', 'plays'):
+        artist.house_mixes_sort = sort
     if request.FILES.get('photo'):
         artist.photo = request.FILES['photo']
+    # MB ID — accept a UUID or a full musicbrainz.org/artist/<uuid> URL; empty = clear
+    mb_raw = request.POST.get('mb_id', '').strip()
+    if mb_raw:
+        _uuid_match = _re.search(
+            r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
+            mb_raw, _re.I
+        )
+        artist.mb_id = _uuid_match.group(1).lower() if _uuid_match else artist.mb_id
+    else:
+        artist.mb_id = ''
     artist.save()
+    if old_drive and not artist.drive_folder_url:
+        PlaylistTrack.objects.filter(artist=artist).delete()
     messages.success(request, 'Profile updated.')
+    return redirect('artist_edit', slug=artist.slug)
+
+
+@login_required
+def artist_register(request):
+    """Direct artist profile creation — no event claim required."""
+    SOCIAL_FIELDS = ['instagram', 'soundcloud', 'bandcamp', 'mixcloud', 'youtube',
+                     'spotify', 'mastodon', 'bluesky', 'tiktok', 'twitch']
+
+    if request.method == 'GET':
+        return render(request, 'events/artist_register.html', {})
+
+    name             = request.POST.get('name', '').strip()[:200]
+    bio              = request.POST.get('bio', '').strip()
+    website          = request.POST.get('website', '').strip()
+    drive_folder_url = request.POST.get('drive_folder_url', '').strip()
+    photo            = request.FILES.get('photo')
+
+    errors = {}
+    if not name:
+        errors['name'] = 'Artist name is required.'
+    elif Artist.objects.filter(name__iexact=name).exists():
+        existing = Artist.objects.get(name__iexact=name)
+        if existing.claimed_by:
+            errors['name'] = f'"{name}" already has an owner. Contact us if you think this is your profile.'
+        else:
+            # Unclaimed stub — let them claim it and fill in the details
+            existing.claimed_by = request.user
+            existing.bio = bio or existing.bio
+            existing.website = website or existing.website
+            existing.drive_folder_url = drive_folder_url or existing.drive_folder_url
+            for f in SOCIAL_FIELDS:
+                val = request.POST.get(f, '').strip()
+                if val:
+                    setattr(existing, f, val)
+            if photo:
+                existing.photo = photo
+            existing.save()
+            messages.success(request, f'Claimed existing profile for {existing.name}.')
+            return redirect('artist_profile', slug=existing.slug)
+
+    if errors:
+        return render(request, 'events/artist_register.html', {'errors': errors, 'prev': request.POST})
+
+    artist = Artist(name=name, bio=bio, website=website,
+                    drive_folder_url=drive_folder_url, claimed_by=request.user)
+    for f in SOCIAL_FIELDS:
+        val = request.POST.get(f, '').strip()
+        if val:
+            setattr(artist, f, val)
+    if photo:
+        artist.photo = photo
+    artist.save()
+    messages.success(request, f'Artist profile created for {artist.name}.')
     return redirect('artist_profile', slug=artist.slug)
 
 
@@ -2207,36 +3355,165 @@ def delete_track(request, pk):
 
 def playlist_tracks_json(request):
     """
-    Returns JSON list of all PlaylistTrack records with stream URLs.
-    Optional ?genre=<name> filter.
-    Used by the CP music player in the header.
+    Returns JSON list of PlaylistTracks + YouTube VideoTracks for the standalone player.
+    YouTube videos are interleaved 1:6 with audio tracks. Genre filtering is client-side.
     """
-    genre_filter = request.GET.get('genre', '').strip()
+    import random as _random
+    from datetime import timedelta
     qs = PlaylistTrack.objects.select_related('genre', 'artist', 'promoter', 'venue')
-    if genre_filter:
-        qs = qs.filter(genre__name__iexact=genre_filter)
-    def source_url(t):
-        if t.artist:
-            return f'/artists/{t.artist.slug}/'
-        if t.promoter:
-            return f'/promoters/{t.promoter.slug}/'
-        if t.venue:
-            return f'/venues/{t.venue.slug}/'
+
+    # IDs with shows in the next 30 days → powers the COMING EVENTS pill
+    now = timezone.now()
+    _window = dict(start_date__gte=now, start_date__lte=now + timedelta(days=30), status='approved')
+    upcoming_artist_ids = set(
+        Event.objects.filter(artists__isnull=False, **_window)
+        .values_list('artists', flat=True).distinct()
+    )
+    upcoming_promoter_ids = set(
+        Event.objects.filter(promoters__isnull=False, **_window)
+        .values_list('promoters', flat=True).distinct()
+    )
+    upcoming_promoter_ids.discard(None)
+    # Name-based fallback: PlaylistTracks often have artist_name but no artist FK
+    upcoming_artist_names = set(
+        Artist.objects.filter(pk__in=upcoming_artist_ids)
+        .values_list('name', flat=True)
+    )
+
+    def _has_show_audio(t):
+        if t.artist_id and t.artist_id in upcoming_artist_ids: return True
+        if t.promoter_id and t.promoter_id in upcoming_promoter_ids: return True
+        name = (t.artist_name or '').strip()
+        return bool(name and name in upcoming_artist_names)
+
+    def _src_url_audio(t):
+        if t.artist:   return f'/artists/{t.artist.slug}/'
+        if t.promoter: return f'/promoters/{t.promoter.slug}/'
+        if t.venue:    return f'/venues/{t.venue.slug}/'
         return ''
 
-    tracks = [
+    audio_tracks = [
         {
-            'id':          t.pk,
-            'title':       t.title,
-            'artist':      t.artist_name or t.source_label,
-            'genre':       t.genre.name if t.genre else t.genre_raw,
-            'recorded_at': t.recorded_at,
-            'stream_url':  t.stream_url,
-            'source':      t.source_label,
-            'source_url':  source_url(t),
+            'id':           t.pk,
+            'type':         'audio',
+            'title':        t.title,
+            'artist':       t.artist_name or t.source_label,
+            'artist_slug':  t.artist.slug   if t.artist   else (t.promoter.slug   if t.promoter   else ''),
+            'artist_type':  'artist'         if t.artist   else ('promoter'         if t.promoter   else ''),
+            'genre':        t.genre.name if t.genre else t.genre_raw,
+            'recorded_at':  t.recorded_at,
+            'stream_url':   t.stream_url,
+            'source':       t.source_label,
+            'source_url':   _src_url_audio(t),
+            'art_url':      t.artist.photo.url if (t.artist and t.artist.photo) else '',
+            'has_show_soon': _has_show_audio(t),
         }
-        for t in qs.order_by('-pk')  # newest first
+        for t in qs.order_by('-pk')
     ]
+
+    # Merge house-mixes.com tracks
+    hm_artists = Artist.objects.filter(house_mixes__gt='', is_stub=False).values_list(
+        'name', 'house_mixes', 'house_mixes_sort', 'slug', 'pk')
+    for a_name, hm_user, hm_sort, a_slug, a_pk in hm_artists:
+        for hm in _get_house_mixes_tracks(hm_user, sort=hm_sort or 'newest'):
+            audio_tracks.append({
+                'id':           None,
+                'type':         'audio',
+                'title':        hm['title'],
+                'artist':       a_name,
+                'artist_slug':  a_slug,
+                'artist_type':  'artist',
+                'genre':        None,
+                'recorded_at':  None,
+                'stream_url':   hm['stream_url'],
+                'source':       'House-Mixes',
+                'source_url':   f'/artists/{a_slug}/',
+                'art_url':      hm.get('thumbnail', ''),
+                'has_show_soon': bool(a_pk in upcoming_artist_ids),
+            })
+
+    # ── YouTube VideoTracks from artist/crew/venue profiles ──────────────────
+    # Genre priority: PlaylistTrack data > Artist.genre > crew member majority vote
+    artist_genre_map = {}
+    for row in (Artist.objects
+                .filter(genre__isnull=False)
+                .values('id', 'genre__name')):
+        artist_genre_map[row['id']] = row['genre__name']
+    for row in (PlaylistTrack.objects
+                .filter(artist__isnull=False, genre__isnull=False)
+                .values('artist_id', 'genre__name')):
+        artist_genre_map[row['artist_id']] = row['genre__name']
+
+    # Promoter genre: manual PromoterProfile.genres first, then majority vote from members
+    from collections import Counter as _Counter
+    from events.models import PromoterProfile
+    promoter_genre_map = {}
+    # Seed from manually-set PromoterProfile.genres (first entry wins)
+    for row in (PromoterProfile.genres.through.objects
+                .values('promoterprofile_id', 'genre__name')):
+        promoter_genre_map.setdefault(row['promoterprofile_id'], row['genre__name'])
+    # Derive from member artists where no manual genre is set
+    member_rows = (PromoterProfile.members.through.objects
+                   .values('promoterprofile_id', 'artist_id'))
+    crew_votes = _Counter()  # (promoter_id, genre) → count
+    for row in member_rows:
+        g = artist_genre_map.get(row['artist_id'])
+        if g:
+            crew_votes[(row['promoterprofile_id'], g)] += 1
+    # For each promoter without a manual genre, pick the most-voted member genre
+    seen_promoters = set()
+    for (pid, genre), _ in crew_votes.most_common():
+        if pid not in promoter_genre_map and pid not in seen_promoters:
+            promoter_genre_map[pid] = genre
+            seen_promoters.add(pid)
+
+    def _src_url_video(v):
+        if v.artist_id   and v.artist   and v.artist.slug:   return f'/artists/{v.artist.slug}/'
+        if v.promoter_id and v.promoter and v.promoter.slug: return f'/promoters/{v.promoter.slug}/'
+        if v.venue_id    and v.venue    and v.venue.slug:    return f'/venues/{v.venue.slug}/'
+        return ''
+
+    yt_objs = (
+        VideoTrack.objects
+        .filter(is_active=True, source_type=VideoTrack.SOURCE_YOUTUBE, yt_embeddable=True)
+        .select_related('artist', 'promoter', 'venue')
+        .order_by('-published_at')[:300]
+    )
+    video_tracks = []
+    for v in yt_objs:
+        genre = artist_genre_map.get(v.artist_id) or promoter_genre_map.get(v.promoter_id, '')
+        video_tracks.append({
+            'id':           None,
+            'type':         'youtube',
+            'title':        v.title,
+            'artist':       v.artist_name_display or v.channel_title,
+            'artist_slug':  v.artist.slug   if v.artist   else (v.promoter.slug   if v.promoter   else ''),
+            'artist_type':  'artist'         if v.artist   else ('promoter'         if v.promoter   else ''),
+            'genre':        genre,
+            'recorded_at':  '',
+            'stream_url':   '',
+            'source':       'YouTube',
+            'source_url':   _src_url_video(v),
+            'art_url':      v.thumbnail_url,
+            'video_id':     v.youtube_video_id,
+            'embed_url':    v.embed_url,
+            'has_show_soon': bool(
+                (v.artist_id   and v.artist_id   in upcoming_artist_ids) or
+                (v.promoter_id and v.promoter_id in upcoming_promoter_ids)
+            ),
+        })
+
+    # Interleave: 1 YouTube video per 6 audio tracks
+    _random.shuffle(video_tracks)
+    tracks, vi = [], 0
+    for i, t in enumerate(audio_tracks):
+        tracks.append(t)
+        if (i + 1) % 6 == 0 and vi < len(video_tracks):
+            tracks.append(video_tracks[vi])
+            vi += 1
+    tracks.extend(video_tracks[vi:])
+
+    # Genres from audio tracks only (YouTube videos inherit artist genre)
     genres = list(
         Genre.objects.filter(tracks__isnull=False)
         .values_list('name', flat=True)
@@ -2244,6 +3521,191 @@ def playlist_tracks_json(request):
         .order_by('name')
     )
     return JsonResponse({'tracks': tracks, 'genres': genres})
+
+
+@require_POST
+def suggest_genre(request):
+    """POST {track_id, video_id, artist, title, current_genre, genre} → save GenreSuggestion."""
+    import json as _json
+    from events.models import GenreSuggestion
+    try:
+        data = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'invalid json'}, status=400)
+    genre = (data.get('genre') or '').strip()[:100]
+    if not genre:
+        return JsonResponse({'error': 'genre required'}, status=400)
+    track_id = data.get('track_id') or None
+    video_id = data.get('video_id') or None
+    GenreSuggestion.objects.create(
+        track_id=track_id,
+        artist_name=(data.get('artist') or '')[:200],
+        track_title=(data.get('title') or '')[:300],
+        current_genre=(data.get('current_genre') or '')[:100],
+        suggested_genre=genre,
+    )
+    return JsonResponse({'ok': True})
+
+
+def api_queue(request):
+    """
+    Unified playback queue: audio tracks + YouTube/Twitch VODs, interleaved.
+
+    ?genre=X  → audio tracks for that genre only (video stays in ALL)
+    no param  → all audio + non-live video, 1 video every 8 audio tracks
+    Live Twitch streams are excluded from the queue and returned in live_now[].
+    """
+    import random
+    from datetime import timedelta
+
+    genre_filter = request.GET.get('genre', '').strip().lower()
+    if genre_filter in ('all', ''):
+        genre_filter = ''
+
+    # ── Audio tracks ──────────────────────────────────────────────────────────
+    qs = PlaylistTrack.objects.select_related('genre', 'artist', 'promoter', 'venue')
+    if genre_filter:
+        qs = qs.filter(genre__name__iexact=genre_filter)
+
+    def _track_source_url(t):
+        if t.artist:   return f'/artists/{t.artist.slug}/'
+        if t.promoter: return f'/promoters/{t.promoter.slug}/'
+        if t.venue:    return f'/venues/{t.venue.slug}/'
+        return ''
+
+    audio_tracks = [
+        {
+            'type':        'audio',
+            'id':          t.pk,
+            'title':       t.title,
+            'artist':      t.artist_name or t.source_label,
+            'genre':       t.genre.name if t.genre else (t.genre_raw or ''),
+            'recorded_at': t.recorded_at or '',
+            'stream_url':  t.stream_url,
+            'source_url':  _track_source_url(t),
+            'art_url':     t.artist.photo.url if (t.artist and t.artist.photo) else '',
+        }
+        for t in qs.order_by('-pk')
+    ]
+
+    # Merge house-mixes (ALL only, no genre metadata)
+    if not genre_filter:
+        hm_artists = Artist.objects.filter(house_mixes__gt='', is_stub=False).values_list(
+            'name', 'house_mixes', 'house_mixes_sort', 'slug')
+        for a_name, hm_user, hm_sort, a_slug in hm_artists:
+            for hm in _get_house_mixes_tracks(hm_user, sort=hm_sort or 'newest'):
+                audio_tracks.append({
+                    'type':        'audio',
+                    'id':          None,
+                    'title':       hm['title'],
+                    'artist':      a_name,
+                    'genre':       '',
+                    'recorded_at': '',
+                    'stream_url':  hm['stream_url'],
+                    'source_url':  f'/artists/{a_slug}/',
+                    'art_url':     hm.get('thumbnail', ''),
+                })
+
+    # ── Video tracks (ALL only) ───────────────────────────────────────────────
+    videos   = []
+    live_now = []
+
+    if not genre_filter:
+        now = timezone.now()
+        upcoming_cutoff = now + timedelta(days=30)
+
+        _upcoming = (
+            Event.objects.filter(
+                artists__isnull=False,
+                start_date__gte=now,
+                start_date__lte=upcoming_cutoff,
+                status='approved',
+            )
+            .order_by('start_date')
+            .values('artists', 'slug')
+        )
+        upcoming_ids, upcoming_slug = set(), {}
+        for row in _upcoming:
+            aid = row['artists']
+            upcoming_ids.add(aid)
+            if aid not in upcoming_slug:
+                upcoming_slug[aid] = row['slug']
+
+        all_vt = list(
+            VideoTrack.objects.filter(is_active=True)
+            .select_related('artist', 'promoter', 'venue')
+            .order_by('-published_at')[:500]
+        )
+
+        def _video_source_url(v):
+            if v.artist_id   and v.artist   and v.artist.slug:   return f'/artists/{v.artist.slug}/'
+            if v.promoter_id and v.promoter and v.promoter.slug: return f'/promoters/{v.promoter.slug}/'
+            if v.venue_id    and v.venue    and v.venue.slug:    return f'/venues/{v.venue.slug}/'
+            return ''
+
+        def _ser_video(v):
+            # Resolve the embed identifier per source type
+            if v.source_type == 'twitch_live':
+                embed_id = v.twitch_username          # ?channel=<username>
+            elif v.source_type == 'twitch_vod':
+                embed_id = v.twitch_video_id or v.twitch_username  # ?video=<id>
+            else:
+                embed_id = v.youtube_video_id         # standard YT video ID
+            return {
+                'type':                  v.source_type,
+                'id':                    None,
+                'title':                 v.title,
+                'artist':                v.artist_name_display or v.channel_title,
+                'genre':                 '',
+                'video_id':              embed_id,
+                'embed_url':             v.embed_url,
+                'art_url':               v.thumbnail_url,
+                'source_url':            _video_source_url(v),
+                'is_live':               v.is_live,
+                'viewer_count':          v.live_viewer_count,
+                'has_show_soon':         bool(v.artist_id and v.artist_id in upcoming_ids),
+                'show_soon_event_slug':  upcoming_slug.get(v.artist_id, '') if v.artist_id else '',
+            }
+
+        live_cutoff = now - timedelta(minutes=30)
+        live_objs = [v for v in all_vt if v.is_live and v.live_checked_at and v.live_checked_at >= live_cutoff]
+        vod_objs  = [v for v in all_vt if not (v.is_live and v.live_checked_at and v.live_checked_at >= live_cutoff)]
+
+        # Weighted shuffle: artists with upcoming shows get 3× weight
+        pool = []
+        for v in vod_objs:
+            w = 3 if (v.artist_id and v.artist_id in upcoming_ids) else 1
+            pool.extend([v] * w)
+        random.shuffle(pool)
+        seen, shuffled = set(), []
+        for v in pool:
+            if v.pk not in seen:
+                seen.add(v.pk)
+                shuffled.append(v)
+
+        live_now = [_ser_video(v) for v in live_objs]
+        videos   = [_ser_video(v) for v in shuffled]
+
+    # ── Interleave: 1 video every 8 audio tracks ─────────────────────────────
+    if not genre_filter and videos:
+        tracks, vi = [], 0
+        for i, a in enumerate(audio_tracks):
+            tracks.append(a)
+            if (i + 1) % 8 == 0 and vi < len(videos):
+                tracks.append(videos[vi])
+                vi += 1
+        tracks.extend(videos[vi:])
+    else:
+        tracks = audio_tracks
+
+    genres = list(
+        Genre.objects.filter(tracks__isnull=False)
+        .values_list('name', flat=True)
+        .distinct()
+        .order_by('name')
+    )
+
+    return JsonResponse({'tracks': tracks, 'genres': genres, 'live_now': live_now})
 
 
 @login_required
@@ -2263,6 +3725,149 @@ def toggle_save_track(request):
         obj.delete()
         return JsonResponse({'saved': False})
     return JsonResponse({'saved': True})
+
+
+def react_track(request):
+    """POST {id: track_pk, reaction: 'up'|'down'} → toggles reaction, returns {reaction, ups, downs}."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'login required'}, status=401)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+        track_id = int(body.get('id', 0))
+        reaction = body.get('reaction', '').lower()
+    except Exception:
+        return JsonResponse({'error': 'bad request'}, status=400)
+    if reaction not in ('up', 'down'):
+        return JsonResponse({'error': 'invalid reaction'}, status=400)
+    track = get_object_or_404(PlaylistTrack, pk=track_id)
+    existing = TrackReaction.objects.filter(user=request.user, track=track).first()
+    if existing:
+        if existing.reaction == reaction:
+            existing.delete()
+            new_reaction = None
+        else:
+            existing.reaction = reaction
+            existing.save()
+            new_reaction = reaction
+    else:
+        TrackReaction.objects.create(user=request.user, track=track, reaction=reaction)
+        new_reaction = reaction
+    ups   = TrackReaction.objects.filter(track=track, reaction='up').count()
+    downs = TrackReaction.objects.filter(track=track, reaction='down').count()
+    return JsonResponse({'reaction': new_reaction, 'ups': ups, 'downs': downs})
+
+
+def api_player_events(request):
+    """
+    GET ?artist=<name>&genre=<name>
+    Returns up to 3 upcoming approved events linked to the playing track's
+    artist/crew, falling back to genre tag if no artist match found.
+    """
+    artist_name = request.GET.get('artist', '').strip()
+    genre_name  = request.GET.get('genre',  '').strip()
+    now = timezone.now()
+    cutoff = now + timedelta(days=45)
+
+    base_qs = (
+        Event.objects
+        .filter(status='approved', start_date__gte=now, start_date__lte=cutoff)
+        .order_by('start_date')
+    )
+
+    events = []
+    if artist_name:
+        from django.db.models import Q as _Q
+        hits = base_qs.filter(
+            _Q(artists__name__iexact=artist_name) |
+            _Q(promoters__name__iexact=artist_name)
+        ).distinct()[:3]
+        events = list(hits)
+
+    if not events and genre_name:
+        hits = base_qs.filter(genres__name__iexact=genre_name).distinct()[:3]
+        events = list(hits)
+
+    def _ser(e):
+        venue = (e.location or '').split(',')[0].strip()
+        return {
+            'title':  e.title,
+            'slug':   e.slug or '',
+            'date':   e.start_date.strftime('%a %b %-d'),
+            'time':   e.start_date.strftime('%-I:%M %p').lower(),
+            'venue':  venue,
+            'free':   e.is_free,
+        }
+
+    return JsonResponse({'events': [_ser(e) for e in events]})
+
+
+def api_track_comments(request):
+    """GET ?id=<pk> → comment list.  POST {id, body, ts} → create comment."""
+    import json as _json
+
+    if request.method == 'GET':
+        try:
+            track_id = int(request.GET.get('id', 0))
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'bad request'}, status=400)
+        track = get_object_or_404(PlaylistTrack, pk=track_id)
+        comments = TrackComment.objects.filter(track=track).select_related('user__profile')
+        data = []
+        for c in comments:
+            try:
+                handle = c.user.profile.handle or c.user.username
+            except Exception:
+                handle = c.user.username
+            data.append({
+                'id': c.pk,
+                'user': handle,
+                'is_mine': request.user.is_authenticated and c.user_id == request.user.pk,
+                'ts': c.ts,
+                'body': c.body,
+                'date': c.created_at.strftime('%b %d'),
+            })
+        return JsonResponse({'comments': data, 'auth': request.user.is_authenticated})
+
+    if request.method == 'POST':
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'login required'}, status=401)
+        try:
+            body = _json.loads(request.body)
+            track_id = int(body.get('id', 0))
+            text = str(body.get('body', '')).strip()[:500]
+            ts = max(0, int(body.get('ts', 0)))
+        except Exception:
+            return JsonResponse({'error': 'bad request'}, status=400)
+        if not text:
+            return JsonResponse({'error': 'empty'}, status=400)
+        track = get_object_or_404(PlaylistTrack, pk=track_id)
+        c = TrackComment.objects.create(user=request.user, track=track, body=text, ts=ts)
+        try:
+            handle = request.user.profile.handle or request.user.username
+        except Exception:
+            handle = request.user.username
+        return JsonResponse({
+            'id': c.pk, 'user': handle, 'is_mine': True,
+            'ts': c.ts, 'body': c.body, 'date': c.created_at.strftime('%b %d'),
+        }, status=201)
+
+    return JsonResponse({'error': 'method not allowed'}, status=405)
+
+
+def delete_track_comment(request, pk):
+    """POST → delete own comment (or staff)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'login required'}, status=401)
+    c = get_object_or_404(TrackComment, pk=pk)
+    if c.user_id != request.user.pk and not request.user.is_staff:
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    c.delete()
+    return JsonResponse({'deleted': True})
 
 
 def saved_tracks_json(request):
@@ -2292,6 +3897,7 @@ def saved_tracks_json(request):
             'stream_url': s.track.stream_url,
             'source_url': source_url(s.track),
             'saved':      True,
+            'art_url':    s.track.artist.photo.url if (s.track.artist and s.track.artist.photo) else '',
         }
         for s in saved
     ]
@@ -2318,14 +3924,25 @@ def api_video_queue(request):
     now = timezone.now()
     upcoming_cutoff = now + timedelta(days=30)
 
-    # Artist IDs with shows coming up
-    upcoming_artist_ids = set(
-        Artist.objects.filter(
-            events__start_date__gte=now,
-            events__start_date__lte=upcoming_cutoff,
-            events__status='approved',
-        ).values_list('pk', flat=True)
+    # Artist IDs with shows coming up → map to first event slug for the badge link
+    from django.db.models import Min
+    _upcoming_events = (
+        Event.objects.filter(
+            artists__isnull=False,
+            start_date__gte=now,
+            start_date__lte=upcoming_cutoff,
+            status='approved',
+        )
+        .order_by('start_date')
+        .values('artists', 'slug', 'start_date')
     )
+    upcoming_artist_ids = set()
+    upcoming_artist_slug: dict = {}  # artist_id → first event slug
+    for row in _upcoming_events:
+        aid = row['artists']
+        upcoming_artist_ids.add(aid)
+        if aid not in upcoming_artist_slug:
+            upcoming_artist_slug[aid] = row['slug']
 
     all_videos = list(
         VideoTrack.objects.filter(is_active=True)
@@ -2336,9 +3953,15 @@ def api_video_queue(request):
     if not all_videos:
         return JsonResponse({'videos': []})
 
-    # Split live streams out — they always lead the queue
-    live   = [v for v in all_videos if v.is_live]
-    others = [v for v in all_videos if not v.is_live]
+    # Split live streams out — they always lead the queue.
+    # Apply the same 30-min staleness filter as api_queue: a track whose
+    # live_checked_at is older than 30 min is treated as ended (VOD/skip).
+    live_cutoff = now - timedelta(minutes=30)
+    def _is_truly_live(v):
+        return v.is_live and v.live_checked_at and v.live_checked_at >= live_cutoff
+
+    live   = [v for v in all_videos if _is_truly_live(v)]
+    others = [v for v in all_videos if not _is_truly_live(v) and not v.source_type == 'twitch_live']
 
     # Weighted shuffle of non-live videos
     pool = []
@@ -2375,7 +3998,8 @@ def api_video_queue(request):
             'source_url':    source_url(v),
             'is_live':       v.is_live,
             'viewer_count':  v.live_viewer_count,
-            'has_show_soon': bool(v.artist_id and v.artist_id in upcoming_artist_ids),
+            'has_show_soon':         bool(v.artist_id and v.artist_id in upcoming_artist_ids),
+            'show_soon_event_slug':  upcoming_artist_slug.get(v.artist_id, '') if v.artist_id else '',
         }
         for v in queue
     ]})
@@ -2385,12 +4009,20 @@ def api_video_queue(request):
 
 def promoter_list(request):
     q = request.GET.get('q', '').strip()
+    active_type = request.GET.get('type', '').strip()
     qs = PromoterProfile.objects.filter(is_public=True)
     if q:
         qs = qs.filter(name__icontains=q)
         if request.headers.get('Accept', '').startswith('application/json') or request.GET.get('format') == 'json':
             return JsonResponse({'promoters': [{'id': p.pk, 'name': p.name} for p in qs[:10]]})
-    return render(request, 'events/promoter_list.html', {'promoters': qs.order_by('name')})
+    if active_type:
+        valid = [k for k, _ in PromoterProfile.TYPE_CHOICES]
+        if active_type in valid:
+            qs = qs.filter(promoter_type__contains=[active_type])
+    return render(request, 'events/promoter_list.html', {
+        'promoters': qs.order_by('name'),
+        'active_type': active_type,
+    })
 
 
 def _discogs_fetch_by_url(discogs_url):
@@ -2736,6 +4368,10 @@ def promoter_detail(request, slug):
         SavedTrack.objects.filter(user=request.user, track__in=tracks).values_list('track_id', flat=True)
     ) if request.user.is_authenticated else set()
     yt_embed_html = _get_yt_embed_cached(promoter.youtube) if _is_yt_channel(promoter.youtube) else ''
+    _twitch_data  = _get_twitch_clips_cached(promoter.twitch) if promoter.twitch else {}
+    twitch_clips  = _twitch_data.get('clips', [])
+    twitch_vods   = _twitch_data.get('vods', [])
+    shared_tracks = []  # TrackShare feature removed
 
     listings = list(promoter.record_listings.filter(is_available=True)) if promoter.shop_sheet_url else []
 
@@ -2764,15 +4400,22 @@ def promoter_detail(request, slug):
                        .filter(promoters=promoter, start_date__gte=timezone.now(), status='approved')
                        .order_by('start_date')[:12])
 
+    linked_artists = promoter.linked_artists.all().order_by('name')
+
     return render(request, 'events/promoter_detail.html', {
         'promoter': promoter, 'tracks': tracks,
         'can_edit': can_edit, 'is_following': is_following,
         'saved_ids': saved_ids,
         'yt_embed_html': yt_embed_html,
+        'twitch_clips': twitch_clips,
+        'twitch_vods': twitch_vods,
+        'shared_tracks': shared_tracks,
         'members': promoter.members.order_by('name'),
         'listings': listings,
         'pending_reservations': pending_reservations,
         'upcoming_events': upcoming_events,
+        'promoter_edit_fields': EditSuggestion.FIELDS['promoter'],
+        'linked_artists': linked_artists,
     })
 
 
@@ -2861,11 +4504,17 @@ def promoter_register(request):
     if request.method == 'GET':
         return render(request, 'events/promoter_register.html', {})
 
-    name  = request.POST.get('name', '').strip()
-    bio   = request.POST.get('bio', '').strip()
-    website = request.POST.get('website', '').strip()
+    name             = request.POST.get('name', '').strip()
+    bio              = request.POST.get('bio', '').strip()
+    website          = request.POST.get('website', '').strip()
     drive_folder_url = request.POST.get('drive_folder_url', '').strip()
-    photo = request.FILES.get('photo')
+    photo            = request.FILES.get('photo')
+
+    # Validate types (multiple allowed)
+    valid_types = [k for k, _ in PromoterProfile.TYPE_CHOICES]
+    promoter_type = [t for t in request.POST.getlist('promoter_type') if t in valid_types]
+    if not promoter_type:
+        promoter_type = [PromoterProfile.TYPE_CREW]
 
     errors = {}
     if not name:
@@ -2879,6 +4528,7 @@ def promoter_register(request):
     p = PromoterProfile.objects.create(
         name=name, bio=bio, website=website,
         drive_folder_url=drive_folder_url,
+        promoter_type=promoter_type,
         claimed_by=request.user,
     )
     if photo:
@@ -2895,22 +4545,40 @@ def promoter_edit(request, slug):
         return redirect('promoter_detail', slug=slug)
 
     SOCIAL_FIELDS = ['instagram', 'soundcloud', 'bandcamp', 'mixcloud', 'youtube',
-                     'spotify', 'mastodon', 'bluesky', 'tiktok', 'discord', 'telegram', 'twitch']
+                     'spotify', 'mastodon', 'bluesky', 'kofi', 'tiktok', 'discord', 'telegram', 'twitch']
 
     all_artists = Artist.objects.order_by('name')
+    type_choices = PromoterProfile.TYPE_CHOICES
+    all_genres = Genre.objects.order_by('name')
     if request.method == 'GET':
         return render(request, 'events/promoter_edit.html', {
             'promoter': promoter,
             'all_artists': all_artists,
             'member_pks': set(promoter.members.values_list('pk', flat=True)),
+            'type_choices': type_choices,
+            'all_genres': all_genres,
+            'selected_genre_pks': set(promoter.genres.values_list('pk', flat=True)),
         })
 
     promoter.shop_pay_in_person = 'shop_pay_in_person' in request.POST
     promoter.shop_open_to_trade = 'shop_open_to_trade' in request.POST
+    promoter.accept_demos       = 'accept_demos' in request.POST
+    old_drive_p = promoter.drive_folder_url or ''
+    import re as _re2
+    bc_p = request.POST.get('brand_color', '').strip()
+    if _re2.fullmatch(r'#[0-9a-fA-F]{6}', bc_p):
+        promoter.brand_color = bc_p.lower()
+    elif not bc_p:
+        promoter.brand_color = ''
     for field in ['name', 'bio', 'website', 'drive_folder_url',
                   'shop_sheet_url', 'sol_wallet'] + SOCIAL_FIELDS:
         val = request.POST.get(field, '').strip()
         setattr(promoter, field, val)
+    # Promoter type
+    valid_types = [k for k, _ in PromoterProfile.TYPE_CHOICES]
+    pt = [t for t in request.POST.getlist('promoter_type') if t in valid_types]
+    if pt:
+        promoter.promoter_type = pt
     if request.FILES.get('photo'):
         promoter.photo = request.FILES['photo']
     promoter.save()
@@ -2919,5 +4587,1177 @@ def promoter_edit(request, slug):
     selected_pks = [int(x) for x in request.POST.getlist('members') if x.isdigit()]
     promoter.members.set(Artist.objects.filter(pk__in=selected_pks))
 
+    # Update genres
+    genre_pks = [int(x) for x in request.POST.getlist('genres') if x.isdigit()]
+    promoter.genres.set(Genre.objects.filter(pk__in=genre_pks))
+
+    if old_drive_p and not promoter.drive_folder_url:
+        PlaylistTrack.objects.filter(promoter=promoter).delete()
     messages.success(request, 'Profile updated.')
     return redirect('promoter_detail', slug=promoter.slug)
+
+
+@login_required
+def submit_demo(request, slug):
+    return JsonResponse({'error': 'Demo submissions have been removed.'}, status=410)
+
+
+@login_required
+def delete_track_share(request, pk):
+    return JsonResponse({'error': 'Demo submissions have been removed.'}, status=410)
+
+
+def api_event_detail(request, slug):
+    """Lightweight JSON for the fixed event panel — no page navigation needed."""
+    event = get_object_or_404(Event, slug=slug, status='approved')
+
+    photo_url = ''
+    approved = event.photos.filter(approved=True).first()
+    if approved:
+        photo_url = approved.image.url
+    elif event.photo:
+        photo_url = event.photo.url
+
+    from events.enrich import clean_text as _clean
+    raw_desc = event.description or ''
+    panel_desc = _clean(raw_desc)[:600]
+    if len(raw_desc) > 600 and not panel_desc.endswith('…'):
+        panel_desc = panel_desc.rstrip() + '…'
+
+    data = {
+        'title':            event.title,
+        'slug':             event.slug,
+        'description':      panel_desc,
+        'start_date':       localtime(event.start_date).strftime('%a, %b %-d @ %-I:%M %p'),
+        'end_date':         localtime(event.end_date).strftime('%a, %b %-d @ %-I:%M %p') if event.end_date else '',
+        'location':         event.location,
+        'neighborhood':     event.neighborhood,
+        'category':         event.category,
+        'category_display': event.get_category_display() if event.category else '',
+        'is_free':          event.is_free,
+        'price_info':       event.price_info,
+        'website':          event.website,
+        'extra_links':      event.extra_links or [],
+        'photo_url':        photo_url,
+        'genres':           [g.name for g in event.genres.all()],
+        'lat':              event.latitude,
+        'lng':              event.longitude,
+    }
+    return JsonResponse(data)
+
+
+def api_shelters(request):
+    """All active shelters as JSON for the resource hub map."""
+    import math
+
+    shelters = Shelter.objects.filter(active=True)
+
+    # Optional weather-filter: ?alert=hot|cold|smoke returns only relevant shelters
+    alert = request.GET.get('alert', '')
+    if alert == 'hot':
+        shelters = shelters.filter(available_hot=True)
+    elif alert == 'cold':
+        shelters = shelters.filter(available_cold=True)
+    elif alert == 'smoke':
+        shelters = shelters.filter(available_smoke=True)
+
+    data = [s.as_map_dict() for s in shelters]
+
+    # Optional proximity sort: ?lat=&lng= sorts by distance
+    try:
+        user_lat = float(request.GET.get('lat', ''))
+        user_lng = float(request.GET.get('lng', ''))
+        def _dist(s):
+            if s['latitude'] is None or s['longitude'] is None:
+                return 9999
+            dlat = math.radians(s['latitude'] - user_lat)
+            dlng = math.radians(s['longitude'] - user_lng)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(user_lat)) * math.cos(math.radians(s['latitude'])) * math.sin(dlng/2)**2
+            return 3958.8 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        for s in data:
+            s['distance_miles'] = round(_dist(s), 2)
+        data.sort(key=lambda s: s['distance_miles'])
+    except (TypeError, ValueError):
+        pass
+
+    return JsonResponse({'shelters': data})
+
+
+def api_upcoming_events(request):
+    """
+    GET /api/upcoming-events/?days=30&limit=100
+    Returns upcoming approved events as JSON for the Unraid Discord sync worker.
+    Secured by X-Worker-Secret header (same secret as worker API).
+    """
+    secret = getattr(settings, 'WORKER_SECRET', '')
+    if not secret or request.headers.get('X-Worker-Secret') != secret:
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    from datetime import timedelta
+    days  = min(int(request.GET.get('days',  '30')), 90)
+    limit = min(int(request.GET.get('limit', '100')), 200)
+    now   = timezone.now()
+    qs    = (Event.objects
+             .filter(status='approved', start_date__gte=now,
+                     start_date__lte=now + timedelta(days=days))
+             .order_by('start_date')[:limit])
+
+    events_data = []
+    for e in qs:
+        photo_url = ''
+        try:
+            if e.photo:
+                photo_url = settings.SITE_URL + e.photo.url
+        except Exception:
+            pass
+        events_data.append({
+            'slug':       e.slug,
+            'title':      e.title,
+            'location':   e.location or 'Portland, OR',
+            'description': (e.description or '')[:1000],
+            'start_iso':  e.start_date.strftime('%Y-%m-%dT%H:%M:%S+00:00'),
+            'end_iso':    e.end_date.strftime('%Y-%m-%dT%H:%M:%S+00:00') if e.end_date else None,
+            'url':        f'{settings.SITE_URL}/events/{e.slug}/',
+            'photo_url':  photo_url,
+        })
+
+    return JsonResponse({'events': events_data, 'count': len(events_data)})
+
+
+# ── Global Shop ────────────────────────────────────────────────────────────────
+
+def shop(request):
+    """Aggregate record shop — all available listings across all promoters."""
+    from django.db.models import Q
+    listings = (
+        RecordListing.objects
+        .filter(is_available=True)
+        .select_related('promoter')
+        .order_by('artist', 'title')
+    )
+
+    # Optional filters
+    q       = request.GET.get('q', '').strip()
+    style   = request.GET.get('style', '').strip()
+    fmt     = request.GET.get('format', '').strip()
+    sort    = request.GET.get('sort', 'artist')
+
+    if q:
+        listings = listings.filter(Q(artist__icontains=q) | Q(title__icontains=q) | Q(label__icontains=q))
+    if style:
+        listings = listings.filter(styles__icontains=style)
+    if fmt:
+        listings = listings.filter(format__icontains=fmt)
+
+    sort_map = {
+        'artist': 'artist',
+        'price_lo': 'price_sol',
+        'price_hi': '-price_sol',
+        'newest': '-synced_at',
+    }
+    listings = listings.order_by(sort_map.get(sort, 'artist'))
+
+    # Distinct styles for filter chips
+    all_styles = sorted({
+        s.strip()
+        for r in RecordListing.objects.filter(is_available=True).values_list('styles', flat=True)
+        for s in (r or '').split(',') if s.strip()
+    })
+
+    return render(request, 'events/shop.html', {
+        'listings':   listings,
+        'all_styles': all_styles,
+        'q':          q,
+        'style':      style,
+        'sort':       sort,
+        'total':      listings.count(),
+    })
+
+
+# ── RSS Feed for new approved events (Zapier / IFTTT trigger) ─────────────────
+
+def events_rss(request):
+    """RSS 2.0 feed of recently approved events — consumed by Zapier for social posting."""
+    from django.utils.feedgenerator import Rss201rev2Feed, Enclosure
+    import io
+
+    now      = timezone.now()
+    category = request.GET.get('category', '')
+    limit    = min(int(request.GET.get('limit', 20)), 50)
+
+    qs = (
+        Event.objects.filter(status='approved', start_date__gte=now)
+        .order_by('start_date')
+    )
+    if category:
+        qs = qs.filter(category=category)
+    qs = qs[:limit]
+
+    feed = Rss201rev2Feed(
+        title='Community Playlist PDX — Upcoming Events',
+        link='https://communityplaylist.com/',
+        description='Portland community events submitted by the people, for the people. No ads, no tracking.',
+        language='en',
+        author_name='Community Playlist',
+        feed_url='https://communityplaylist.com/feed/events.rss',
+    )
+
+    for ev in qs:
+        start_local = ev.start_date.astimezone(timezone.get_current_timezone())
+        date_str    = start_local.strftime('%a %b %-d @ %-I:%M %p')
+        location    = ev.location or 'Portland, OR'
+        genres      = ', '.join(g.name for g in ev.genres.all()[:4])
+        desc_parts  = [f'📅 {date_str}', f'📍 {location}']
+        if genres:
+            desc_parts.append(f'🎵 {genres}')
+        if ev.description:
+            desc_parts.append(ev.description[:300])
+        desc_parts.append(f'🔗 https://communityplaylist.com/events/{ev.slug}/')
+
+        photo_url = None
+        if ev.photo:
+            photo_url = f'https://communityplaylist.com{ev.photo.url}'
+
+        feed.add_item(
+            title=ev.title,
+            link=f'https://communityplaylist.com/events/{ev.slug}/',
+            description='\n\n'.join(desc_parts),
+            pubdate=ev.created_at,
+            unique_id=f'{ev.slug}@communityplaylist.com',
+            enclosures=[Enclosure(photo_url, "0", "image/jpeg")] if photo_url else [],
+        )
+
+    buf = io.StringIO()
+    feed.write(buf, 'utf-8')
+    return HttpResponse(buf.getvalue(), content_type='application/rss+xml; charset=utf-8')
+
+
+def event_flyer(request, slug):
+    """Render a printable / screenshot-able event flyer (portrait + square formats)."""
+    if request.user.is_staff:
+        event = get_object_or_404(Event, slug=slug)
+    else:
+        event = get_object_or_404(Event, slug=slug, status='approved')
+
+    start_local = localtime(event.start_date)
+    date_str    = start_local.strftime('%A, %B %-d, %Y')
+    time_str    = start_local.strftime('%-I:%M %p')
+
+    artists   = list(event.artists.all()[:8])
+    genres    = list(event.genres.values_list('name', flat=True)[:6])
+    promoters = list(event.promoters.all()[:2])
+
+    if event.is_free:
+        price_str = 'FREE'
+    elif event.price_info:
+        price_str = event.price_info[:40]
+    else:
+        price_str = ''
+
+    try:
+        photo_url = request.build_absolute_uri(event.photo.url) if event.photo else None
+    except ValueError:
+        photo_url = None
+
+    user_backgrounds = []
+    if request.user.is_authenticated:
+        for bg in FlyerBackground.objects.filter(owner=request.user):
+            url = bg.bg_url
+            if url:
+                user_backgrounds.append({
+                    'pk':    bg.pk,
+                    'url':   request.build_absolute_uri(url) if url.startswith('/') else url,
+                    'label': bg.label or 'Custom',
+                })
+
+    return render(request, 'events/event_flyer.html', {
+        'event':            event,
+        'date_str':         date_str,
+        'time_str':         time_str,
+        'artists':          artists,
+        'genres':           genres,
+        'promoters':        promoters,
+        'price_str':        price_str,
+        'photo_url':        photo_url,
+        'event_url':        f'communityplaylist.com/events/{event.slug}/',
+        'user_backgrounds': user_backgrounds,
+        'bg_count':         len(user_backgrounds),
+    })
+
+
+@login_required
+def flyer_bg_upload(request):
+    """Upload a new flyer background (max 10 per user). Returns JSON."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if FlyerBackground.objects.filter(owner=request.user).count() >= 10:
+        return JsonResponse({'error': 'Max 10 backgrounds — delete one first.'}, status=400)
+    image = request.FILES.get('image')
+    if not image:
+        return JsonResponse({'error': 'No image provided.'}, status=400)
+    if not image.content_type.startswith('image/'):
+        return JsonResponse({'error': 'File must be an image.'}, status=400)
+    if image.size > 8 * 1024 * 1024:
+        return JsonResponse({'error': 'Image must be under 8 MB.'}, status=400)
+    label = request.POST.get('label', '')[:60]
+    bg = FlyerBackground.objects.create(owner=request.user, image=image, label=label)
+    return JsonResponse({
+        'ok':    True,
+        'pk':    bg.pk,
+        'url':   request.build_absolute_uri(bg.image.url),
+        'label': bg.label,
+    })
+
+
+@login_required
+def flyer_bg_delete(request, pk):
+    """Delete a saved flyer background."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    bg = get_object_or_404(FlyerBackground, pk=pk, owner=request.user)
+    if bg.image:
+        bg.image.delete(save=False)
+    bg.delete()
+    return JsonResponse({'ok': True})
+
+
+def flyer_bg_drive(request):
+    """List image files from a Google Drive folder or single file URL."""
+    from django.conf import settings
+    import urllib.request as _ur, urllib.parse as _up, json as _json
+    folder_url = request.GET.get('url', '').strip()
+    if not folder_url:
+        return JsonResponse({'error': 'No URL provided.'}, status=400)
+
+    # Single file?
+    m = re.search(r'/d/([a-zA-Z0-9_-]+)', folder_url)
+    if m and '/folders/' not in folder_url:
+        fid = m.group(1)
+        return JsonResponse({'ok': True, 'images': [
+            {'id': fid, 'name': 'Drive image',
+             'url': f'https://drive.google.com/thumbnail?id={fid}&sz=w1200'}
+        ]})
+
+    # Folder?
+    mf = re.search(r'/folders/([a-zA-Z0-9_-]+)', folder_url)
+    if not mf:
+        return JsonResponse({'error': 'Paste a Google Drive folder or file link.'}, status=400)
+
+    api_key = getattr(settings, 'GOOGLE_DRIVE_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'error': 'Drive API key not configured on this server.'}, status=400)
+
+    folder_id = mf.group(1)
+    q = _up.quote(f"'{folder_id}' in parents and mimeType contains 'image/' and trashed=false")
+    api_url = (f'https://www.googleapis.com/drive/v3/files'
+               f'?q={q}&fields=files(id,name)&key={api_key}&pageSize=20')
+    try:
+        with _ur.urlopen(api_url, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        images = [
+            {'id': f['id'], 'name': f['name'],
+             'url': f"https://drive.google.com/thumbnail?id={f['id']}&sz=w1200"}
+            for f in data.get('files', [])
+        ]
+        return JsonResponse({'ok': True, 'images': images})
+    except Exception as e:
+        return JsonResponse({'error': f'Drive API error: {e}'}, status=500)
+
+
+# ── Last.fm user proxy ────────────────────────────────────────────────────────
+
+def api_lastfm_proxy(request):
+    """Server-side proxy for Last.fm API (avoids CORS).
+    GET /api/lastfm/?username=X&method=user.gettoptracks&period=1month
+    """
+    from django.conf import settings as _s
+    api_key = getattr(_s, 'LASTFM_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'error': 'Last.fm API key not configured'}, status=400)
+
+    username = request.GET.get('username', '').strip()
+    if not username:
+        return JsonResponse({'error': 'username required'}, status=400)
+
+    method = request.GET.get('method', 'user.gettoptracks')
+    period = request.GET.get('period', '1month')
+    limit  = min(int(request.GET.get('limit', '10')), 20)
+
+    allowed_methods = {'user.gettoptracks', 'user.getrecenttracks', 'user.gettopartists'}
+    if method not in allowed_methods:
+        return JsonResponse({'error': 'method not allowed'}, status=400)
+
+    try:
+        resp = requests.get(
+            'https://ws.audioscrobbler.com/2.0/',
+            params={
+                'method':  method,
+                'user':    username,
+                'api_key': api_key,
+                'format':  'json',
+                'period':  period,
+                'limit':   limit,
+            },
+            headers={'User-Agent': 'CommunityPlaylist/1.0 +https://communityplaylist.com'},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        return JsonResponse(resp.json())
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Discogs collection proxy ──────────────────────────────────────────────────
+
+def api_discogs_proxy(request):
+    """Server-side proxy for Discogs user collection (avoids CORS).
+    GET /api/discogs/?username=X&page=1
+    """
+    from django.conf import settings as _s
+    consumer_key    = getattr(_s, 'DISCOGS_CONSUMER_KEY', '')
+    consumer_secret = getattr(_s, 'DISCOGS_CONSUMER_SECRET', '')
+    if not consumer_key:
+        return JsonResponse({'error': 'Discogs credentials not configured'}, status=400)
+
+    username = request.GET.get('username', '').strip()
+    if not username:
+        return JsonResponse({'error': 'username required'}, status=400)
+
+    page     = max(1, min(int(request.GET.get('page', '1')), 10))
+    per_page = 8
+
+    try:
+        resp = requests.get(
+            f'https://api.discogs.com/users/{username}/collection/folders/0/releases',
+            params={
+                'page':     page,
+                'per_page': per_page,
+                'sort':     'added',
+                'sort_order': 'desc',
+            },
+            headers={
+                'User-Agent':     'CommunityPlaylist/1.0 +https://communityplaylist.com',
+                'Authorization':  f'Discogs key={consumer_key}, secret={consumer_secret}',
+            },
+            timeout=10,
+        )
+        if resp.status_code == 403:
+            return JsonResponse({'releases': [], 'private': True}, status=200)
+        resp.raise_for_status()
+        data = resp.json()
+        # Slim down the response — client only needs cover, title, artist, year, url
+        releases = []
+        for item in data.get('releases', []):
+            bi = item.get('basic_information', {})
+            releases.append({
+                'id':      bi.get('id'),
+                'title':   bi.get('title', ''),
+                'artist':  ', '.join(a.get('name', '') for a in bi.get('artists', [])),
+                'year':    bi.get('year'),
+                'thumb':   bi.get('thumb', ''),
+                'cover':   bi.get('cover_image', ''),
+                'url':     f"https://www.discogs.com/release/{bi.get('id')}",
+            })
+        return JsonResponse({
+            'releases': releases,
+            'pages':    data.get('pagination', {}).get('pages', 1),
+            'page':     page,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── YouTube channel proxy ─────────────────────────────────────────────────────
+
+_yt_channel_cache: dict = {}
+_YT_CHANNEL_TTL = 3600  # 1h
+
+def api_youtube_channel_proxy(request):
+    """Resolve a YouTube channel handle → uploads playlist + public playlists.
+    GET /api/youtube-channel/?handle=binsky   (no @ prefix needed)
+    """
+    from django.conf import settings as _s
+    import time as _t
+    api_key = getattr(_s, 'YOUTUBE_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'error': 'YouTube API key not configured'}, status=400)
+
+    handle = request.GET.get('handle', '').strip().lstrip('@')
+    if not handle:
+        return JsonResponse({'error': 'handle required'}, status=400)
+
+    now = _t.time()
+    cached = _yt_channel_cache.get(handle)
+    if cached and now - cached['ts'] < _YT_CHANNEL_TTL:
+        return JsonResponse(cached['data'])
+
+    try:
+        r1 = requests.get(
+            'https://www.googleapis.com/youtube/v3/channels',
+            params={'part': 'snippet,contentDetails', 'forHandle': handle, 'key': api_key},
+            headers={'User-Agent': 'CommunityPlaylist/1.0'},
+            timeout=8,
+        )
+        r1.raise_for_status()
+        items = r1.json().get('items', [])
+        if not items:
+            return JsonResponse({'error': 'channel not found'}, status=404)
+
+        ch = items[0]
+        channel_id    = ch['id']
+        channel_title = ch['snippet']['title']
+        uploads_id    = ch['contentDetails']['relatedPlaylists']['uploads']
+
+        r2 = requests.get(
+            'https://www.googleapis.com/youtube/v3/playlists',
+            params={'part': 'snippet', 'channelId': channel_id, 'maxResults': 12, 'key': api_key},
+            headers={'User-Agent': 'CommunityPlaylist/1.0'},
+            timeout=8,
+        )
+        r2.raise_for_status()
+        playlists = [
+            {
+                'id':    p['id'],
+                'title': p['snippet']['title'],
+                'thumb': (p['snippet'].get('thumbnails', {}).get('medium') or
+                          p['snippet'].get('thumbnails', {}).get('default') or {}).get('url', ''),
+            }
+            for p in r2.json().get('items', [])
+        ]
+
+        # Fetch recent videos from uploads playlist (individual video IDs are embeddable)
+        r3 = requests.get(
+            'https://www.googleapis.com/youtube/v3/playlistItems',
+            params={'part': 'snippet', 'playlistId': uploads_id, 'maxResults': 9, 'key': api_key},
+            headers={'User-Agent': 'CommunityPlaylist/1.0'},
+            timeout=8,
+        )
+        r3.raise_for_status()
+        videos = []
+        for item in r3.json().get('items', []):
+            sn = item.get('snippet', {})
+            vid = sn.get('resourceId', {}).get('videoId', '')
+            if not vid:
+                continue
+            thumbs = sn.get('thumbnails', {})
+            thumb = (thumbs.get('medium') or thumbs.get('high') or thumbs.get('default') or {}).get('url', '')
+            videos.append({'id': vid, 'title': sn.get('title', ''), 'thumb': thumb})
+
+        data = {
+            'channel_id':          channel_id,
+            'title':               channel_title,
+            'uploads_playlist_id': uploads_id,
+            'playlists':           playlists,
+            'videos':              videos,
+        }
+        _yt_channel_cache[handle] = {'data': data, 'ts': now}
+        return JsonResponse(data)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── YouTube video search proxy ────────────────────────────────────────────────
+
+_yt_search_cache: dict = {}
+_YT_SEARCH_TTL = 86400  # 24h
+
+def api_youtube_search_proxy(request):
+    """Search YouTube for a query, return first video result.
+    GET /api/youtube-search/?q=Fanu+Neverending
+    Returns {video_id, title, thumb, channel}
+    """
+    from django.conf import settings as _s
+    import time as _t
+    api_key = getattr(_s, 'YOUTUBE_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'error': 'YouTube API key not configured'}, status=400)
+
+    q = request.GET.get('q', '').strip()
+    if not q:
+        return JsonResponse({'error': 'q required'}, status=400)
+
+    now = _t.time()
+    cached = _yt_search_cache.get(q)
+    if cached and now - cached['ts'] < _YT_SEARCH_TTL:
+        return JsonResponse(cached['data'])
+
+    try:
+        resp = requests.get(
+            'https://www.googleapis.com/youtube/v3/search',
+            params={
+                'part':       'snippet',
+                'type':       'video',
+                'q':          q,
+                'maxResults': 1,
+                'key':        api_key,
+            },
+            headers={'User-Agent': 'CommunityPlaylist/1.0'},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        items = resp.json().get('items', [])
+        if not items:
+            return JsonResponse({'error': 'no results'}, status=404)
+        it = items[0]
+        sn = it.get('snippet', {})
+        data = {
+            'video_id': it['id']['videoId'],
+            'title':    sn.get('title', ''),
+            'channel':  sn.get('channelTitle', ''),
+            'thumb':    (sn.get('thumbnails', {}).get('medium') or sn.get('thumbnails', {}).get('default') or {}).get('url', ''),
+        }
+        _yt_search_cache[q] = {'data': data, 'ts': now}
+        return JsonResponse(data)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── YouTube playlist items proxy ──────────────────────────────────────────────
+
+_yt_playlist_cache: dict = {}
+_YT_PLAYLIST_TTL = 3600  # 1h
+
+def api_youtube_playlist_proxy(request):
+    """Expand a YouTube playlist into video items.
+    GET /api/youtube-playlist/?id=PLxxx
+    Returns {items: [{video_id, title, thumb}]}
+    """
+    from django.conf import settings as _s
+    import time as _t
+    api_key = getattr(_s, 'YOUTUBE_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'error': 'YouTube API key not configured'}, status=400)
+
+    playlist_id = request.GET.get('id', '').strip()
+    if not playlist_id:
+        return JsonResponse({'error': 'id required'}, status=400)
+
+    now = _t.time()
+    cached = _yt_playlist_cache.get(playlist_id)
+    if cached and now - cached['ts'] < _YT_PLAYLIST_TTL:
+        return JsonResponse(cached['data'])
+
+    try:
+        resp = requests.get(
+            'https://www.googleapis.com/youtube/v3/playlistItems',
+            params={'part': 'snippet', 'playlistId': playlist_id, 'maxResults': 50, 'key': api_key},
+            headers={'User-Agent': 'CommunityPlaylist/1.0'},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        items = []
+        for item in resp.json().get('items', []):
+            sn = item.get('snippet', {})
+            vid = sn.get('resourceId', {}).get('videoId', '')
+            if not vid:
+                continue
+            thumbs = sn.get('thumbnails', {})
+            thumb = (thumbs.get('medium') or thumbs.get('high') or thumbs.get('default') or {}).get('url', '')
+            items.append({'video_id': vid, 'title': sn.get('title', ''), 'thumb': thumb})
+        data = {'items': items}
+        _yt_playlist_cache[playlist_id] = {'data': data, 'ts': now}
+        return JsonResponse(data)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Video Room (Theater) ───────────────────────────────────────────────────────
+
+def video_room(request):
+    """Fullscreen theater: PDXTV video queue + live chat."""
+    return render(request, 'events/video_room.html')
+
+
+def player_page(request):
+    """Standalone full-page music/video player."""
+    from board.models import BannerMessage
+    banners = list(BannerMessage.objects.filter(active=True).values_list('text', flat=True))
+    visit_count, _ = SiteStats.get_counts()
+    return render(request, 'events/player.html', {
+        'ticker_banners': banners,
+        'visit_count': f'{visit_count:,}',
+    })
+
+
+def player_manifest(request):
+    """Web app manifest for standalone player PWA."""
+    from django.http import JsonResponse
+    return JsonResponse({
+        "name": "CP Player · PDX",
+        "short_name": "CP Player",
+        "start_url": "/player/",
+        "scope": "/player/",
+        "display": "standalone",
+        "background_color": "#0a0a0a",
+        "theme_color": "#ff6b35",
+        "description": "Community Playlist PDX — music & video player",
+        "icons": [],
+    })
+
+
+def video_room_messages(request):
+    """GET last 60 chat messages; POST to create one."""
+    if request.method == 'POST':
+        import json as _json
+        try:
+            body = _json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'bad json'}, status=400)
+        content = (body.get('content') or '').strip()[:400]
+        if not content:
+            return JsonResponse({'error': 'empty'}, status=400)
+        name = (body.get('name') or '').strip()[:40]
+        msg = VideoRoomMessage.objects.create(
+            user         = request.user if request.user.is_authenticated else None,
+            display_name = '' if request.user.is_authenticated else (name or 'anon'),
+            content      = content,
+        )
+        return JsonResponse({
+            'id':         msg.pk,
+            'author':     msg.author,
+            'content':    msg.content,
+            'created_at': msg.created_at.strftime('%H:%M'),
+        })
+    # GET – return last 60 messages
+    msgs = VideoRoomMessage.objects.order_by('-created_at')[:60]
+    return JsonResponse({'messages': [
+        {'id': m.pk, 'author': m.author, 'content': m.content,
+         'created_at': m.created_at.strftime('%H:%M')}
+        for m in reversed(list(msgs))
+    ]})
+
+
+def privacy_page(request):
+    return render(request, 'events/privacy.html')
+
+
+def report_page(request):
+    submitted = False
+    if request.method == 'POST':
+        import json
+        url    = request.POST.get('url', '').strip()[:500]
+        reason = request.POST.get('reason', '').strip()[:2000]
+        if url or reason:
+            from events.utils.discord import discord_send
+            from django.conf import settings
+            wh = getattr(settings, 'DISCORD_WEBHOOK_OPS', '')
+            if wh:
+                discord_send(wh, {'content': f'**Report**\nURL: {url}\nReason: {reason}'})
+        submitted = True
+    return render(request, 'events/report.html', {'submitted': submitted})
+
+
+# ── Community Space ────────────────────────────────────────────────────────────
+
+_AUDIO_MIMETYPES = {
+    'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg',
+    'audio/flac', 'audio/mp4', 'audio/x-m4a', 'audio/aac',
+}
+_DOC_MIMETYPES = {
+    'application/pdf',
+    'application/vnd.google-apps.document',
+    'application/vnd.google-apps.presentation',
+}
+
+
+def _fetch_space_library(folder_url, show_audio, show_docs):
+    """
+    Fetch whitelisted files from a public Google Drive folder.
+    Returns (audio_files, doc_files) — each a list of dicts with
+    id, name, mimeType, thumbnail_url, preview_url.
+    """
+    if not folder_url or not (show_audio or show_docs):
+        return [], []
+
+    import re as _re_lib
+    m = _re_lib.search(r'/folders/([a-zA-Z0-9_-]+)', folder_url)
+    if not m:
+        return [], []
+    folder_id = m.group(1)
+
+    from django.conf import settings as _s_lib
+    api_key = getattr(_s_lib, 'GOOGLE_DRIVE_API_KEY', '')
+    if not api_key:
+        return [], []
+
+    _HDR = {'User-Agent': 'CommunityPlaylist/1.0'}
+
+    def _list_folder(fid, depth=0, max_depth=2):
+        """Recursively list all safe files under fid."""
+        results = []
+
+        # Build a mimeType OR query for whitelisted types
+        wanted = set()
+        if show_audio:
+            wanted |= _AUDIO_MIMETYPES
+        if show_docs:
+            wanted |= _DOC_MIMETYPES
+
+        # Fetch files in this folder
+        from urllib.parse import quote as _q
+        mime_filter = ' or '.join(f"mimeType='{m}'" for m in sorted(wanted))
+        q = _q(f"'{fid}' in parents and ({mime_filter}) and trashed=false")
+        url = (
+            f'https://www.googleapis.com/drive/v3/files'
+            f'?q={q}&orderBy=name'
+            f'&fields=files(id,name,mimeType,size,thumbnailLink)'
+            f'&key={api_key}&pageSize=100'
+        )
+        try:
+            resp = requests.get(url, timeout=10, headers=_HDR)
+            if resp.ok:
+                results.extend(resp.json().get('files', []))
+        except Exception:
+            pass
+
+        # Recurse into sub-folders
+        if depth < max_depth:
+            sub_q = _q(f"'{fid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false")
+            sub_url = (
+                f'https://www.googleapis.com/drive/v3/files'
+                f'?q={sub_q}&fields=files(id,name)&key={api_key}&pageSize=50'
+            )
+            try:
+                sub_resp = requests.get(sub_url, timeout=10, headers=_HDR)
+                if sub_resp.ok:
+                    for sub in sub_resp.json().get('files', []):
+                        results.extend(_list_folder(sub['id'], depth + 1, max_depth))
+            except Exception:
+                pass
+
+        return results
+
+    all_files = _list_folder(folder_id)
+
+    audio_files, doc_files = [], []
+    for f in all_files:
+        mime = f.get('mimeType', '')
+        entry = {
+            'id':            f['id'],
+            'name':          f.get('name', ''),
+            'mimeType':      mime,
+            'thumbnail_url': f.get('thumbnailLink', ''),
+            'preview_url':   f'https://drive.google.com/file/d/{f["id"]}/preview',
+            'stream_url':    f'https://www.googleapis.com/drive/v3/files/{f["id"]}?alt=media&key={api_key}',
+        }
+        if mime in _AUDIO_MIMETYPES:
+            audio_files.append(entry)
+        elif mime in _DOC_MIMETYPES:
+            doc_files.append(entry)
+
+    return audio_files[:50], doc_files[:50]
+
+
+def community_space_list(request):
+    spaces = CommunitySpace.objects.filter(is_public=True).order_by('name')
+    return render(request, 'events/community_space_list.html', {'spaces': spaces})
+
+
+def community_space_profile(request, slug):
+    from django.db.models import F as _F
+    space = get_object_or_404(CommunitySpace, slug=slug, is_public=True)
+    CommunitySpace.objects.filter(pk=space.pk).update(view_count=_F('view_count') + 1)
+    space.refresh_from_db(fields=['view_count'])
+
+    can_edit = request.user.is_authenticated and (
+        request.user.is_staff or space.claimed_by == request.user
+    )
+    is_following = (
+        request.user.is_authenticated and
+        Follow.objects.filter(
+            user=request.user,
+            target_type=Follow.TYPE_SPACE,
+            target_id=space.pk,
+        ).exists()
+    )
+    asks = list(space.asks.exclude(status='fulfilled'))
+    audio_files, doc_files = _fetch_space_library(
+        space.drive_folder_url, space.show_audio, space.show_docs,
+    )
+    from .models import SpacePhoto, SpaceUpdate, KofiPost
+    from django.utils import timezone as _tz
+    photos       = list(space.photos.all()[:30])
+    updates      = list(space.updates.all()[:20])
+    kofi_posts   = list(space.kofi_posts.filter(is_public=True).order_by('-timestamp', '-created_at')[:20]) if space.kofi else []
+    kofi_blog    = [p for p in kofi_posts if p.kofi_type == 'Blog_Post']
+    kofi_support = [p for p in kofi_posts if p.kofi_type in ('Donation', 'Subscription', 'Commission', 'Shop_Order')]
+    week_ago     = _tz.now() - __import__('datetime').timedelta(days=7)
+    kofi_recent  = [p for p in kofi_support if p.timestamp and p.timestamp >= week_ago]
+
+    from .models import ExternalFeedItem
+    feed_items = list(space.feed_items.order_by('-published', '-created_at')[:12]) if space.rss_feed else []
+
+    # Handle new update post (owner only)
+    if request.method == 'POST' and request.POST.get('_post_update') == '1' and can_edit:
+        body = request.POST.get('update_body', '').strip()
+        if body:
+            SpaceUpdate.objects.create(space=space, body=body, posted_by=request.user)
+        return redirect('community_space_profile', slug=slug)
+
+    return render(request, 'events/community_space_profile.html', {
+        'space':         space,
+        'can_edit':      can_edit,
+        'is_following':  is_following,
+        'asks':          asks,
+        'audio_files':   audio_files,
+        'doc_files':     doc_files,
+        'photos':        photos,
+        'updates':       updates,
+        'kofi_blog':     kofi_blog,
+        'kofi_support':  kofi_support,
+        'kofi_recent':   kofi_recent,
+        'feed_items':    feed_items,
+    })
+
+
+def community_space_supporters(request, slug):
+    from .models import KofiPost
+    space = get_object_or_404(CommunitySpace, slug=slug, is_public=True)
+    supporters = list(
+        space.kofi_posts
+        .filter(is_public=True)
+        .exclude(kofi_type='Blog_Post')
+        .order_by('-timestamp', '-created_at')
+    )
+    return render(request, 'events/community_space_supporters.html', {
+        'space':      space,
+        'supporters': supporters,
+    })
+
+
+@login_required(login_url='/login/')
+def community_space_edit(request, slug):
+    space = get_object_or_404(CommunitySpace, slug=slug)
+    if not (request.user.is_staff or space.claimed_by == request.user):
+        return redirect('community_space_profile', slug=slug)
+
+    if request.method == 'GET':
+        asks = list(space.asks.all())
+        return render(request, 'events/community_space_edit.html', {'space': space, 'asks': asks})
+
+    if request.POST.get('_photo_only') == '1':
+        from .models import SpacePhoto
+        for f in request.FILES.getlist('extra_photos'):
+            SpacePhoto.objects.create(space=space, image=f, uploaded_by=request.user)
+        messages.success(request, 'Photos added.')
+        return redirect('community_space_profile', slug=space.slug)
+
+    if request.POST.get('_asks_only') == '1':
+        # Asks-only form — rebuild asks without touching space fields
+        parsed = _parse_asks_from_post(request.POST)
+        profile_url = f'https://communityplaylist.com/spaces/{space.slug}/'
+        new_asks = []
+        for d in parsed:
+            offering = None
+            if d['post_to_board'] and d['ask_type'] == CommunityAsk.TYPE_ITEM:
+                offering = _create_iso_offering(d, space.name, space.neighborhood, request.user, profile_url)
+            new_asks.append(CommunityAsk(
+                community_space=space,
+                title=d['title'],
+                description=d['description'],
+                ask_type=d['ask_type'],
+                target_amount=d['target_amount'],
+                donation_url=d['donation_url'],
+                product_url=d['product_url'],
+                product_image_url=d['product_image_url'],
+                product_price=d['product_price'],
+                board_offering=offering,
+                status=d['status'],
+                sort_order=d['sort_order'],
+            ))
+        CommunityAsk.objects.filter(community_space=space).delete()
+        CommunityAsk.objects.bulk_create(new_asks)
+        messages.success(request, 'Community Asks saved.')
+        return redirect('community_space_edit', slug=space.slug)
+
+    import re as _re3, json as _json3
+    # Validate brand_color
+    bc = request.POST.get('brand_color', '').strip()
+    if _re3.fullmatch(r'#[0-9a-fA-F]{6}', bc):
+        space.brand_color = bc.lower()
+    elif not bc:
+        space.brand_color = ''
+
+    for field in ['name', 'bio', 'address', 'neighborhood', 'website',
+                  'contact_email', 'instagram', 'bluesky', 'mastodon', 'tiktok', 'kofi',
+                  'drive_folder_url', 'sol_wallet', 'donation_url', 'rss_feed']:
+        space.__setattr__(field, request.POST.get(field, '').strip())
+
+    # Auto-generate webhook token on first save if Ko-fi handle is set
+    if space.kofi and not space.kofi_token:
+        from events.kofi import generate_kofi_token
+        space.kofi_token = generate_kofi_token()
+
+    space.show_audio = request.POST.get('show_audio') == '1'
+    space.show_docs  = request.POST.get('show_docs')  == '1'
+
+    st = request.POST.get('space_type', '')
+    valid_types = [k for k, _ in CommunitySpace.TYPE_CHOICES]
+    if st in valid_types:
+        space.space_type = st
+
+    if request.FILES.get('photo'):
+        space.photo = request.FILES['photo']
+
+    # Custom links — sent as parallel arrays: labels[], urls[], thumbnails[]
+    labels     = request.POST.getlist('link_label')
+    urls       = request.POST.getlist('link_url')
+    thumbnails = request.POST.getlist('link_thumbnail')
+    links = []
+    for label, url, thumb in zip(labels, urls, thumbnails):
+        label = label.strip(); url = url.strip(); thumb = thumb.strip()
+        if label and url:
+            links.append({'label': label, 'url': url, 'thumbnail_url': thumb})
+    space.custom_links = links[:8]
+
+    space.save()
+
+    # Extra photos upload
+    from .models import SpacePhoto
+    for f in request.FILES.getlist('extra_photos'):
+        SpacePhoto.objects.create(space=space, image=f, uploaded_by=request.user)
+
+    # Delete requested photos
+    for pid in request.POST.getlist('delete_photo'):
+        SpacePhoto.objects.filter(pk=pid, space=space).delete()
+
+    messages.success(request, 'Space updated.')
+    return redirect('community_space_edit', slug=space.slug)
+
+
+# ── Comments toggle API ───────────────────────────────────────────────────────
+
+@login_required(login_url='/login/')
+def toggle_comments_api(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _j
+    try:
+        data  = _j.loads(request.body)
+        model = data.get('model', '')
+        pk    = int(data.get('pk', 0))
+        allow = bool(data.get('allow', False))
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'bad request'}, status=400)
+
+    MODEL_MAP = {
+        'artist':   Artist,
+        'promoter': PromoterProfile,
+        'venue':    Venue,
+        'space':    CommunitySpace,
+    }
+    Klass = MODEL_MAP.get(model)
+    if not Klass:
+        return JsonResponse({'error': 'unknown model'}, status=400)
+
+    claim_field = {
+        'artist':   'claimed_by',
+        'promoter': 'claimed_by',
+        'venue':    'claimed_by',
+        'space':    'claimed_by',
+    }[model]
+    updated = Klass.objects.filter(pk=pk, **{claim_field: request.user}).update(allow_comments=allow)
+    if not updated and not request.user.is_staff:
+        return JsonResponse({'error': 'not found or not yours'}, status=403)
+    return JsonResponse({'ok': True, 'allow': allow})
+
+
+# ── About / Support page ──────────────────────────────────────────────────────
+
+def about_page(request):
+    from .models import SupportTicket, KofiPost, Event, Artist, Venue, CommunitySpace
+    from django.utils import timezone as _tz
+    import datetime as _dt
+
+    # Live stats
+    stats = {
+        'events':  Event.objects.filter(status='approved').count(),
+        'artists': Artist.objects.count(),
+        'venues':  Venue.objects.filter(active=True).count(),
+        'spaces':  CommunitySpace.objects.filter(is_public=True).count(),
+    }
+
+    # Site-level Ko-fi supporters (all entity FKs null)
+    site_supporters = list(
+        KofiPost.objects
+        .filter(community_space__isnull=True, artist__isnull=True, promoter__isnull=True, is_public=True)
+        .exclude(kofi_type='Blog_Post')
+        .order_by('-timestamp', '-created_at')[:50]
+    )
+    week_ago = _tz.now() - _dt.timedelta(days=7)
+    recent_supporters = [p for p in site_supporters if p.timestamp and p.timestamp >= week_ago]
+
+    submitted = False
+    error = ''
+
+    if request.method == 'POST':
+        ticket_type = request.POST.get('ticket_type', 'other')
+        subject     = request.POST.get('subject', '').strip()
+        body        = request.POST.get('body', '').strip()
+        from_name   = request.POST.get('from_name', '').strip()
+        from_email  = request.POST.get('from_email', '').strip()
+
+        if not subject or not body:
+            error = 'Please fill in a subject and message.'
+        else:
+            ticket = SupportTicket.objects.create(
+                ticket_type = ticket_type,
+                subject     = subject,
+                body        = body,
+                from_name   = from_name,
+                from_email  = from_email,
+                user        = request.user if request.user.is_authenticated else None,
+            )
+            # Discord notification
+            _notify_ticket_discord(ticket)
+            submitted = True
+
+    return render(request, 'about.html', {
+        'stats':             stats,
+        'site_supporters':   site_supporters,
+        'recent_supporters': recent_supporters,
+        'submitted':         submitted,
+        'error':             error,
+    })
+
+
+def _notify_ticket_discord(ticket):
+    from django.conf import settings
+    import json, urllib.request
+    webhook = getattr(settings, 'DISCORD_WEBHOOK', '') or getattr(settings, 'DISCORD_WEBHOOK_BOARD', '')
+    if not webhook:
+        return
+    type_labels = {
+        'idea': '💡 Idea', 'bug': '🐛 Bug', 'venue': '🏛 Venue',
+        'space': '🌱 Space', 'other': '💬 Message',
+    }
+    label = type_labels.get(ticket.ticket_type, '📩')
+    name  = ticket.from_name or (ticket.user.username if ticket.user else 'Anonymous')
+    desc  = f'**{label}** from **{name}**'
+    if ticket.from_email:
+        desc += f' ({ticket.from_email})'
+    desc += f'\n\n**{ticket.subject}**\n{ticket.body[:800]}'
+    embed = {
+        'title':       f'{label} — New Support Ticket #{ticket.pk}',
+        'description': desc,
+        'color':       0x4caf50,
+        'url':         f'https://communityplaylist.com/admin/events/supportticket/{ticket.pk}/change/',
+        'footer':      {'text': 'communityplaylist.com/about/'},
+    }
+    try:
+        data = json.dumps({'embeds': [embed]}).encode()
+        req  = urllib.request.Request(webhook, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+        urllib.request.urlopen(req, timeout=8)
+    except Exception as e:
+        print(f'[Ticket] Discord notify error: {e}')
+
+
+# ── Ko-fi webhook ─────────────────────────────────────────────────────────────
+
+from django.views.decorators.csrf import csrf_exempt as _csrf_exempt
+
+@_csrf_exempt
+def kofi_webhook_view(request):
+    from events.kofi import kofi_webhook
+    return kofi_webhook(request)

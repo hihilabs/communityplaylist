@@ -1,48 +1,103 @@
 {% extends 'base.html' %}
+{% load url_tags %}
 {% block title %}{{ artist.name }} — Community Playlist{% endblock %}
+
+{% block head_extra %}
+{% with bio=artist.bio|default:artist.auto_bio %}
+{% with desc=bio|default:"Portland-area artist on Community Playlist — local events, mixes, and more." %}
+<!-- Open Graph -->
+<meta property="og:type"        content="profile">
+<meta property="og:title"       content="{{ artist.name }} — Community Playlist">
+<meta property="og:description" content="{{ desc|truncatechars:200 }}">
+<meta property="og:url"         content="https://communityplaylist.com/artists/{{ artist.slug }}/">
+{% if artist.photo %}<meta property="og:image" content="https://communityplaylist.com{{ artist.photo.url }}">{% endif %}
+<meta property="og:site_name"   content="Community Playlist PDX">
+<!-- Twitter / X card -->
+<meta name="twitter:card"        content="summary{% if artist.photo %}_large_image{% endif %}">
+<meta name="twitter:title"       content="{{ artist.name }} — Community Playlist">
+<meta name="twitter:description" content="{{ desc|truncatechars:200 }}">
+{% if artist.photo %}<meta name="twitter:image" content="https://communityplaylist.com{{ artist.photo.url }}">{% endif %}
+<!-- Canonical -->
+<link rel="canonical" href="https://communityplaylist.com/artists/{{ artist.slug }}/">
+<link rel="alternate" type="application/rss+xml" title="{{ artist.name }} events RSS" href="/artists/{{ artist.slug }}/feed.rss">
+<!-- JSON-LD structured data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MusicGroup",
+  "name": "{{ artist.name|escapejs }}",
+  "url": "https://communityplaylist.com/artists/{{ artist.slug }}/",
+  {% if artist.photo %}"image": "https://communityplaylist.com{{ artist.photo.url }}",{% endif %}
+  {% if desc %}"description": "{{ desc|truncatechars:300|escapejs }}",{% endif %}
+  {% if artist.city %}"foundingLocation": {"@type": "Place", "name": "{{ artist.city|escapejs }}"},{% endif %}
+  "sameAs": [
+    {% if artist.instagram %}"https://www.instagram.com/{{ artist.instagram }}/"{% endif %}
+    {% if artist.soundcloud %}{% if artist.instagram %},{% endif %}"https://soundcloud.com/{{ artist.soundcloud }}"{% endif %}
+    {% if artist.youtube %}{% if artist.instagram or artist.soundcloud %},{% endif %}"{{ artist.youtube }}"{% endif %}
+    {% if artist.bandcamp %}{% if artist.instagram or artist.soundcloud or artist.youtube %},{% endif %}"{{ artist.bandcamp }}"{% endif %}
+    {% if artist.spotify %}{% if artist.instagram or artist.soundcloud or artist.youtube or artist.bandcamp %},{% endif %}"{{ artist.spotify }}"{% endif %}
+    {% if artist.website %}{% if artist.instagram or artist.soundcloud or artist.youtube or artist.bandcamp or artist.spotify %},{% endif %}"{{ artist.website }}"{% endif %}
+  ]
+}
+</script>
+{% endwith %}
+{% endwith %}
+{% endblock %}
+
+{% block site_header %}{% endblock %}
+{% block nav_strip %}{% endblock %}
+
 {% block styles %}
 <style>
+:root{--accent:{{ artist.brand_color|default:"#ff6b35" }};--accent-dark:color-mix(in srgb,var(--accent) 80%,#000);--accent-bg:color-mix(in srgb,var(--accent) 6%,#0e0e0e)}
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#111;color:#eee;font-family:sans-serif}
-.topbar{padding:6px 16px;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;gap:12px}
-.topbar a{color:#ff6b35;text-decoration:none;font-size:.82em}
-.topbar a:hover{text-decoration:underline}
-.logo-link img{height:34px;width:auto;display:block}
-.page{max-width:860px;margin:0 auto;padding:24px 16px}
+body{background:#0e0e0e;color:#eee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.epk{max-width:580px;margin:0 auto;padding:24px 16px 80px;display:flex;flex-direction:column;gap:12px}
+.epk-footer{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:10px;padding:10px 16px;background:linear-gradient(transparent,#0e0e0e 60%);pointer-events:none;flex-wrap:wrap}
+.epk-footer a,.epk-footer button{pointer-events:auto;color:#333;font-size:.68em;text-decoration:none;letter-spacing:.04em;transition:color .15s;background:none;border:none;cursor:pointer;font-family:inherit;padding:0}
+.epk-footer a:hover,.epk-footer button:hover{color:var(--accent)}
+.epk-footer-sep{color:#222;font-size:.68em;pointer-events:none}
+.card{background:#161616;border:1px solid #222;border-radius:14px;overflow:hidden}
+.section-label{font-size:.7em;text-transform:uppercase;letter-spacing:.1em;color:#444;padding:12px 16px 8px;border-bottom:1px solid #1e1e1e}
 
 /* Hero */
-.hero{display:flex;align-items:flex-start;gap:20px;margin-bottom:28px;flex-wrap:wrap}
-.hero-photo{width:96px;height:96px;border-radius:12px;object-fit:cover;background:#1a1a1a;flex-shrink:0}
-.hero-photo-placeholder{width:96px;height:96px;border-radius:12px;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:2.4em;color:#333;flex-shrink:0}
-.hero-info{flex:1;min-width:0}
-h1{color:#ff6b35;font-size:1.5em;margin-bottom:4px}
-.verified-badge{display:inline-block;background:#1a3a1a;color:#4caf50;font-size:.7em;padding:2px 7px;border-radius:3px;border:1px solid #2a5a2a;vertical-align:middle;margin-left:6px;letter-spacing:.05em}
-.bio{color:#bbb;line-height:1.6;font-size:.9em;margin:10px 0}
+.hero{display:grid;grid-template-columns:80px 1fr;gap:16px;align-items:start;padding:20px}
+.hero-photo{width:80px;height:80px;border-radius:50%;object-fit:cover;background:#1a1a1a;border:2px solid #2a2a2a}
+.hero-photo-placeholder{width:80px;height:80px;border-radius:50%;background:#1a1a1a;border:2px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:2em;color:#333}
+.hero-info{min-width:0;display:flex;flex-direction:column;gap:4px}
+h1{color:var(--accent);font-size:1.25em;font-weight:700;line-height:1.2}
+.verified-badge{display:inline-flex;align-items:center;gap:4px;background:#0d1f0d;color:#4caf50;font-size:.63em;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:.04em;align-self:flex-start}
+.live-badge{display:inline-flex;align-items:center;gap:5px;background:#1a0000;color:#ff3333;font-size:.65em;font-weight:700;padding:3px 9px;border-radius:4px;border:1px solid #550000;align-self:flex-start;letter-spacing:.06em;text-transform:uppercase;animation:livepulse 2s ease-in-out infinite}
+@keyframes livepulse{0%,100%{border-color:#550000;color:#ff3333}50%{border-color:#ff3333;color:#ff6666}}
+.bio{color:#888;line-height:1.7;font-size:.85em}
 
 /* Socials */
-.socials{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.social-pill{display:inline-flex;align-items:center;gap:5px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:4px 10px;text-decoration:none;color:#888;font-size:.78em;transition:all .15s}
-.social-pill:hover{border-color:#ff6b35;color:#ff6b35}
-.social-pill svg{width:13px;height:13px;flex-shrink:0}
+.socials{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.social-pill{display:inline-flex;align-items:center;gap:5px;background:#111;border:1px solid #252525;border-radius:20px;padding:4px 11px;text-decoration:none;color:#888;font-size:.78em;transition:all .15s;white-space:nowrap}
+.social-pill:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
 
-/* Follow / Edit row */
-.action-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
-.follow-btn{background:transparent;border:1px solid #333;color:#aaa;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:.8em;transition:all .15s}
-.follow-btn:hover{border-color:#ff6b35;color:#ff6b35}
+/* Follow / Edit / Share row */
+.action-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.follow-btn{background:transparent;border:1px solid #2a2a2a;color:#888;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:.78em;font-family:inherit;transition:all .15s}
+.follow-btn:hover{border-color:var(--accent);color:var(--accent)}
 .follow-btn.active{background:#1a1a10;border-color:#ddaa33;color:#ddaa33}
-.edit-link{display:inline-block;background:transparent;border:1px solid #333;color:#666;padding:5px 14px;border-radius:6px;text-decoration:none;font-size:.8em}
-.edit-link:hover{border-color:#ff6b35;color:#ff6b35}
+.follow-btn-cta{border-color:var(--accent) !important;color:var(--accent) !important;animation:ctapulse 2.5s ease-in-out infinite}
+@keyframes ctapulse{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--accent-bg)}60%{opacity:.85;box-shadow:0 0 0 4px var(--accent-bg)}}
+.edit-link{display:inline-flex;align-items:center;background:transparent;border:1px solid #2a2a2a;color:#666;padding:5px 12px;border-radius:20px;text-decoration:none;font-size:.78em;transition:all .15s}
+.edit-link:hover{border-color:var(--accent);color:var(--accent)}
+.share-btn{background:transparent;border:1px solid #2a2a2a;color:#666;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:.78em;font-family:inherit;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
+.share-btn:hover{border-color:var(--accent);color:var(--accent)}
 
-/* Sections */
-.section-title{color:#666;font-size:.75em;text-transform:uppercase;letter-spacing:.09em;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid #1a1a1a}
+/* Crew affiliations inside hero card */
+.crew-row{display:flex;flex-wrap:wrap;gap:7px;padding:12px 20px 16px;border-top:1px solid #1e1e1e}
 
 /* Tracks */
-.track-list{display:flex;flex-direction:column;gap:3px}
-.track-row{display:flex;align-items:center;gap:12px;background:#161616;border:1px solid #222;border-radius:8px;padding:10px 14px;cursor:pointer;transition:border-color .15s}
-.track-row:hover{border-color:#ff6b35}
-.track-row.playing{border-color:#ff6b35;background:#1a1208}
-.track-play{width:28px;height:28px;border-radius:50%;background:#ff6b35;border:none;color:#fff;font-size:.75em;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .15s}
-.track-play:hover{background:#e55a25}
+.track-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid #1a1a1a;cursor:pointer;transition:background .1s}
+.track-row:last-child{border-bottom:none}
+.track-row:hover{background:#1c1c1c}
+.track-row.playing{background:#1a1208}
+.track-play{width:28px;height:28px;border-radius:50%;background:var(--accent);border:none;color:#fff;font-size:.75em;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .15s}
+.track-play:hover{background:var(--accent-dark)}
 .track-info{flex:1;min-width:0}
 .track-title{color:#ddd;font-size:.88em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .track-meta{color:#555;font-size:.75em;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
@@ -58,106 +113,192 @@ h1{color:#ff6b35;font-size:1.5em;margin-bottom:4px}
 .save-btn.saved{color:#cc4466}
 .del-track-btn{background:transparent;border:none;color:#2a2a2a;font-size:.75em;cursor:pointer;padding:0 3px;line-height:1;flex-shrink:0;transition:color .15s;font-family:monospace}
 .del-track-btn:hover{color:#ff4444}
+.track-comment-badge{background:transparent;border:none;color:#444;font-size:.7em;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;white-space:nowrap;transition:color .15s;letter-spacing:.02em}
+.track-comment-badge:hover{color:#ff6b35}
 
 /* Drive sync */
-.drive-sync-wrap{margin-top:10px}
+.drive-sync-wrap{padding:10px 16px 14px;border-top:1px solid #1a1a1a}
 .drive-sync-btn{background:transparent;border:1px solid #1a4a2a;color:#4caf50;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:.78em;transition:all .15s}
 .drive-sync-btn:hover{border-color:#4caf50;background:#0f2a18}
 .sync-ok{color:#4caf50;font-size:.82em;margin-top:6px}
-.sync-ok a{color:#ff6b35}
+.sync-ok a{color:var(--accent)}
 .sync-error{color:#ff6b6b;font-size:.82em;margin-top:6px}
 
 /* Events */
-.event-row{display:block;background:#1a1a1a;border-radius:8px;padding:12px 14px;margin-bottom:6px;text-decoration:none;border:1px solid #2a2a2a;transition:border-color .15s}
-.event-row:hover{border-color:#ff6b35}
-.event-row .et{color:#ff6b35;font-weight:600;font-size:.9em;margin-bottom:3px}
+.event-row{display:block;padding:12px 16px;border-bottom:1px solid #1a1a1a;text-decoration:none;transition:background .1s}
+.event-row:last-child{border-bottom:none}
+.event-row:hover{background:#1c1c1c}
+.event-row .et{color:var(--accent);font-weight:600;font-size:.9em;margin-bottom:3px}
+.event-row:hover .et{color:var(--accent)}
 .event-row .em{color:#888;font-size:.8em}
 .event-row.past{opacity:.6}
-.rec-card{background:#1a1a1a;border-radius:8px;padding:12px 14px;margin-bottom:6px;border:1px solid #2a2a2a}
-.rec-card strong{color:#ff6b35}
+.rec-row{padding:12px 16px;border-bottom:1px solid #1a1a1a}
+.rec-row:last-child{border-bottom:none}
+.rec-row strong{color:var(--accent)}
 .rec-meta{color:#888;font-size:.82em;margin-left:6px}
 
-/* Suggest edit */
-@media(max-width:600px){h1{font-size:1.2em}.hero-photo,.hero-photo-placeholder{width:72px;height:72px;font-size:1.8em}}
+/* Twitch clips grid */
+.twitch-clips{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:12px}
+.clip-card{position:relative;border-radius:8px;overflow:hidden;background:#0a0a0a;border:1px solid #1a1a1a;cursor:pointer;text-decoration:none;display:block}
+.clip-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.clip-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;background:rgba(0,0,0,.5)}
+.clip-card:hover .clip-overlay{opacity:1}
+.clip-play{width:32px;height:32px;border-radius:50%;background:#6441a5;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.8em}
+.clip-info{padding:6px 8px}
+.clip-title{color:#ccc;font-size:.79em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-meta{color:#555;font-size:.7em;margin-top:2px}
+.clip-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;align-items:center;justify-content:center}
+.clip-modal.open{display:flex}
+.clip-modal-inner{width:min(860px,96vw);position:relative}
+.clip-modal-inner iframe{width:100%;aspect-ratio:16/9;border:none;border-radius:8px}
+.clip-modal-close{position:absolute;top:-32px;right:0;background:none;border:none;color:#aaa;font-size:1.4em;cursor:pointer;line-height:1}
+
+@media(max-width:480px){
+  .hero{grid-template-columns:64px 1fr;gap:12px;padding:16px}
+  .hero-photo,.hero-photo-placeholder{width:64px;height:64px;font-size:1.6em}
+  h1{font-size:1.1em}
+  .twitch-clips{grid-template-columns:1fr}
+}
 </style>
 {% endblock %}
 {% block body %}
+<div class="epk">
 
-<div class="topbar">
-  <a href="/" class="logo-link"><img src="https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png" alt="CP"></a>
-  <a href="/">← Events</a>
-  <a href="/artists/">Artists</a>
-  <a href="/promoters/">Promoters</a>
-</div>
-{% include 'events/_nav_strip.html' %}
+{# ── Hero card ── #}
+<div class="card">
+  <div class="hero">
+    {% if artist.photo %}
+      <img src="{{ artist.photo.url }}" alt="{{ artist.name }}" class="hero-photo">
+    {% else %}
+      <div class="hero-photo-placeholder">🎵</div>
+    {% endif %}
 
-<div class="page">
+    <div class="hero-info">
+      <h1>{{ artist.name }}</h1>
+      {% if artist.is_verified %}<span class="verified-badge">✓ Verified</span>{% endif %}
+      {% if artist.is_live %}<span class="live-badge">● PDXTV Live</span>{% endif %}
 
-<div class="hero">
-  {% if artist.photo %}
-    <img src="{{ artist.photo.url }}" alt="{{ artist.name }}" class="hero-photo">
-  {% else %}
-    <div class="hero-photo-placeholder">🎵</div>
-  {% endif %}
+      {% if artist.bio %}<p class="bio">{{ artist.bio }}</p>{% endif %}
 
-  <div class="hero-info">
-    <h1>
-      {{ artist.name }}
-      {% if artist.is_verified %}<span class="verified-badge">✓ verified</span>{% endif %}
-    </h1>
+      <div class="socials">
+        {% if artist.website %}<a href="{{ artist.website|safe_href }}" class="social-pill" target="_blank" rel="noopener">🌐 Website</a>{% endif %}
+        {% if artist.instagram %}<a href="https://instagram.com/{{ artist.instagram }}" class="social-pill" target="_blank" rel="noopener">📷 @{{ artist.instagram }}</a>{% endif %}
+        {% if artist.soundcloud %}<a href="https://soundcloud.com/{{ artist.soundcloud }}" class="social-pill" target="_blank" rel="noopener">☁ SoundCloud</a>{% endif %}
+        {% if artist.bandcamp %}<a href="{{ artist.bandcamp }}" class="social-pill" target="_blank" rel="noopener">🏕 Bandcamp</a>{% endif %}
+        {% if artist.mixcloud %}<a href="https://mixcloud.com/{{ artist.mixcloud }}" class="social-pill" target="_blank" rel="noopener">🎛 Mixcloud</a>{% endif %}
+        {% if artist.spotify %}<a href="{{ artist.spotify }}" class="social-pill" target="_blank" rel="noopener">♫ Spotify</a>{% endif %}
+        {% if artist.youtube %}<a href="{{ artist.youtube }}" class="social-pill" target="_blank" rel="noopener">▶ YouTube</a>{% endif %}
+        {% if artist.twitch %}<a href="https://twitch.tv/{{ artist.twitch }}" class="social-pill" target="_blank" rel="noopener" style="border-color:#6441a5;color:#9f7fd4">📺 Twitch</a>{% endif %}
+        {% if artist.house_mixes %}<a href="https://www.house-mixes.com/{{ artist.house_mixes }}" class="social-pill" target="_blank" rel="noopener" style="border-color:#ff6600;color:#ff8833">🎛 House-Mixes</a>{% endif %}
+        {% if artist.mastodon %}<a href="{{ artist.mastodon }}" class="social-pill" target="_blank" rel="noopener">🐘 Mastodon</a>{% endif %}
+        {% if artist.bluesky %}<a href="https://bsky.app/profile/{{ artist.bluesky }}" class="social-pill" target="_blank" rel="noopener">🦋 Bluesky</a>{% endif %}
+        {% if artist.kofi %}<a href="https://ko-fi.com/{{ artist.kofi }}" class="social-pill" target="_blank" rel="noopener" style="border-color:#ff5e5b;color:#ff8a80">☕ Ko-fi</a>{% endif %}
+        {% if artist.tiktok %}<a href="https://tiktok.com/@{{ artist.tiktok }}" class="social-pill" target="_blank" rel="noopener">🎵 TikTok</a>{% endif %}
+        {% if artist.mb_id %}<a href="https://musicbrainz.org/artist/{{ artist.mb_id }}" class="social-pill" target="_blank" rel="noopener">🎼 MusicBrainz</a>{% endif %}
+        <a href="/artists/{{ artist.slug }}/feed.rss" class="social-pill" title="RSS feed for this artist">RSS</a>
+      </div>
 
-    {% if artist.bio %}<p class="bio">{{ artist.bio }}</p>{% endif %}
-
-    <div class="socials">
-      {% if artist.website %}<a href="{{ artist.website }}" class="social-pill" target="_blank" rel="noopener">🌐 Website</a>{% endif %}
-      {% if artist.instagram %}<a href="https://instagram.com/{{ artist.instagram }}" class="social-pill" target="_blank" rel="noopener">📷 @{{ artist.instagram }}</a>{% endif %}
-      {% if artist.soundcloud %}<a href="https://soundcloud.com/{{ artist.soundcloud }}" class="social-pill" target="_blank" rel="noopener">☁ SoundCloud</a>{% endif %}
-      {% if artist.bandcamp %}<a href="{{ artist.bandcamp }}" class="social-pill" target="_blank" rel="noopener">🏕 Bandcamp</a>{% endif %}
-      {% if artist.mixcloud %}<a href="https://mixcloud.com/{{ artist.mixcloud }}" class="social-pill" target="_blank" rel="noopener">🎛 Mixcloud</a>{% endif %}
-      {% if artist.spotify %}<a href="{{ artist.spotify }}" class="social-pill" target="_blank" rel="noopener">🎵 Spotify</a>{% endif %}
-      {% if artist.youtube %}<a href="{{ artist.youtube }}" class="social-pill" target="_blank" rel="noopener">▶ YouTube</a>{% endif %}
-      {% if artist.twitch %}<a href="https://twitch.tv/{{ artist.twitch }}" class="social-pill" target="_blank" rel="noopener" style="border-color:#6441a5;color:#9f7fd4">📺 Twitch</a>{% endif %}
-      {% if artist.mastodon %}<a href="{{ artist.mastodon }}" class="social-pill" target="_blank" rel="noopener">🐘 Mastodon</a>{% endif %}
-      {% if artist.bluesky %}<a href="https://bsky.app/profile/{{ artist.bluesky }}" class="social-pill" target="_blank" rel="noopener">🦋 Bluesky</a>{% endif %}
-      {% if artist.tiktok %}<a href="https://tiktok.com/@{{ artist.tiktok }}" class="social-pill" target="_blank" rel="noopener">🎵 TikTok</a>{% endif %}
-      {% if artist.mb_id %}<a href="https://musicbrainz.org/artist/{{ artist.mb_id }}" class="social-pill" target="_blank" rel="noopener">🎼 MusicBrainz</a>{% endif %}
-    </div>
-
-    <div class="action-row">
-      {% if request.user.is_authenticated %}
-      <button class="follow-btn {% if is_following %}active{% endif %}" id="follow-btn"
-        data-type="artist" data-id="{{ artist.pk }}">
-        {% if is_following %}★ Following{% else %}☆ Follow{% endif %}
-      </button>
-      {% endif %}
-      {% if can_edit %}
-      <a href="{% url 'artist_edit' slug=artist.slug %}" class="edit-link">✏ Edit profile</a>
-      {% endif %}
-      {% if artist.view_count %}<span style="color:#444;font-size:.78em">👁 {{ artist.view_count }}</span>{% endif %}
+      <div class="action-row">
+        {% if request.user.is_authenticated %}
+        <button class="follow-btn {% if is_following %}active{% endif %}" id="follow-btn"
+          data-type="artist" data-id="{{ artist.pk }}">
+          {% if is_following %}★ Following{% else %}☆ Follow{% endif %}
+        </button>
+        {% else %}
+        <button class="follow-btn follow-btn-cta" id="follow-btn-cta">♡ Follow</button>
+        {% endif %}
+        {% if can_edit %}
+        <a href="{% url 'artist_edit' slug=artist.slug %}" class="edit-link">✏ Edit profile</a>
+        {% endif %}
+        <button class="share-btn" id="share-profile-btn" title="Share this profile">⬆ Share</button>
+        {% if artist.view_count %}<span style="color:#444;font-size:.78em">👁 {{ artist.view_count }}</span>{% endif %}
+      </div>
     </div>
   </div>
-</div>
 
-{# ── Crew affiliations ── #}
-{% if crews %}
-<p class="section-title">Member of</p>
-<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-  {% for crew in crews %}
-  <a href="/promoters/{{ crew.slug }}/" style="display:inline-flex;align-items:center;gap:7px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:5px 12px;text-decoration:none;color:#aaa;font-size:.8em;transition:all .15s" onmouseover="this.style.borderColor='#ff6b35';this.style.color='#ff6b35'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#aaa'">
-    {% if crew.photo %}<img src="{{ crew.photo.url }}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">{% else %}<span>📣</span>{% endif %}
-    {{ crew.name }}
-  </a>
+  {# ── Crew affiliations inside hero card ── #}
+  {% if crews %}
+  <div class="crew-row">
+    {% for crew in crews %}
+    <a href="/promoters/{{ crew.slug }}/" class="social-pill" style="font-size:.8em">
+      {% if crew.photo %}<img src="{{ crew.photo.url }}" style="width:18px;height:18px;border-radius:50%;object-fit:cover">{% else %}📣{% endif %}
+      {{ crew.name }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>{# /hero card #}
+
+{# ── Twitch clips (shown when not live and clips available) ── #}
+{% if twitch_clips or twitch_vods %}
+<div class="card">
+  <div class="section-label">📺 Twitch &mdash; <a href="https://twitch.tv/{{ artist.twitch }}" target="_blank" rel="noopener" style="color:#6441a5">twitch.tv/{{ artist.twitch }}</a></div>
+  {% if twitch_clips %}
+  <p style="font-size:.73em;color:#888;margin:4px 0 8px">Top clips</p>
+  <div class="twitch-clips">
+    {% for clip in twitch_clips %}
+    <a class="clip-card" href="#" onclick="openClip('{{ clip.id|escapejs }}','{{ clip.type|escapejs }}');return false" title="{{ clip.title|escapejs }}">
+      <img class="clip-thumb" src="{{ clip.thumbnail }}" alt="{{ clip.title|escapejs }}" loading="lazy">
+      <div class="clip-overlay"><div class="clip-play">▶</div></div>
+      <div class="clip-info">
+        <div class="clip-title">{{ clip.title }}</div>
+        <div class="clip-meta">{{ clip.views|floatformat:"0" }} views &middot; {{ clip.duration }}s</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if twitch_vods %}
+  <p style="font-size:.73em;color:#888;margin:12px 0 8px">Past streams</p>
+  <div class="twitch-clips">
+    {% for clip in twitch_vods %}
+    <a class="clip-card" href="#" onclick="openClip('{{ clip.id|escapejs }}','{{ clip.type|escapejs }}');return false" title="{{ clip.title|escapejs }}">
+      <img class="clip-thumb" src="{{ clip.thumbnail }}" alt="{{ clip.title|escapejs }}" loading="lazy">
+      <div class="clip-overlay"><div class="clip-play">▶</div></div>
+      <div class="clip-info">
+        <div class="clip-title">{{ clip.title }}</div>
+        <div class="clip-meta">{{ clip.views|floatformat:"0" }} views &middot; {{ clip.duration }}s</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+<div class="clip-modal" id="clip-modal" onclick="closeClip(event)">
+  <div class="clip-modal-inner">
+    <button class="clip-modal-close" onclick="closeClip()">✕</button>
+    <iframe id="clip-iframe" src="" allowfullscreen></iframe>
+  </div>
+</div>
+{% endif %}
+
+{# ── House-Mixes.com mixes ── #}
+{% if house_mixes_tracks %}
+<div class="card">
+  <div class="section-label">🎛 Mixes &mdash; <a href="https://www.house-mixes.com/{{ artist.house_mixes }}" target="_blank" rel="noopener" style="color:var(--accent)">house-mixes.com/{{ artist.house_mixes }}</a></div>
+  {% for mix in house_mixes_tracks %}
+  <div class="track-row" data-stream="{{ mix.stream_url }}" data-title="{{ mix.title }}" data-artist="{{ artist.name }}" style="align-items:flex-start">
+    <button class="track-play" onclick="cpPlay(this)" title="Play">▶</button>
+    {% if mix.thumbnail %}
+    <img src="{{ mix.thumbnail }}" alt="" style="width:40px;height:40px;border-radius:4px;object-fit:cover;flex-shrink:0">
+    {% endif %}
+    <div class="track-info">
+      <div class="track-title">{{ mix.title }}</div>
+    </div>
+    <a href="{{ mix.source_url }}" target="_blank" rel="noopener" style="color:#555;font-size:.75em;flex-shrink:0;align-self:center" title="Open on house-mixes.com">↗</a>
+  </div>
   {% endfor %}
 </div>
 {% endif %}
 
-{# ── Embeds — Spotify / YouTube / Mixcloud / Beatport / Apple Music ── #}
-{% if artist.spotify or artist.youtube or artist.mixcloud or artist.bandcamp or artist.twitch %}
+{# ── Embeds — Spotify / YouTube / Mixcloud / SoundCloud / Bandcamp / Twitch ── #}
+{% if artist.spotify or artist.youtube or artist.mixcloud or artist.soundcloud or artist.bandcamp or artist.twitch %}
 <script>
 window.cpEmbedLinks = [
   {% if artist.spotify %}{"url":"{{ artist.spotify|escapejs }}","label":"Spotify"},{% endif %}
   {% if artist.youtube %}{"url":"{{ artist.youtube|escapejs }}","label":"YouTube"{% if yt_embed_html %},"embed_html":"{{ yt_embed_html|escapejs }}"{% endif %}},{% endif %}
-  {% if artist.twitch %}{"url":"https://twitch.tv/{{ artist.twitch|escapejs }}","label":"Twitch"},{% endif %}
+  {% if artist.soundcloud %}{"url":"https://soundcloud.com/{{ artist.soundcloud|escapejs }}","label":"SoundCloud"},{% endif %}
+  {% if artist.twitch and artist.is_live %}{"url":"https://twitch.tv/{{ artist.twitch|escapejs }}","label":"Twitch"},{% endif %}
   {% if artist.mixcloud %}{"url":"https://www.mixcloud.com/{{ artist.mixcloud|escapejs }}/","label":"Mixcloud"},{% endif %}
   {% if artist.bandcamp %}{"url":"{{ artist.bandcamp|escapejs }}","label":"Bandcamp"},{% endif %}
 ];
@@ -167,119 +308,126 @@ window.cpEmbedLinks = [
 
 {# ── Live sets / mixes ── #}
 {% if tracks or can_edit %}
-<p class="section-title">Live Sets &amp; Mixes</p>
-
-{% if tracks %}
-<div class="track-list" id="track-list">
-  {% for t in tracks %}
-  <div class="track-row" data-stream="{{ t.stream_url }}" data-title="{{ t.title }}" data-artist="{{ t.artist_name|default:artist.name }}" data-track-id="{{ t.pk }}">
-    <button class="track-play" onclick="cpPlay(this)" title="Play">▶</button>
-    <div class="track-info">
-      <div class="track-title">{{ t.title }}</div>
-      <div class="track-meta">
-        {% if t.artist_name and t.artist_name|lower != artist.name|lower %}<span class="meta-artist">{{ t.artist_name }}</span>{% endif %}
-        {% if t.recorded_at %}<span class="meta-sep">·</span><span class="meta-venue">📍 {{ t.recorded_at }}</span>{% endif %}
-        {% if t.recorded_date %}<span class="meta-sep">·</span><span class="meta-date">{{ t.recorded_date|date:"M j, Y" }}</span>{% endif %}
-        {% if t.pk in cross_pks %}
-        <span class="meta-sep">·</span><span class="meta-via">via {% if t.promoter %}<a href="/promoters/{{ t.promoter.slug }}/" style="color:#aa6633;text-decoration:none">{{ t.promoter.name }}</a>{% elif t.venue %}<a href="/venues/{{ t.venue.slug }}/" style="color:#aa6633;text-decoration:none">{{ t.venue.name }}</a>{% elif t.artist %}<a href="/artists/{{ t.artist.slug }}/" style="color:#aa6633;text-decoration:none">{{ t.artist.name }}</a>{% endif %}</span>
-        {% endif %}
+<div class="card">
+  <div class="section-label">Live Sets &amp; Mixes</div>
+  {% if tracks %}
+  <div id="track-list">
+    {% for t in tracks %}
+    <div class="track-row" data-stream="{{ t.stream_url }}" data-title="{{ t.title }}" data-artist="{{ t.artist_name|default:artist.name }}" data-track-id="{{ t.pk }}">
+      <button class="track-play" onclick="cpPlay(this)" title="Play">▶</button>
+      <div class="track-info">
+        <div class="track-title">{{ t.title }}</div>
+        <div class="track-meta">
+          {% if t.artist_name and t.artist_name|lower != artist.name|lower %}<span class="meta-artist">{{ t.artist_name }}</span>{% endif %}
+          {% if t.recorded_at %}<span class="meta-sep">·</span><span class="meta-venue">📍 {{ t.recorded_at }}</span>{% endif %}
+          {% if t.recorded_date %}<span class="meta-sep">·</span><span class="meta-date">{{ t.recorded_date|date:"M j, Y" }}</span>{% endif %}
+          {% if t.pk in cross_pks %}
+          <span class="meta-sep">·</span><span class="meta-via">via {% if t.promoter %}<a href="/promoters/{{ t.promoter.slug }}/" style="color:#aa6633;text-decoration:none">{{ t.promoter.name }}</a>{% elif t.venue %}<a href="/venues/{{ t.venue.slug }}/" style="color:#aa6633;text-decoration:none">{{ t.venue.name }}</a>{% elif t.artist %}<a href="/artists/{{ t.artist.slug }}/" style="color:#aa6633;text-decoration:none">{{ t.artist.name }}</a>{% endif %}</span>
+          {% endif %}
+        </div>
       </div>
+      <div class="track-right">
+        {% if t.genre %}<span class="track-genre">{{ t.genre.name }}</span>{% elif t.genre_raw %}<span class="track-genre">{{ t.genre_raw }}</span>{% endif %}
+        {% if t.duration_display %}<span class="track-dur">{{ t.duration_display }}</span>{% endif %}
+      </div>
+      <button class="track-comment-badge" title="Comments" onclick="cpOpenChat(this,{{ t.pk }})">💬{% if comment_counts|get_item:t.pk %} {{ comment_counts|get_item:t.pk }}{% endif %}</button>
+      {% if request.user.is_authenticated %}
+      <button class="save-btn {% if t.pk in saved_ids %}saved{% endif %}" title="Save" onclick="cpSaveTrack(this)" data-id="{{ t.pk }}">{% if t.pk in saved_ids %}♥{% else %}♡{% endif %}</button>
+      {% endif %}
+      {% if can_edit and t.pk not in cross_pks %}
+      <button class="del-track-btn" title="Delete track" onclick="cpDeleteTrack(this,{{ t.pk }})">✕</button>
+      {% endif %}
     </div>
-    <div class="track-right">
-      {% if t.genre %}<span class="track-genre">{{ t.genre.name }}</span>{% elif t.genre_raw %}<span class="track-genre">{{ t.genre_raw }}</span>{% endif %}
-      {% if t.duration_display %}<span class="track-dur">{{ t.duration_display }}</span>{% endif %}
-    </div>
-    {% if request.user.is_authenticated %}
-    <button class="save-btn {% if t.pk in saved_ids %}saved{% endif %}" title="Save" onclick="cpSaveTrack(this)" data-id="{{ t.pk }}">{% if t.pk in saved_ids %}♥{% else %}♡{% endif %}</button>
-    {% endif %}
-    {% if can_edit and t.pk not in cross_pks %}
-    <button class="del-track-btn" title="Delete track" onclick="cpDeleteTrack(this,{{ t.pk }})">✕</button>
-    {% endif %}
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
-{% else %}
-<p style="color:#444;font-size:.85em;padding:8px 0">No tracks synced yet.</p>
-{% endif %}
+  {% else %}
+  <p style="color:#444;font-size:.85em;padding:12px 16px">No tracks synced yet.</p>
+  {% endif %}
 
-{% if can_edit and artist.drive_folder_url %}
-<div class="drive-sync-wrap">
-  <button class="drive-sync-btn" id="drive-sync-btn" onclick="cpDriveSync(this,'artist','{{ artist.pk }}')">
-    ↻ Sync Drive folder
-  </button>
-  <div id="drive-sync-result"></div>
+  {% if can_edit and artist.drive_folder_url %}
+  <div class="drive-sync-wrap">
+    <button class="drive-sync-btn" id="drive-sync-btn" onclick="cpDriveSync(this,'artist','{{ artist.pk }}')">
+      ↻ Sync Drive folder
+    </button>
+    <div id="drive-sync-result"></div>
+  </div>
+  <script>
+  function cpDriveSync(btn, srcType, srcId) {
+    btn.disabled = true;
+    btn.textContent = '⟳ Syncing…';
+    fetch('{% url "drive_sync" %}', {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':'{{ csrf_token }}'},
+      body: 'source_type=' + srcType + '&source_id=' + srcId
+    }).then(function(r){ return r.text(); }).then(function(html){
+      var wrap = document.getElementById('drive-sync-result');
+      wrap.innerHTML = html;
+      btn.disabled = false;
+      btn.textContent = '↻ Sync Drive folder';
+      var el = wrap.querySelector('[data-reload]');
+      if (el) {
+        btn.textContent = '↻ Reloading…';
+        setTimeout(function(){ location.reload(); }, 1200);
+      }
+    }).catch(function(e){
+      document.getElementById('drive-sync-result').innerHTML = '<p class="sync-error">Request failed.</p>';
+      btn.disabled = false;
+      btn.textContent = '↻ Sync Drive folder';
+    });
+  }
+  </script>
+  {% elif can_edit %}
+  <p style="color:#555;font-size:.82em;padding:10px 16px">Add a Google Drive folder URL in your profile to enable track sync.</p>
+  {% endif %}
 </div>
-<script>
-function cpDriveSync(btn, srcType, srcId) {
-  btn.disabled = true;
-  btn.textContent = '⟳ Syncing…';
-  fetch('{% url "drive_sync" %}', {
-    method: 'POST',
-    headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':'{{ csrf_token }}'},
-    body: 'source_type=' + srcType + '&source_id=' + srcId
-  }).then(function(r){ return r.text(); }).then(function(html){
-    var wrap = document.getElementById('drive-sync-result');
-    wrap.innerHTML = html;
-    btn.disabled = false;
-    btn.textContent = '↻ Sync Drive folder';
-    // Auto-reload page if anything changed so track list reflects Drive
-    var el = wrap.querySelector('[data-reload]');
-    if (el) {
-      btn.textContent = '↻ Reloading…';
-      setTimeout(function(){ location.reload(); }, 1200);
-    }
-  }).catch(function(e){
-    document.getElementById('drive-sync-result').innerHTML = '<p class="sync-error">Request failed.</p>';
-    btn.disabled = false;
-    btn.textContent = '↻ Sync Drive folder';
-  });
-}
-</script>
-{% elif can_edit %}
-<p style="color:#555;font-size:.82em;padding:6px 0">Add a Google Drive folder URL in your profile to enable track sync.</p>
-{% endif %}
 {% endif %}
 
 {# ── Recurring events ── #}
 {% if recurring %}
-<p class="section-title">Recurring Events</p>
-{% for r in recurring %}
-<div class="rec-card">
-  <strong>{{ r.title }}</strong>
-  <span class="rec-meta">{{ r.get_frequency_display }}
-    {% if r.day_of_week is not None %} · {{ r.get_day_of_week_display }}s{% endif %}
-    {% if r.week_of_month %} · {{ r.get_week_of_month_display }}{% endif %}
-    · {{ r.start_time|time:"g:i A" }}
-  </span>
-  {% if r.location %}<div style="color:#888;font-size:.8em;margin-top:4px">📍 {{ r.location }}</div>{% endif %}
+<div class="card">
+  <div class="section-label">Recurring Events</div>
+  {% for r in recurring %}
+  <div class="rec-row">
+    <strong>{{ r.title }}</strong>
+    <span class="rec-meta">{{ r.get_frequency_display }}
+      {% if r.day_of_week is not None %} · {{ r.get_day_of_week_display }}s{% endif %}
+      {% if r.week_of_month %} · {{ r.get_week_of_month_display }}{% endif %}
+      · {{ r.start_time|time:"g:i A" }}
+    </span>
+    {% if r.location %}<div style="color:#888;font-size:.8em;margin-top:4px">📍 {{ r.location }}</div>{% endif %}
+  </div>
+  {% endfor %}
 </div>
-{% endfor %}
 {% endif %}
 
 {# ── Upcoming events ── #}
 {% if upcoming %}
-<p class="section-title">Upcoming Events</p>
-{% for e in upcoming %}
-<a href="{% url 'event_detail' e.slug %}" class="event-row">
-  <div class="et">{{ e.title }}</div>
-  <div class="em">📅 {{ e.start_date|date:"D, M j Y @ g:i A" }} &nbsp;·&nbsp; 📍 {{ e.location|truncatechars:60 }}</div>
-</a>
-{% endfor %}
+<div class="card">
+  <div class="section-label">Upcoming Events</div>
+  {% for e in upcoming %}
+  <a href="{% url 'event_detail' e.slug %}" class="event-row">
+    <div class="et">{{ e.title }}</div>
+    <div class="em">📅 {{ e.start_date|date:"D, M j Y @ g:i A" }} &nbsp;·&nbsp; 📍 {{ e.location|truncatechars:60 }}</div>
+  </a>
+  {% endfor %}
+</div>
 {% endif %}
 
 {# ── Past events ── #}
 {% if past %}
-<p class="section-title">Past Events</p>
-{% for e in past %}
-<a href="{% url 'event_detail' e.slug %}" class="event-row past">
-  <div class="et">{{ e.title }}</div>
-  <div class="em">{{ e.start_date|date:"D, M j Y @ g:i A" }}</div>
-</a>
-{% endfor %}
+<div class="card">
+  <div class="section-label">Past Events</div>
+  {% for e in past %}
+  <a href="{% url 'event_detail' e.slug %}" class="event-row past">
+    <div class="et">{{ e.title }}</div>
+    <div class="em">{{ e.start_date|date:"D, M j Y @ g:i A" }}</div>
+  </a>
+  {% endfor %}
+</div>
 {% endif %}
 
 {% if not upcoming and not past and not recurring and not tracks %}
-<p style="color:#444;padding:24px 0;font-size:.88em">No events or tracks on record yet.</p>
+<p style="color:#444;padding:16px 0;font-size:.88em;text-align:center">No events or tracks on record yet.</p>
 {% endif %}
 
 {% if request.user.is_authenticated %}
@@ -288,7 +436,51 @@ function cpDriveSync(btn, srcType, srcId) {
 {% endwith %}
 {% endif %}
 
-</div>{# /page #}
+</div>{# /epk #}
+
+<div class="epk-footer">
+  <a href="/" title="Community Playlist · Portland">community playlist · pdx</a>
+  <span class="epk-footer-sep">·</span>
+  <a href="/artists/{{ artist.slug }}/feed.rss" title="RSS feed">RSS</a>
+  <span class="epk-footer-sep">·</span>
+  <button id="cookie-btn" onclick="cpCookieModal()">Cookie Preferences</button>
+  <span class="epk-footer-sep">·</span>
+  <a href="/report/">Report</a>
+  <span class="epk-footer-sep">·</span>
+  <a href="/privacy/">Privacy</a>
+</div>
+
+{# ── Cookie preferences modal ── #}
+<div id="cookie-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;align-items:flex-end;justify-content:center">
+  <div style="width:100%;max-width:500px;background:#1a1a1a;border-top:1px solid #333;border-radius:14px 14px 0 0;padding:28px 24px 32px;font-family:-apple-system,sans-serif">
+    <h2 style="color:#eee;font-size:1em;margin-bottom:10px">Cookie Preferences</h2>
+    <p style="color:#888;font-size:.82em;line-height:1.6;margin-bottom:20px">We use essential cookies only — session authentication and CSRF protection. No ad tracking or third-party analytics.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="cpCookieAccept()" style="background:var(--accent);color:#fff;border:none;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:.85em;font-family:inherit">Accept &amp; Close</button>
+      <button onclick="cpCookieModal()" style="background:transparent;border:1px solid #333;color:#888;padding:9px 20px;border-radius:8px;cursor:pointer;font-size:.85em;font-family:inherit">Close</button>
+      <a href="/privacy/" style="display:inline-flex;align-items:center;color:#555;font-size:.8em;text-decoration:none;padding:9px 4px">Privacy Policy →</a>
+    </div>
+  </div>
+</div>
+
+{% if not request.user.is_authenticated %}
+{# ── Join CP slide-up popup (logged-out visitors, one-time per session) ── #}
+<div id="join-popup" style="display:none;position:fixed;bottom:44px;left:50%;transform:translateX(-50%);width:min(480px,94vw);background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:20px 22px;z-index:8000;box-shadow:0 8px 40px rgba(0,0,0,.6);font-family:-apple-system,sans-serif">
+  <button onclick="document.getElementById('join-popup').style.display='none';sessionStorage.setItem('cpJoinDismissed','1')" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#444;font-size:1.2em;cursor:pointer;line-height:1">✕</button>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:1.1em;flex-shrink:0">🎵</div>
+    <div>
+      <div style="color:#eee;font-size:.92em;font-weight:600">Join Community Playlist</div>
+      <div style="color:#666;font-size:.75em">Your local PDX music network</div>
+    </div>
+  </div>
+  <p style="color:#888;font-size:.8em;line-height:1.55;margin-bottom:16px">Follow artists, save tracks, and get notified about local events. Free, no spam.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a href="/register/" style="background:var(--accent);color:#fff;text-decoration:none;padding:8px 18px;border-radius:8px;font-size:.84em;font-weight:600">Create account</a>
+    <a href="/login/" style="background:transparent;border:1px solid #333;color:#888;text-decoration:none;padding:8px 16px;border-radius:8px;font-size:.84em">Log in</a>
+  </div>
+</div>
+{% endif %}
 
 <script>
 // ── Follow toggle ──
@@ -337,10 +529,8 @@ function cpDeleteTrack(btn, pk) {
 
 // ── Track play buttons → global CP player ──
 function cpPlay(btn) {
-  var row    = btn.closest('.track-row');
-  var url    = row.dataset.stream;
-  var title  = row.dataset.title;
-  var artist = row.dataset.artist;
+  var row  = btn.closest('.track-row');
+  var card = row.closest('.card');
   document.querySelectorAll('.track-row').forEach(function(r){
     r.classList.remove('playing');
     var b = r.querySelector('.track-play');
@@ -348,8 +538,113 @@ function cpPlay(btn) {
   });
   row.classList.add('playing');
   btn.textContent = '⏸';
-  if (window.cpLoad) window.cpLoad(url, title, artist, window.location.pathname);
+  // Build a queue from all track-rows in the same card so prev/next works
+  if (window.cpLoadQueue && card) {
+    var rows = Array.from(card.querySelectorAll('.track-row'));
+    if (rows.length > 1) {
+      var artistName = row.dataset.artist;
+      var queue = rows.map(function(r) {
+        return {stream_url: r.dataset.stream, title: r.dataset.title, artist: r.dataset.artist || artistName, source_url: window.location.pathname};
+      });
+      window.cpLoadQueue(queue, rows.indexOf(row));
+      return;
+    }
+  }
+  if (window.cpLoad) window.cpLoad(row.dataset.stream, row.dataset.title, row.dataset.artist, window.location.pathname);
 }
+
+// ── Track comment chat ──
+function cpOpenChat(btn, trackId) {
+  btn.stopPropagation && btn.stopPropagation();
+  if (btn.stopPropagation) btn.stopPropagation(); // don't trigger row click
+  var row  = btn.closest('.track-row');
+  var card = row && row.closest('.card');
+  // Play the track into the panel
+  var playBtn = row && row.querySelector('.track-play');
+  if (playBtn) cpPlay(playBtn);
+  // Open panel then open chat
+  function _doChat() {
+    if (window.cpPanel && !window.cpPanel.isOpen()) window.cpPanel.open();
+    // Small delay so panel state settles after open animation
+    setTimeout(function() {
+      if (window.cpOpenChatById) window.cpOpenChatById(trackId);
+    }, 120);
+  }
+  if (window.cpPanel) _doChat();
+  else { window._cpPendingChat = trackId; }
+}
+
+// ── Twitch clip modal ──
+function openClip(id, type) {
+  var modal = document.getElementById('clip-modal');
+  var iframe = document.getElementById('clip-iframe');
+  if (!modal || !iframe) return;
+  var src = (type === 'vod')
+    ? 'https://player.twitch.tv/?video=' + id + '&parent=communityplaylist.com&autoplay=true'
+    : 'https://clips.twitch.tv/embed?clip=' + id + '&parent=communityplaylist.com&autoplay=true';
+  iframe.src = src;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeClip(e) {
+  if (e && e.target !== document.getElementById('clip-modal') && !e.target.classList.contains('clip-modal-close')) return;
+  var modal = document.getElementById('clip-modal');
+  var iframe = document.getElementById('clip-iframe');
+  if (modal) modal.classList.remove('open');
+  if (iframe) iframe.src = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeClip({target: document.getElementById('clip-modal')}); });
+
+// ── Logged-out follow CTA → triggers Join popup ──
+(function(){
+  var cta = document.getElementById('follow-btn-cta');
+  if (!cta) return;
+  cta.addEventListener('click', function() {
+    var p = document.getElementById('join-popup');
+    if (p) { p.style.display = 'block'; sessionStorage.removeItem('cpJoinDismissed'); }
+  });
+})();
+
+// ── Share button ──
+document.getElementById('share-profile-btn').addEventListener('click', function() {
+  var title = '{{ artist.name|escapejs }} — Community Playlist';
+  var url   = location.href;
+  if (navigator.share) {
+    navigator.share({title: title, url: url}).catch(function(){});
+  } else {
+    navigator.clipboard.writeText(url).then(function() {
+      var btn = document.getElementById('share-profile-btn');
+      var orig = btn.textContent;
+      btn.textContent = '✓ Copied';
+      setTimeout(function(){ btn.textContent = orig; }, 2000);
+    });
+  }
+});
+
+// ── Cookie modal ──
+function cpCookieModal() {
+  var m = document.getElementById('cookie-modal');
+  m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
+}
+function cpCookieAccept() {
+  localStorage.setItem('cpCookieOk', '1');
+  document.getElementById('cookie-modal').style.display = 'none';
+}
+document.getElementById('cookie-modal').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+
+{% if not request.user.is_authenticated %}
+// ── Join CP popup — show once per session after 4s ──
+(function() {
+  if (sessionStorage.getItem('cpJoinDismissed')) return;
+  setTimeout(function() {
+    var p = document.getElementById('join-popup');
+    if (p) p.style.display = 'block';
+  }, 4000);
+})();
+{% endif %}
 </script>
 
 {% endblock %}

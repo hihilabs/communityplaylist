@@ -27,12 +27,14 @@ class VenueFeed(models.Model):
     SOURCE_MUSICBRAINZ  = 'musicbrainz'
     SOURCE_SQUARESPACE  = 'squarespace'
     SOURCE_19HZ         = '19hz'
+    SOURCE_EAEL         = 'eael'
     SOURCE_CHOICES = [
         (SOURCE_ICAL,         'iCal Feed'),
         (SOURCE_EVENTBRITE,   'Eventbrite API'),
         (SOURCE_MUSICBRAINZ,  'MusicBrainz API'),
         (SOURCE_SQUARESPACE,  'Squarespace Events JSON'),
         (SOURCE_19HZ,         '19hz.info PNW Listing'),
+        (SOURCE_EAEL,         'EAEL WordPress Calendar (data-events scrape)'),
     ]
 
     CATEGORY_CHOICES = [
@@ -71,9 +73,11 @@ class VenueFeed(models.Model):
 
 
 class SiteStats(models.Model):
-    visit_count = models.BigIntegerField(default=0)
-    daily_count = models.BigIntegerField(default=0)
-    daily_date  = models.DateField(null=True, blank=True)
+    visit_count      = models.BigIntegerField(default=0)
+    daily_count      = models.BigIntegerField(default=0)
+    daily_date       = models.DateField(null=True, blank=True)
+    tracking_started = models.DateField(null=True, blank=True,
+                                        help_text='Date counting began — used to compute all-time avg daily')
 
     class Meta:
         verbose_name_plural = 'site stats'
@@ -83,7 +87,9 @@ class SiteStats(models.Model):
         if not request.session.get('cp_counted'):
             from django.utils import timezone
             today = timezone.localdate()
-            obj, _ = cls.objects.get_or_create(pk=1)
+            obj, created = cls.objects.get_or_create(pk=1)
+            if created or obj.tracking_started is None:
+                cls.objects.filter(pk=1).update(tracking_started=today)
             if obj.daily_date != today:
                 cls.objects.filter(pk=1).update(
                     visit_count=F('visit_count') + 1,
@@ -104,11 +110,16 @@ class SiteStats(models.Model):
 
     @classmethod
     def get_counts(cls):
+        import math
         from django.utils import timezone
         obj, _ = cls.objects.get_or_create(pk=1)
         today = timezone.localdate()
-        daily = obj.daily_count if obj.daily_date == today else 0
-        return obj.visit_count, daily
+        if obj.tracking_started:
+            days = max(1, (today - obj.tracking_started).days + 1)
+            avg_daily = math.ceil(obj.visit_count / days)
+        else:
+            avg_daily = obj.daily_count if obj.daily_date == today else 0
+        return obj.visit_count, avg_daily
 
 
 class Genre(models.Model):
@@ -139,8 +150,29 @@ class Artist(models.Model):
     spotify    = models.URLField(blank=True, help_text='Artist page URL')
     mastodon   = models.URLField(blank=True, help_text='Full profile URL e.g. https://pdx.social/@you')
     bluesky    = models.CharField(max_length=100, blank=True, help_text='Handle e.g. yourname.bsky.social')
+    kofi       = models.CharField(max_length=100, blank=True, help_text='Ko-fi username e.g. yourname from ko-fi.com/yourname')
     tiktok     = models.CharField(max_length=100, blank=True, help_text='Handle without @')
     twitch     = models.CharField(max_length=100, blank=True, help_text='Channel name without @')
+    beatport   = models.URLField(blank=True, help_text='Beatport artist page URL')
+    rss_feed   = models.URLField(blank=True, help_text='External RSS feed URL (blog, Substack, etc.) — items pulled and shown on profile')
+    discogs    = models.URLField(blank=True, help_text='Discogs artist page URL')
+    house_mixes = models.CharField(max_length=100, blank=True, help_text='house-mixes.com username')
+    HOUSE_MIXES_SORT_CHOICES = [
+        ('newest',    'Newest first'),
+        ('oldest',    'Oldest first'),
+        ('downloads', 'Most downloaded'),
+        ('plays',     'Most played'),
+    ]
+    house_mixes_sort = models.CharField(
+        max_length=20, blank=True, default='newest',
+        choices=HOUSE_MIXES_SORT_CHOICES,
+        help_text='Sort order for house-mixes.com track list',
+    )
+
+    brand_color = models.CharField(
+        max_length=7, blank=True, default='',
+        help_text='Profile accent hex color e.g. #ff6b35 — leave blank for default orange',
+    )
 
     # Music folder
     drive_folder_url = models.URLField(
@@ -148,12 +180,49 @@ class Artist(models.Model):
         help_text='Public Google Drive folder URL — live sets, DJ sessions, mixes',
     )
 
+    admin_email = models.EmailField(
+        blank=True,
+        help_text='Internal contact email — used to send claim instructions. Not shown publicly.',
+    )
+
     claimed_by = models.ForeignKey(
         'auth.User', null=True, blank=True, on_delete=models.SET_NULL,
         related_name='claimed_artists',
     )
     is_verified = models.BooleanField(default=False, help_text='Admin-verified artist')
+    is_live     = models.BooleanField(default=False, help_text='Currently streaming live (updated by check_live_streams)')
+    twitch_unresolvable = models.BooleanField(default=False, help_text='Twitch username returned 400 — needs review')
+    link_broken      = models.BooleanField(default=False, help_text='Website URL returned 4xx/5xx (check_links cron)')
+    link_checked_at  = models.DateTimeField(null=True, blank=True, help_text='Last time website URL was checked')
+    youtube_channel_id = models.CharField(max_length=50, blank=True, help_text='Cached YouTube channel ID (UCxxx…)')
     view_count  = models.PositiveIntegerField(default=0)
+    allow_comments = models.BooleanField(default=False, help_text='Allow public comments on profile page')
+
+    # Auto-build / enrichment
+    is_stub          = models.BooleanField(default=False, help_text='Auto-generated from events — not yet claimed')
+    city             = models.CharField(max_length=100, blank=True, help_text='Derived from event venues or platform profile')
+    latitude         = models.FloatField(null=True, blank=True, help_text='Geo center derived from event venue cluster')
+    longitude        = models.FloatField(null=True, blank=True)
+    home_neighborhood = models.CharField(max_length=100, blank=True, help_text='Most frequent event neighborhood')
+    auto_bio         = models.TextField(blank=True, help_text='System-generated bio from event history — replaced by artist bio on claim')
+    last_enriched_at  = models.DateTimeField(null=True, blank=True, help_text='Last time enrichment was run for this artist')
+    enrichment_locked = models.BooleanField(default=False,
+                                            help_text='Skip all automated enrichment for this artist — set when API data does not match')
+    lastfm_listeners  = models.PositiveIntegerField(null=True, blank=True, help_text='Last.fm monthly listener count')
+    lastfm_similar    = models.JSONField(default=list, blank=True,
+                                         help_text='Similar artist names from Last.fm — list of strings')
+    genre            = models.ForeignKey(
+        'Genre', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='artists',
+        help_text='Primary genre — used for video track filtering when no PlaylistTrack genre exists',
+    )
+
+    # Crew / alias linkage
+    linked_promoter  = models.ForeignKey(
+        'PromoterProfile', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='linked_artists',
+        help_text='If this artist record is also a crew/collective, link their PromoterProfile here',
+    )
 
     class Meta:
         ordering = ['name']
@@ -177,8 +246,34 @@ class Artist(models.Model):
 
 class PromoterProfile(models.Model):
     """A promoter, sound system, crew, label, or collective with a public profile."""
-    name   = models.CharField(max_length=200, unique=True)
-    slug   = models.SlugField(max_length=220, unique=True, blank=True)
+
+    TYPE_CREW        = 'crew'
+    TYPE_SOUND       = 'sound_system'
+    TYPE_COLLECTIVE  = 'collective'
+    TYPE_LABEL       = 'label'
+    TYPE_RECORD_SWAP = 'record_swap'
+    TYPE_CHOICES = [
+        (TYPE_CREW,        'Crew'),
+        (TYPE_SOUND,       'Sound System'),
+        (TYPE_COLLECTIVE,  'Collective'),
+        (TYPE_LABEL,       'Record Label'),
+        (TYPE_RECORD_SWAP, 'Record Swap'),
+    ]
+    # Icon glyphs matched to each type (used in templates via a mapping filter)
+    TYPE_ICONS = {
+        TYPE_CREW:        '📣',
+        TYPE_SOUND:       '🔊',
+        TYPE_COLLECTIVE:  '🤝',
+        TYPE_LABEL:       '💿',
+        TYPE_RECORD_SWAP: '🎵',
+    }
+
+    name          = models.CharField(max_length=200, unique=True)
+    slug          = models.SlugField(max_length=220, unique=True, blank=True)
+    promoter_type = models.JSONField(
+        default=list,
+        help_text='One or more types — stored as a JSON list, e.g. ["crew", "record_swap"]',
+    )
     bio    = models.TextField(blank=True)
     photo  = models.ImageField(upload_to='promoters/', blank=True, null=True)
     website = models.URLField(blank=True)
@@ -192,10 +287,16 @@ class PromoterProfile(models.Model):
     spotify    = models.URLField(blank=True)
     mastodon   = models.URLField(blank=True, help_text='Full profile URL')
     bluesky    = models.CharField(max_length=100, blank=True)
+    kofi       = models.CharField(max_length=100, blank=True, help_text='Ko-fi username e.g. yourname from ko-fi.com/yourname')
     tiktok     = models.CharField(max_length=100, blank=True)
     twitch     = models.CharField(max_length=100, blank=True, help_text='Channel name without @')
     discord    = models.URLField(blank=True, help_text='Invite link')
     telegram   = models.CharField(max_length=100, blank=True, help_text='Username without @')
+
+    brand_color = models.CharField(
+        max_length=7, blank=True, default='',
+        help_text='Profile accent hex color e.g. #ff6b35 — leave blank for default orange',
+    )
 
     genres  = models.ManyToManyField('Genre', blank=True, related_name='promoters')
     members = models.ManyToManyField('Artist', blank=True, related_name='crews',
@@ -236,8 +337,20 @@ class PromoterProfile(models.Model):
     )
     is_verified = models.BooleanField(default=False)
     is_public   = models.BooleanField(default=True)
+    is_live     = models.BooleanField(default=False, help_text='Currently streaming live (updated by check_live_streams)')
+    twitch_unresolvable = models.BooleanField(default=False, help_text='Twitch username returned 400 — needs review')
+    link_broken      = models.BooleanField(default=False, help_text='Website URL returned 4xx/5xx (check_links cron)')
+    link_checked_at  = models.DateTimeField(null=True, blank=True, help_text='Last time website URL was checked')
+    youtube_channel_id = models.CharField(max_length=50, blank=True, help_text='Cached YouTube channel ID (UCxxx…)')
     created_at  = models.DateTimeField(auto_now_add=True)
     view_count  = models.PositiveIntegerField(default=0)
+    allow_comments = models.BooleanField(default=False, help_text='Allow public comments on profile page')
+    name_variants = models.TextField(
+        blank=True,
+        help_text='Pipe-separated name aliases that should resolve to this profile '
+                  '(e.g. "Subduction Audio & Friends|Subduction Audio Crew"). '
+                  'Used by the event parser to consolidate mismatched listings.',
+    )
 
     class Meta:
         ordering = ['name']
@@ -247,6 +360,32 @@ class PromoterProfile(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def types(self):
+        """Always return promoter_type as a list, even if DB contains a legacy string."""
+        val = self.promoter_type
+        if isinstance(val, list):
+            return val
+        if isinstance(val, str) and val:
+            return [val]
+        return [self.TYPE_CREW]
+
+    def has_type(self, type_key):
+        return type_key in self.types
+
+    def get_types_display(self):
+        label_map = dict(self.TYPE_CHOICES)
+        return ' · '.join(label_map.get(t, t) for t in self.types)
+
+    def get_type_icons(self):
+        return ' '.join(self.TYPE_ICONS.get(t, '📣') for t in self.types)
+
+    @property
+    def type_badges(self):
+        """List of (icon, label) tuples for each type — easy to iterate in templates."""
+        label_map = dict(self.TYPE_CHOICES)
+        return [(self.TYPE_ICONS.get(t, '📣'), label_map.get(t, t)) for t in self.types]
+
     def save(self, *args, **kwargs):
         if not self.slug:
             base = slugify(self.name)
@@ -254,11 +393,365 @@ class PromoterProfile(models.Model):
             while PromoterProfile.objects.filter(slug=slug).exclude(pk=self.pk).exists():
                 slug = f'{base}-{n}'; n += 1
             self.slug = slug
+        # Normalise to list before saving
+        if isinstance(self.promoter_type, str):
+            self.promoter_type = [self.promoter_type] if self.promoter_type else [self.TYPE_CREW]
         super().save(*args, **kwargs)
 
     def get_absolute_url(self):
         from django.urls import reverse
         return reverse('promoter_detail', kwargs={'slug': self.slug})
+
+
+class CommunitySpace(models.Model):
+    """A community garden, third space, makerspace, or free public gathering place."""
+
+    TYPE_GARDEN      = 'garden'
+    TYPE_THIRD_SPACE = 'third_space'
+    TYPE_MAKERSPACE  = 'makerspace'
+    TYPE_LIBRARY     = 'library'
+    TYPE_PARK        = 'park'
+    TYPE_CHOICES = [
+        (TYPE_GARDEN,      'Community Garden'),
+        (TYPE_THIRD_SPACE, 'Third Space'),
+        (TYPE_MAKERSPACE,  'Makerspace / Hackerspace'),
+        (TYPE_LIBRARY,     'Free Library'),
+        (TYPE_PARK,        'Park / Outdoor Space'),
+    ]
+
+    name       = models.CharField(max_length=200)
+    slug       = models.SlugField(max_length=220, unique=True, blank=True)
+    space_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default=TYPE_GARDEN)
+    bio        = models.TextField(blank=True)
+    photo      = models.ImageField(upload_to='community_spaces/', blank=True, null=True)
+    brand_color = models.CharField(
+        max_length=7, blank=True, default='',
+        help_text='Profile accent hex color e.g. #4caf50 — leave blank for default green',
+    )
+
+    # Physical location
+    address      = models.CharField(max_length=300, blank=True)
+    neighborhood = models.CharField(max_length=100, blank=True)
+    latitude     = models.FloatField(null=True, blank=True)
+    longitude    = models.FloatField(null=True, blank=True)
+
+    # Contact (public-facing)
+    contact_email = models.EmailField(blank=True, help_text='Displayed on profile — use a public contact address')
+    website       = models.URLField(blank=True)
+
+    # Social — fedi/indie first
+    instagram = models.CharField(max_length=100, blank=True, help_text='Handle without @')
+    bluesky   = models.CharField(max_length=100, blank=True, help_text='Handle e.g. you.bsky.social')
+    mastodon  = models.URLField(blank=True, help_text='Full profile URL e.g. https://pdx.social/@you')
+    tiktok    = models.CharField(max_length=100, blank=True, help_text='Handle without @')
+    kofi      = models.CharField(max_length=100, blank=True, help_text='Ko-fi page ID or username e.g. U7U813CDB7 from ko-fi.com/U7U813CDB7 — embeds posts feed on profile')
+    kofi_token = models.CharField(
+        max_length=64, blank=True, unique=True, null=True,
+        help_text='Auto-generated webhook verification token — paste this into Ko-fi Settings → Webhooks',
+    )
+    rss_feed  = models.URLField(blank=True, help_text='External RSS feed URL (blog, Substack, etc.) — new items auto-posted to CP Bluesky tagging this space')
+
+    # Resources
+    drive_folder_url = models.URLField(
+        blank=True, help_text='Public Google Drive folder — shows as "Resource Library" button',
+    )
+    show_audio = models.BooleanField(
+        default=False,
+        help_text='Display audio files from the Drive folder as an inline player on the profile',
+    )
+    show_docs = models.BooleanField(
+        default=False,
+        help_text='Display PDFs / Google Docs / zines from the Drive folder as a document library on the profile',
+    )
+
+    # Funding — fedi/crypto only (no PayPal/Stripe)
+    sol_wallet   = models.CharField(
+        max_length=120, blank=True,
+        help_text='Solana wallet address (Phantom) — shows a ♥ Donate button',
+    )
+    donation_url = models.URLField(
+        blank=True,
+        help_text='Ko-fi, Open Collective, or Helium link — shown alongside SOL wallet',
+    )
+
+    # Custom link buttons (Linktree-style)
+    custom_links = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Up to 8 custom buttons: [{"label": "Code of Conduct", "url": "https://...", "thumbnail_url": ""}]',
+    )
+
+    claimed_by  = models.ForeignKey(
+        'auth.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='claimed_spaces',
+    )
+    is_verified = models.BooleanField(default=False)
+    is_public   = models.BooleanField(default=True)
+    view_count  = models.PositiveIntegerField(default=0)
+    allow_comments = models.BooleanField(default=False, help_text='Allow public comments on profile page')
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Community Space'
+        verbose_name_plural = 'Community Spaces'
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name)
+            slug, n = base, 1
+            while CommunitySpace.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f'{base}-{n}'; n += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+        return reverse('community_space_profile', kwargs={'slug': self.slug})
+
+
+class SpacePhoto(models.Model):
+    space      = models.ForeignKey(CommunitySpace, on_delete=models.CASCADE, related_name='photos')
+    image      = models.ImageField(upload_to='space_photos/%Y/%m/')
+    caption    = models.CharField(max_length=200, blank=True)
+    uploaded_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.space.name} photo {self.pk}"
+
+
+class SpaceUpdate(models.Model):
+    """Timeline post — news, milestones, or maintenance notes for a space."""
+    space      = models.ForeignKey(CommunitySpace, on_delete=models.CASCADE, related_name='updates')
+    body       = models.TextField()
+    posted_by  = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.space.name} update {self.created_at:%Y-%m-%d}"
+
+
+class KofiPost(models.Model):
+    """A Ko-fi event received via webhook — blog post, donation, subscription, or shop order."""
+
+    TYPE_DONATION     = 'Donation'
+    TYPE_SUBSCRIPTION = 'Subscription'
+    TYPE_SHOP_ORDER   = 'Shop_Order'
+    TYPE_COMMISSION   = 'Commission'
+    TYPE_BLOG_POST    = 'Blog_Post'
+    TYPE_CHOICES = [
+        ('Donation',     'Donation'),
+        ('Subscription', 'Subscription'),
+        ('Shop_Order',   'Shop Order'),
+        ('Commission',   'Commission'),
+        ('Blog_Post',    'Blog Post'),
+    ]
+
+    community_space = models.ForeignKey(
+        'CommunitySpace', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='kofi_posts',
+    )
+    artist = models.ForeignKey(
+        'Artist', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='kofi_posts',
+    )
+    promoter = models.ForeignKey(
+        'PromoterProfile', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='kofi_posts',
+    )
+
+    kofi_type            = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_DONATION)
+    from_name            = models.CharField(max_length=200, blank=True)
+    message              = models.TextField(blank=True)
+    url                  = models.URLField(blank=True, max_length=500)
+    is_public            = models.BooleanField(default=True)
+    amount               = models.CharField(max_length=20, blank=True)
+    currency             = models.CharField(max_length=10, blank=True)
+    kofi_transaction_id  = models.CharField(max_length=120, blank=True, unique=True, null=True)
+    timestamp            = models.DateTimeField(null=True, blank=True)
+    raw_data             = models.JSONField(default=dict)
+    created_at           = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp', '-created_at']
+        verbose_name = 'Ko-fi Post'
+        verbose_name_plural = 'Ko-fi Posts'
+
+    def __str__(self):
+        owner = self.community_space or self.artist or self.promoter or '?'
+        return f'{self.kofi_type} from {self.from_name} [{owner}]'
+
+    @property
+    def is_blog_post(self):
+        return self.kofi_type == self.TYPE_BLOG_POST
+
+    @property
+    def is_support(self):
+        return self.kofi_type in (self.TYPE_DONATION, self.TYPE_SUBSCRIPTION, self.TYPE_COMMISSION, self.TYPE_SHOP_ORDER)
+
+
+class CommunityAsk(models.Model):
+    """A specific need or request posted by a Venue or CommunitySpace."""
+
+    TYPE_FUND      = 'fund'
+    TYPE_ITEM      = 'item'
+    TYPE_VOLUNTEER = 'volunteer'
+    TYPE_SKILL     = 'skill'
+    TYPE_CHOICES = [
+        (TYPE_FUND,      'Funding / Donation'),
+        (TYPE_ITEM,      'Item / Equipment'),
+        (TYPE_VOLUNTEER, 'Volunteer Time'),
+        (TYPE_SKILL,     'Skill / Service'),
+    ]
+
+    STATUS_OPEN        = 'open'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_FULFILLED   = 'fulfilled'
+    STATUS_CHOICES = [
+        (STATUS_OPEN,        'Open'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_FULFILLED,   'Fulfilled — thank you!'),
+    ]
+
+    community_space = models.ForeignKey(
+        'CommunitySpace', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='asks',
+    )
+    venue = models.ForeignKey(
+        'Venue', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='asks',
+    )
+
+    title         = models.CharField(max_length=200)
+    description   = models.TextField(blank=True)
+    ask_type      = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_ITEM)
+    target_amount = models.DecimalField(
+        max_digits=8, decimal_places=0, null=True, blank=True,
+        help_text='Funding goal in dollars (optional)',
+    )
+    donation_url  = models.URLField(
+        blank=True,
+        help_text='Specific donate link for this ask — overrides profile donation URL',
+    )
+
+    # Product wishlist fields (item asks)
+    product_url       = models.URLField(blank=True, help_text='Link to specific item on Amazon or elsewhere')
+    product_image_url = models.URLField(blank=True, help_text='Product thumbnail URL (auto-fetchable from page)')
+    product_price     = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text='Approximate cost in dollars',
+    )
+
+    # Board integration — linked ISO ("In Search Of") offering
+    board_offering = models.OneToOneField(
+        'board.Offering', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='community_ask',
+        help_text='Living Buy Nothing ISO post linked to this ask',
+    )
+
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['sort_order', 'created_at']
+        verbose_name = 'Community Ask'
+        verbose_name_plural = 'Community Asks'
+
+    def __str__(self):
+        owner = self.community_space or self.venue or '?'
+        return f'{self.get_ask_type_display()} — {self.title} [{owner}]'
+
+    @property
+    def board_url(self):
+        if self.board_offering_id:
+            return self.board_offering.get_absolute_url()
+        return ''
+
+
+class ExternalFeedItem(models.Model):
+    """One item pulled from an entity's external RSS feed (blog, Substack, etc.)."""
+    community_space = models.ForeignKey(
+        'CommunitySpace', null=True, blank=True, on_delete=models.CASCADE, related_name='feed_items',
+    )
+    artist = models.ForeignKey(
+        'Artist', null=True, blank=True, on_delete=models.CASCADE, related_name='feed_items',
+    )
+    venue = models.ForeignKey(
+        'Venue', null=True, blank=True, on_delete=models.CASCADE, related_name='feed_items',
+    )
+    title       = models.CharField(max_length=500)
+    link        = models.URLField(max_length=1000)
+    description = models.TextField(blank=True)
+    published   = models.DateTimeField(null=True, blank=True)
+    guid        = models.CharField(max_length=1000)
+    bsky_posted = models.BooleanField(default=False)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-published', '-created_at']
+
+    def __str__(self):
+        owner = self.community_space or self.artist or self.venue or '?'
+        return f'{owner} — {self.title[:60]}'
+
+
+class SupportTicket(models.Model):
+    """A suggestion, bug report, or general message submitted via the CP About page."""
+
+    TYPE_IDEA    = 'idea'
+    TYPE_BUG     = 'bug'
+    TYPE_VENUE   = 'venue'
+    TYPE_SPACE   = 'space'
+    TYPE_OTHER   = 'other'
+    TYPE_CHOICES = [
+        (TYPE_IDEA,  '💡 Idea / Feature'),
+        (TYPE_BUG,   '🐛 Bug Report'),
+        (TYPE_VENUE, '🏛 Add a Venue'),
+        (TYPE_SPACE, '🌱 Add a Space'),
+        (TYPE_OTHER, '💬 General Message'),
+    ]
+
+    STATUS_OPEN        = 'open'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_CLOSED      = 'closed'
+    STATUS_CHOICES = [
+        (STATUS_OPEN,        'Open'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_CLOSED,      'Closed'),
+    ]
+
+    ticket_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_OTHER)
+    subject     = models.CharField(max_length=200)
+    body        = models.TextField()
+    from_name   = models.CharField(max_length=120, blank=True)
+    from_email  = models.EmailField(blank=True)
+    user        = models.ForeignKey(
+        'auth.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='support_tickets',
+    )
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    admin_notes = models.TextField(blank=True, help_text='Internal notes — not visible to submitter')
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Support Ticket'
+        verbose_name_plural = 'Support Tickets'
+
+    def __str__(self):
+        return f'[{self.get_ticket_type_display()}] {self.subject}'
 
 
 class RecordListing(models.Model):
@@ -592,6 +1085,10 @@ class Event(models.Model):
     latitude = models.FloatField(blank=True, null=True)
     longitude = models.FloatField(blank=True, null=True)
     view_count = models.PositiveIntegerField(default=0)
+    flyer_url      = models.URLField(blank=True, help_text='Instagram post URL or direct flyer image URL — used for AI enrichment')
+    flyer_scanned  = models.BooleanField(default=False, help_text='Set once moondream has scanned this flyer')
+    youtube_playlist = models.URLField(blank=True,
+                                       help_text='YouTube playlist URL for this event — shown on event page (e.g. https://youtube.com/playlist?list=PLxxxx)')
 
     class Meta:
         ordering = ['start_date']
@@ -662,6 +1159,10 @@ class Venue(models.Model):
     threads      = models.CharField(max_length=100, blank=True, help_text='Handle without @')
     soundcloud   = models.CharField(max_length=100, blank=True, help_text='Username / profile slug')
     mixcloud     = models.CharField(max_length=100, blank=True, help_text='Username / profile slug')
+    brand_color  = models.CharField(
+        max_length=7, blank=True, default='',
+        help_text='Profile accent hex color e.g. #ff6b35 — leave blank for default orange',
+    )
     venue_feed   = models.OneToOneField(
         'VenueFeed', null=True, blank=True, on_delete=models.SET_NULL,
         related_name='venue_profile',
@@ -674,7 +1175,13 @@ class Venue(models.Model):
     verified     = models.BooleanField(default=False, help_text='Admin-verified venue')
     active       = models.BooleanField(default=True, help_text='Uncheck to mark venue as permanently closed')
     closed_date  = models.DateField(null=True, blank=True, help_text='Date venue closed (for display)')
+    link_broken      = models.BooleanField(default=False, help_text='Website URL returned 4xx/5xx (check_links cron)')
+    link_checked_at  = models.DateTimeField(null=True, blank=True, help_text='Last time website URL was checked')
+    is_live      = models.BooleanField(default=False, help_text='Currently streaming live (updated by check_live_streams)')
+    youtube_channel_id = models.CharField(max_length=50, blank=True, help_text='Cached YouTube channel ID (UCxxx…)')
     view_count   = models.PositiveIntegerField(default=0)
+    allow_comments = models.BooleanField(default=False, help_text='Allow public comments on venue page')
+    rss_feed     = models.URLField(blank=True, help_text='External RSS feed URL — items pulled and shown on profile')
     created_at   = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -801,6 +1308,47 @@ class UserProfile(models.Model):
     verify_token    = models.CharField(max_length=64, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
 
+    # Profile type flags — each unlocks the matching dashboard section
+    wants_artist   = models.BooleanField(default=False, help_text='User has or wants an artist profile')
+    wants_promoter = models.BooleanField(default=False, help_text='User has or wants a crew/promoter profile')
+    wants_venue    = models.BooleanField(default=False, help_text='User has or wants a venue profile')
+
+    # Contact / web3
+    messenger_telegram = models.CharField(
+        max_length=100, blank=True,
+        help_text='Telegram handle without @ — links to t.me/handle',
+    )
+    messenger_discord = models.CharField(
+        max_length=30, blank=True,
+        help_text='Discord user ID (numeric) — links to discord.com/users/ID. Find it: Settings → Advanced → Developer Mode, then right-click your name.',
+    )
+    messenger_signal = models.CharField(
+        max_length=100, blank=True,
+        help_text='Signal username (without +) — links to signal.me',
+    )
+    sol_wallet = models.CharField(
+        max_length=120, blank=True,
+        help_text='Solana wallet address (Phantom public key, etc.)',
+    )
+
+    # Music service usernames
+    lastfm_username        = models.CharField(max_length=100, blank=True, help_text='Last.fm username')
+    listenbrainz_username  = models.CharField(max_length=100, blank=True, help_text='ListenBrainz username')
+    discogs_username       = models.CharField(max_length=100, blank=True, help_text='Discogs username')
+
+    # Public profile privacy controls
+    show_embeds          = models.BooleanField(default=True,  help_text='Show music embeds on public profile')
+    show_following       = models.BooleanField(default=False, help_text='Show following list on public profile')
+    show_saved_tracks    = models.BooleanField(default=False, help_text='Show saved tracks on public profile')
+    show_rss_feed        = models.BooleanField(default=False, help_text='Show RSS feed link on public profile')
+    show_upcoming_events = models.BooleanField(default=True,  help_text='Show upcoming events on public profile')
+
+    # Onboarding state
+    onboarded = models.BooleanField(
+        default=False,
+        help_text='Completed post-signup profile type picker',
+    )
+
     class Meta:
         verbose_name = 'User Profile'
 
@@ -831,11 +1379,13 @@ class EditSuggestion(models.Model):
     TYPE_VENUE        = 'venue'
     TYPE_ARTIST       = 'artist'
     TYPE_NEIGHBORHOOD = 'neighborhood'
+    TYPE_PROMOTER     = 'promoter'
     TYPE_CHOICES = [
         (TYPE_EVENT,        'Event'),
         (TYPE_VENUE,        'Venue'),
         (TYPE_ARTIST,       'Artist'),
         (TYPE_NEIGHBORHOOD, 'Neighborhood'),
+        (TYPE_PROMOTER,     'Crew / Collective / Promoter'),
     ]
     STATUS_PENDING  = 'pending'
     STATUS_APPROVED = 'approved'
@@ -849,8 +1399,9 @@ class EditSuggestion(models.Model):
     FIELDS = {
         TYPE_EVENT:        [('description','Description'), ('location','Location'), ('price_info','Price info'), ('website','Website / tickets URL')],
         TYPE_VENUE:        [('description','Description'), ('address','Address'), ('website','Website')],
-        TYPE_ARTIST:       [('bio','Bio'), ('website','Website')],
+        TYPE_ARTIST:       [('bio','Bio'), ('website','Website'), ('instagram','Instagram handle'), ('soundcloud','SoundCloud username'), ('bandcamp','Bandcamp URL')],
         TYPE_NEIGHBORHOOD: [('description','Description'), ('wiki_url','Wikipedia URL')],
+        TYPE_PROMOTER:     [('bio','Bio / Description'), ('website','Website'), ('instagram','Instagram handle'), ('soundcloud','SoundCloud username'), ('bandcamp','Bandcamp URL'), ('discord','Discord invite link')],
     }
 
     user            = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='edit_suggestions')
@@ -883,6 +1434,8 @@ class EditSuggestion(models.Model):
             return Artist.objects.filter(pk=self.target_id).first()
         if self.target_type == self.TYPE_NEIGHBORHOOD:
             return Neighborhood.objects.filter(pk=self.target_id).first()
+        if self.target_type == self.TYPE_PROMOTER:
+            return PromoterProfile.objects.filter(pk=self.target_id).first()
         return None
 
     def apply(self):
@@ -901,11 +1454,13 @@ class Follow(models.Model):
     TYPE_VENUE        = 'venue'
     TYPE_NEIGHBORHOOD = 'neighborhood'
     TYPE_PROMOTER     = 'promoter'
+    TYPE_SPACE        = 'space'
     TYPE_CHOICES = [
         (TYPE_ARTIST,       'Artist'),
         (TYPE_VENUE,        'Venue'),
         (TYPE_NEIGHBORHOOD, 'Neighborhood'),
         (TYPE_PROMOTER,     'Promoter'),
+        (TYPE_SPACE,        'Community Space'),
     ]
     user        = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='follows')
     target_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
@@ -929,6 +1484,8 @@ class Follow(models.Model):
             return Neighborhood.objects.filter(pk=self.target_id).first()
         if self.target_type == self.TYPE_PROMOTER:
             return PromoterProfile.objects.filter(pk=self.target_id).first()
+        if self.target_type == self.TYPE_SPACE:
+            return CommunitySpace.objects.filter(pk=self.target_id).first()
         return None
 
 
@@ -944,6 +1501,40 @@ class SavedTrack(models.Model):
 
     def __str__(self):
         return f'{self.user} ♥ {self.track}'
+
+
+class TrackReaction(models.Model):
+    """A thumbs-up or thumbs-down reaction to a playlist track."""
+    THUMBS_UP   = 'up'
+    THUMBS_DOWN = 'down'
+    REACTION_CHOICES = [('up', 'Thumbs Up'), ('down', 'Thumbs Down')]
+
+    user     = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='track_reactions')
+    track    = models.ForeignKey(PlaylistTrack, on_delete=models.CASCADE, related_name='reactions')
+    reaction = models.CharField(max_length=4, choices=REACTION_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('user', 'track')]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user} {self.reaction} {self.track}'
+
+
+class TrackComment(models.Model):
+    """A time-stamped text comment on a playlist track, left by a logged-in user."""
+    user  = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='track_comments')
+    track = models.ForeignKey(PlaylistTrack, on_delete=models.CASCADE, related_name='comments')
+    body  = models.TextField(max_length=500)
+    ts    = models.PositiveIntegerField(default=0, help_text='Playback position in seconds')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['ts', 'created_at']
+
+    def __str__(self):
+        return f'{self.user} @{self.ts}s on {self.track}'
 
 
 class VideoTrack(models.Model):
@@ -996,8 +1587,10 @@ class VideoTrack(models.Model):
     live_checked_at = models.DateTimeField(null=True, blank=True)
     live_viewer_count = models.PositiveIntegerField(null=True, blank=True)
 
-    play_count  = models.PositiveIntegerField(default=0)
-    is_active   = models.BooleanField(default=True, help_text='Uncheck to hide from MTV channel')
+    play_count   = models.PositiveIntegerField(default=0)
+    is_active    = models.BooleanField(default=True, help_text='Uncheck to hide from MTV channel')
+    yt_embeddable = models.BooleanField(default=True,
+                                        help_text='False when YouTube owner has disabled embedding — never shown in inline players')
     created_at  = models.DateTimeField(auto_now_add=True)
     last_synced = models.DateTimeField(auto_now=True)
 
@@ -1022,6 +1615,252 @@ class VideoTrack(models.Model):
         return ''
 
 
+class Shelter(models.Model):
+    """A PDX-area shelter, resource center, or emergency service."""
+
+    TYPE_EMERGENCY    = 'emergency'
+    TYPE_WARMING      = 'warming'
+    TYPE_COOLING      = 'cooling'
+    TYPE_OVERNIGHT    = 'overnight'
+    TYPE_DAY          = 'day'
+    TYPE_HYGIENE      = 'hygiene'
+    TYPE_TINY_HOME    = 'tiny_home'
+    TYPE_TRANSITIONAL = 'transitional'
+    TYPE_YOUTH        = 'youth'
+    TYPE_FAMILY       = 'family'
+    TYPE_WOMENS       = 'womens'
+    TYPE_VETERAN      = 'veteran'
+    TYPE_SOBERING     = 'sobering'
+    TYPE_HOTLINE      = 'hotline'
+
+    TYPE_CHOICES = [
+        (TYPE_EMERGENCY,    'Emergency Shelter'),
+        (TYPE_WARMING,      'Warming Center'),
+        (TYPE_COOLING,      'Cooling Center'),
+        (TYPE_OVERNIGHT,    'Overnight Shelter'),
+        (TYPE_DAY,          'Day Shelter / Drop-in'),
+        (TYPE_HYGIENE,      'Hygiene Services'),
+        (TYPE_TINY_HOME,    'Tiny Home Village'),
+        (TYPE_TRANSITIONAL, 'Transitional Housing'),
+        (TYPE_YOUTH,        'Youth Shelter'),
+        (TYPE_FAMILY,       'Family Shelter'),
+        (TYPE_WOMENS,       "Women's Shelter"),
+        (TYPE_VETERAN,      'Veterans Services'),
+        (TYPE_SOBERING,     'Sobering / Detox Center'),
+        (TYPE_HOTLINE,      'Hotline / Phone Resource'),
+    ]
+
+    ACCEPTS_ALL      = 'all'
+    ACCEPTS_WOMEN    = 'women'
+    ACCEPTS_MEN      = 'men'
+    ACCEPTS_YOUTH    = 'youth'
+    ACCEPTS_FAMILIES = 'families'
+    ACCEPTS_LGBTQ    = 'lgbtq'
+    ACCEPTS_VETERAN  = 'veteran'
+    ACCEPTS_CHOICES = [
+        (ACCEPTS_ALL,      'Everyone'),
+        (ACCEPTS_WOMEN,    'Women / Non-binary'),
+        (ACCEPTS_MEN,      'Men'),
+        (ACCEPTS_YOUTH,    'Youth (under 25)'),
+        (ACCEPTS_FAMILIES, 'Families with children'),
+        (ACCEPTS_LGBTQ,    'LGBTQ+ affirming'),
+        (ACCEPTS_VETERAN,  'Veterans'),
+    ]
+
+    name          = models.CharField(max_length=200)
+    slug          = models.SlugField(max_length=220, unique=True, blank=True)
+    shelter_type  = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_EMERGENCY)
+    accepts       = models.CharField(max_length=20, choices=ACCEPTS_CHOICES, default=ACCEPTS_ALL,
+                                     help_text='Primary population served')
+    pets_ok       = models.BooleanField(default=False, help_text='Pets accepted')
+    address       = models.CharField(max_length=300, blank=True)
+    neighborhood  = models.CharField(max_length=100, blank=True)
+    latitude      = models.FloatField(null=True, blank=True)
+    longitude     = models.FloatField(null=True, blank=True)
+    phone         = models.CharField(max_length=30, blank=True)
+    website       = models.URLField(blank=True)
+    hours         = models.CharField(max_length=300, blank=True,
+                                     help_text='e.g. "Mon–Fri 7am–9pm" or "24/7"')
+    capacity      = models.PositiveIntegerField(null=True, blank=True,
+                                                help_text='Bed/mat capacity if known')
+    notes         = models.TextField(blank=True,
+                                     help_text='Intake requirements, IDs needed, languages, etc.')
+    # Weather flags — when true this shelter is promoted during those alert conditions
+    available_hot  = models.BooleanField(default=False,
+                                         help_text='Cooling center — promote on hot-weather days (>90°F)')
+    available_cold = models.BooleanField(default=True,
+                                         help_text='Warming center — promote on cold days (<35°F)')
+    available_smoke = models.BooleanField(default=False,
+                                          help_text='Indoor/filtered air — promote on high-particulate days')
+    active        = models.BooleanField(default=True)
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['shelter_type', 'name']
+        verbose_name = 'Shelter / Resource'
+        verbose_name_plural = 'Shelters & Resources'
+
+    def __str__(self):
+        return f'{self.name} ({self.get_shelter_type_display()})'
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name)
+            slug, n = base, 1
+            while Shelter.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f'{base}-{n}'; n += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def as_map_dict(self):
+        return {
+            'id':           self.pk,
+            'name':         self.name,
+            'type':         self.shelter_type,
+            'type_display': self.get_shelter_type_display(),
+            'accepts':      self.get_accepts_display(),
+            'pets_ok':      self.pets_ok,
+            'address':      self.address,
+            'phone':        self.phone,
+            'website':      self.website,
+            'hours':        self.hours,
+            'notes':        self.notes,
+            'latitude':     self.latitude,
+            'longitude':    self.longitude,
+            'available_hot':   self.available_hot,
+            'available_cold':  self.available_cold,
+            'available_smoke': self.available_smoke,
+        }
+
+
+class InstagramAccount(models.Model):
+    """A public Instagram account whose posts should be periodically harvested."""
+    STATUS_PENDING  = 'pending'
+    STATUS_ACTIVE   = 'active'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES  = [
+        (STATUS_PENDING,  'Pending review'),
+        (STATUS_ACTIVE,   'Active — harvest posts'),
+        (STATUS_REJECTED, 'Rejected — skip'),
+    ]
+
+    handle           = models.CharField(max_length=100, unique=True,
+                                        help_text='Handle without @, e.g. rave.pdx')
+    promoter_profile = models.OneToOneField(
+        'PromoterProfile', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='instagram_account', help_text='Linked promoter/crew profile'
+    )
+    artist           = models.OneToOneField(
+        'Artist', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='instagram_account', help_text='Linked artist profile'
+    )
+    ig_user_id      = models.CharField(max_length=50, blank=True)
+    display_name    = models.CharField(max_length=200, blank=True)
+    bio             = models.TextField(blank=True)
+    follower_count  = models.IntegerField(null=True, blank=True)
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES,
+                                       default=STATUS_ACTIVE,
+                                       help_text='Active accounts are harvested; pending awaits review')
+    last_fetched    = models.DateTimeField(null=True, blank=True)
+    is_active       = models.BooleanField(default=True)
+    notes           = models.TextField(blank=True, help_text='Internal notes about this account')
+    harvest_for_events = models.BooleanField(
+        default=False,
+        help_text='Run moondream flyer scan on new posts — creates pending Events from detected flyers'
+    )
+
+    class Meta:
+        ordering = ['handle']
+        verbose_name = 'Instagram Account'
+        verbose_name_plural = 'Instagram Accounts'
+
+    def __str__(self):
+        return f'@{self.handle}'
+
+
+class InstagramPost(models.Model):
+    """A single post harvested from a tracked Instagram account."""
+    account     = models.ForeignKey(InstagramAccount, on_delete=models.CASCADE,
+                                    related_name='posts')
+    ig_post_id  = models.CharField(max_length=100, unique=True)
+    shortcode   = models.CharField(max_length=100, unique=True)
+    caption     = models.TextField(blank=True)
+    image_url   = models.URLField(max_length=1000, blank=True)
+    is_video    = models.BooleanField(default=False)
+    posted_at   = models.DateTimeField()
+    fetched_at  = models.DateTimeField(auto_now_add=True)
+    flyer_scanned   = models.BooleanField(default=False)
+    flyer_result    = models.JSONField(null=True, blank=True, help_text='Raw moondream output — dict of extracted event fields')
+    sourced_event   = models.ForeignKey('Event', null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name='instagram_sources',
+                                        help_text='Event created from this post by flyer scan')
+    tagged_handles  = models.JSONField(default=list, blank=True,
+                                       help_text='Instagram handles tagged in this post')
+
+    class Meta:
+        ordering = ['-posted_at']
+        verbose_name = 'Instagram Post'
+        verbose_name_plural = 'Instagram Posts'
+
+    def __str__(self):
+        return f'@{self.account.handle} — {self.shortcode}'
+
+    @property
+    def permalink(self):
+        return f'https://www.instagram.com/p/{self.shortcode}/'
+
+
+class FlyerBackground(models.Model):
+    """Reusable background images for the event flyer generator. Max 10 per user."""
+    owner      = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='flyer_backgrounds')
+    image      = models.ImageField(upload_to='flyer_backgrounds/%Y/', blank=True)
+    source_url = models.URLField(blank=True, max_length=500)  # Drive or remote URL alternative
+    label      = models.CharField(max_length=60, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = 'Flyer Background'
+        verbose_name_plural = 'Flyer Backgrounds'
+
+    def __str__(self):
+        return self.label or f'Background #{self.pk}'
+
+    @property
+    def bg_url(self):
+        if self.image:
+            try:
+                return self.image.url
+            except ValueError:
+                pass
+        if self.source_url:
+            # Convert Google Drive share links → thumbnail URL
+            m = re.search(r'/d/([a-zA-Z0-9_-]+)', self.source_url)
+            if m:
+                return f'https://drive.google.com/thumbnail?id={m.group(1)}&sz=w1200'
+            m = re.search(r'id=([a-zA-Z0-9_-]+)', self.source_url)
+            if m:
+                return f'https://drive.google.com/thumbnail?id={m.group(1)}&sz=w1200'
+            return self.source_url
+        return ''
+
+
+class UserPlaylist(models.Model):
+    """A saved video queue generated by the profile shuffle feature."""
+    user       = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='playlists')
+    name       = models.CharField(max_length=200)
+    items      = models.JSONField(default=list, help_text='List of {video_id, title, artist} dicts')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return self.name
+
+
 class CronStatus(models.Model):
     """Proxy model — no DB table. Used only to hang a custom admin page off."""
     class Meta:
@@ -1029,3 +1868,83 @@ class CronStatus(models.Model):
         verbose_name = 'Cron Status'
         verbose_name_plural = 'Cron Status'
         app_label = 'events'
+
+class WorkerTask(models.Model):
+    """Async task queue — processed by Unraid pull-worker, fallback on Plesk."""
+    TASK_TYPES = [
+        ("geocode_event", "Geocode Event"),
+        ("geocode_venue", "Geocode Venue"),
+        ("post_bluesky",  "Post to Bluesky"),
+    ]
+    STATUSES = [
+        ("queued",  "Queued"),
+        ("running", "Running"),
+        ("done",    "Done"),
+        ("error",   "Error"),
+    ]
+    task_type    = models.CharField(max_length=50, choices=TASK_TYPES, db_index=True)
+    payload      = models.JSONField(default=dict)
+    status       = models.CharField(max_length=20, choices=STATUSES, default="queued", db_index=True)
+    result       = models.JSONField(null=True, blank=True)
+    error_msg    = models.TextField(blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["status", "task_type"])]
+
+    def __str__(self):
+        return f"{self.task_type} [{self.status}] #{self.pk}"
+
+
+class VideoRoomMessage(models.Model):
+    """Chat messages for the video theater room."""
+    user         = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL)
+    display_name = models.CharField(max_length=40, blank=True)
+    content      = models.CharField(max_length=400)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes  = [models.Index(fields=['created_at'])]
+
+    @property
+    def author(self):
+        if self.user_id:
+            return self.user.username
+        return self.display_name or 'anon'
+
+    def __str__(self):
+        return f'{self.author}: {self.content[:40]}'
+
+
+class GenreSuggestion(models.Model):
+    """Community-submitted genre suggestion for a playlist or video track."""
+    STATUS_PENDING  = 'pending'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES  = [
+        (STATUS_PENDING,  'Pending'),
+        (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+
+    track           = models.ForeignKey('PlaylistTrack', null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name='genre_suggestions')
+    video_track     = models.ForeignKey('VideoTrack', null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name='genre_suggestions')
+    artist_name     = models.CharField(max_length=200, blank=True)
+    track_title     = models.CharField(max_length=300, blank=True)
+    current_genre   = models.CharField(max_length=100, blank=True,
+                                       help_text='Genre on the track at time of suggestion')
+    suggested_genre = models.CharField(max_length=100)
+    status          = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    submitted_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-submitted_at']
+        indexes  = [models.Index(fields=['status', '-submitted_at'])]
+
+    def __str__(self):
+        return f'{self.artist_name} – {self.track_title[:40]}: {self.suggested_genre!r}'

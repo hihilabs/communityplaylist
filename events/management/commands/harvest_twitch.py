@@ -49,6 +49,10 @@ def get_access_token(client_id, client_secret):
     return r.json()['access_token']
 
 
+class TwitchUserNotFound(Exception):
+    """Raised when Twitch returns 400 for a username — channel doesn't exist."""
+
+
 def _get(endpoint, params, client_id, token):
     """Twitch Helix API GET with auth headers."""
     headers = {
@@ -57,6 +61,8 @@ def _get(endpoint, params, client_id, token):
     }
     r = requests.get(f'{TWITCH_API}/{endpoint}', params=params,
                      headers=headers, timeout=15)
+    if r.status_code == 400:
+        raise TwitchUserNotFound(params.get('user_login', ''))
     r.raise_for_status()
     return r.json()
 

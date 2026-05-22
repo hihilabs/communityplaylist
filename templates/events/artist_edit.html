@@ -1,9 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Edit — {{ artist.name }} — Community Playlist</title>
+{% extends 'base.html' %}
+{% block title %}Edit — {{ artist.name }} — Community Playlist{% endblock %}
+{% block styles %}
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#111;color:#eee;font-family:sans-serif;padding:24px 16px}
@@ -25,11 +22,19 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
 .photo-current{width:60px;height:60px;border-radius:8px;object-fit:cover;margin-bottom:8px;display:block}
 @media(max-width:500px){.social-grid{grid-template-columns:1fr}}
 </style>
-</head>
-<body>
+{% endblock %}
+{% block body %}
 <div class="wrap">
 <a href="{% url 'artist_profile' artist.slug %}" class="back">← {{ artist.name }}</a>
 <h1>Edit artist profile</h1>
+
+{% if messages %}
+  {% for msg in messages %}
+  <div style="background:#1a2a1a;border:1px solid #2a4a2a;border-radius:7px;padding:10px 16px;margin-bottom:16px;color:#4caf50;font-size:.85em">
+    ✓ {{ msg }}
+  </div>
+  {% endfor %}
+{% endif %}
 
 <form method="post" enctype="multipart/form-data" data-turbo="false">
 {% csrf_token %}
@@ -48,6 +53,19 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
   <div class="fg">
     <label>Website</label>
     <input type="url" name="website" value="{{ artist.website }}" placeholder="https://...">
+  </div>
+  <div class="fg" style="display:flex;align-items:center;gap:14px">
+    <div>
+      <label style="display:block;margin-bottom:5px">Profile accent color</label>
+      <input type="color" name="brand_color" id="brand-color-pick"
+             value="{{ artist.brand_color|default:'#ff6b35' }}"
+             style="width:44px;height:36px;padding:2px;border:1px solid #333;border-radius:6px;background:#1a1a1a;cursor:pointer">
+    </div>
+    <div style="flex:1">
+      <div class="hint" style="margin-top:0">Your profile accent color — sets the heading, buttons, and highlight tones on your public page. Default is Community Playlist orange.</div>
+      <button type="button" onclick="document.getElementById('brand-color-pick').value='#ff6b35'"
+              style="margin-top:8px;background:transparent;border:1px solid #333;color:#555;font-size:.75em;padding:3px 10px;border-radius:4px;cursor:pointer">Reset to default</button>
+    </div>
   </div>
 </div>
 
@@ -83,6 +101,10 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
       <input type="text" name="bluesky" value="{{ artist.bluesky }}" placeholder="you.bsky.social">
     </div>
     <div class="fg">
+      <label>Ko-fi username ☕</label>
+      <input type="text" name="kofi" value="{{ artist.kofi }}" placeholder="yourname (from ko-fi.com/yourname)">
+    </div>
+    <div class="fg">
       <label>TikTok handle</label>
       <input type="text" name="tiktok" value="{{ artist.tiktok }}" placeholder="no @">
     </div>
@@ -107,6 +129,27 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
 </div>
 
 <div class="card">
+  <div class="card-title">🎛 House-Mixes.com</div>
+  <p style="font-size:.78em;color:#555;margin-bottom:14px;line-height:1.6">Connect your house-mixes.com profile to display your mixes on your artist page — playable directly in the Community Playlist player.</p>
+  <div class="social-grid">
+    <div class="fg">
+      <label>house-mixes.com username</label>
+      <input type="text" name="house_mixes" value="{{ artist.house_mixes }}" placeholder="your username">
+      <div class="hint">Your profile at house-mixes.com/<strong>username</strong></div>
+    </div>
+    <div class="fg">
+      <label>Sort mixes by</label>
+      <select name="house_mixes_sort" style="width:100%;padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#eee;font-size:.9em">
+        <option value="newest"    {% if artist.house_mixes_sort == 'newest'    or not artist.house_mixes_sort %}selected{% endif %}>Newest first</option>
+        <option value="oldest"    {% if artist.house_mixes_sort == 'oldest'    %}selected{% endif %}>Oldest first</option>
+        <option value="downloads" {% if artist.house_mixes_sort == 'downloads' %}selected{% endif %}>Most downloaded</option>
+        <option value="plays"     {% if artist.house_mixes_sort == 'plays'     %}selected{% endif %}>Most played</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="card">
   <div class="card-title">Music Folder</div>
   <div class="fg">
     <label>Google Drive Folder URL</label>
@@ -120,8 +163,46 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
   </div>
 </div>
 
+<div class="card">
+  <div class="card-title">🎼 MusicBrainz</div>
+  <p style="font-size:.82em;color:#aaa;line-height:1.65;margin-bottom:10px">
+    <strong style="color:#eee">MusicBrainz is the open encyclopedia that Spotify, Apple Music, Last.fm, and ASCAP all pull from.</strong>
+    Linking your profile here does a few things for you:
+  </p>
+  <ul style="font-size:.8em;color:#888;line-height:2;margin:0 0 14px 18px;list-style:disc">
+    <li>Your name shows up accurately in genre catalogues and streaming metadata</li>
+    <li>ASCAP, BMI, and SOCAN use it to track live performances — helps if you're registered</li>
+    <li>Releases, aliases, and collaborations all get indexed under one canonical ID</li>
+    <li>A verified badge appears on your Community Playlist profile</li>
+  </ul>
+  <p style="font-size:.78em;color:#555;line-height:1.6;margin-bottom:14px">
+    No account? <a href="https://musicbrainz.org/register" target="_blank" rel="noopener noreferrer" style="color:#ff6b35">Sign up free →</a>
+    — search for your artist name, add your releases, and grab the UUID from your artist page URL.
+    Already there? <a href="https://musicbrainz.org/search?type=artist" target="_blank" rel="noopener noreferrer" style="color:#ff6b35">Search for yourself →</a>
+  </p>
+
+  {% if artist.mb_id %}
+  <div style="background:#1a1f1a;border:1px solid #2a3a2a;border-radius:7px;padding:12px 14px;margin-bottom:12px;font-size:.8em">
+    <div style="color:#4caf50;margin-bottom:4px;font-weight:600">✓ MusicBrainz linked</div>
+    <a href="https://musicbrainz.org/artist/{{ artist.mb_id }}" target="_blank" rel="noopener noreferrer"
+       style="color:#888;font-family:monospace;word-break:break-all">{{ artist.mb_id }}</a>
+    &nbsp;
+    <a href="https://musicbrainz.org/artist/{{ artist.mb_id }}" target="_blank" rel="noopener noreferrer"
+       style="color:#ff6b35;font-size:.9em">Verify →</a>
+    <div style="color:#555;margin-top:6px;font-size:.9em">Paste a different ID below to replace it, or clear the field to remove the link.</div>
+  </div>
+  {% endif %}
+
+  <div class="fg">
+    <label>MusicBrainz ID <span style="color:#444;font-weight:400">(UUID or full artist page URL)</span></label>
+    <input type="text" name="mb_id" value="{{ artist.mb_id }}"
+           placeholder="e.g. 9c9f1380-2516-11e0-8467-0025781b7e3c"
+           style="font-family:monospace">
+    <div class="hint">Find it in the URL on your MusicBrainz artist page: musicbrainz.org/artist/<strong>&lt;paste-here&gt;</strong></div>
+  </div>
+</div>
+
 <button type="submit" class="btn">Save changes</button>
 </form>
 </div>
-</body>
-</html>
+{% endblock %}

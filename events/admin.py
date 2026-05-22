@@ -3,41 +3,16 @@ from django.utils.html import format_html, mark_safe
 from django.utils.timezone import localtime
 from django.template.response import TemplateResponse
 from django.urls import path
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, StreamingHttpResponse
 from django.contrib import messages
 from django import forms
-from .models import Event, EventPhoto, VenueFeed, CalendarFeed, Genre, Artist, RecurringEvent, CronStatus, Venue, EditSuggestion, Neighborhood, UserProfile, PromoterProfile, PlaylistTrack, RecordListing, RecordReservation, VideoTrack
+from .models import Event, EventPhoto, VenueFeed, CalendarFeed, Genre, Artist, RecurringEvent, CronStatus, Venue, EditSuggestion, Neighborhood, UserProfile, PromoterProfile, PlaylistTrack, RecordListing, RecordReservation, VideoTrack, Shelter, InstagramAccount, InstagramPost, WorkerTask, CommunitySpace, CommunityAsk, KofiPost, SupportTicket, GenreSuggestion
 import os
 import datetime
 import subprocess
 import requests
 
-DISCORD_EVENTS = "https://discord.com/api/webhooks/1487258605102039051/aMDBINHJSRTE2DVRB7AIdEQpC-5pacJgEKwEn9_gf6nhJbCLlsXD41zADDIlP-5Md5CC"
 LOGO = "https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png"
-
-def post_to_discord_events(event):
-    try:
-        genres = ', '.join(event.genres.values_list('name', flat=True)) or 'Various'
-        image_url = f"https://communityplaylist.com{event.photo.url}" if event.photo else LOGO
-        payload = {
-            "embeds": [{
-                "title": event.title,
-                "url": f"https://communityplaylist.com/events/{event.slug}/",
-                "description": event.description[:200] + '...' if len(event.description) > 200 else event.description,
-                "color": 0xff6b35,
-                "fields": [
-                    {"name": "📅 Date", "value": localtime(event.start_date).strftime('%A, %B %d %Y @ %I:%M %p'), "inline": True},
-                    {"name": "📍 Location", "value": event.location[:100], "inline": True},
-                    {"name": "🎵 Genre", "value": genres, "inline": True},
-                    {"name": "💰 Cost", "value": "FREE" if event.is_free else event.price_info or "Paid", "inline": True},
-                ],
-                "thumbnail": {"url": image_url},
-                "footer": {"text": "communityplaylist.com — PDX community events"}
-            }]
-        }
-        requests.post(DISCORD_EVENTS, json=payload)
-    except Exception as e:
-        print(f"Discord notify error: {e}")
 
 
 class EventPhotoInline(admin.TabularInline):
@@ -109,75 +84,392 @@ merge_artists.short_description = 'Merge selected artists into the most canonica
 
 @admin.register(Artist)
 class ArtistAdmin(admin.ModelAdmin):
-    search_fields = ['name', 'slug']
+    search_fields = ['name', 'slug', 'city', 'home_neighborhood']
     ordering = ['name']
-    list_display = ['name', 'slug', 'mb_id', 'website', 'has_drive', 'is_verified', 'claimed_by']
+    list_display  = ['name', 'slug', 'stub_badge', 'show_count', 'home_neighborhood',
+                     'city', 'has_drive', 'mb_badge', 'is_verified', 'claimed_by', 'last_enriched_at']
     list_editable = ['is_verified']
-    list_filter = ['is_verified']
+    list_filter   = ['is_verified', 'is_stub', 'twitch_unresolvable', 'link_broken', 'claimed_by']
     raw_id_fields = ['claimed_by']
-    actions = [merge_artists]
+    actions       = [merge_artists, 'rebuild_stubs', 'mark_not_stub', 'convert_to_crew', 'retire_as_crew',
+                     'clear_mb_id']
+    readonly_fields = ['is_stub', 'auto_bio', 'home_neighborhood', 'city',
+                       'latitude', 'longitude', 'last_enriched_at', 'mb_verify_link']
+    raw_id_fields = ['claimed_by', 'linked_promoter']
+    change_form_template = 'admin/events/artist/change_form.html'
+    fieldsets = [
+        (None, {'fields': ['name', 'slug', 'photo', 'bio', 'website', 'genre']}),
+        ('Social links', {'fields': ['instagram', 'soundcloud', 'bandcamp', 'mixcloud',
+                                     'youtube', 'spotify', 'mastodon', 'bluesky',
+                                     'tiktok', 'twitch', 'beatport', 'discogs',
+                                     'house_mixes', 'house_mixes_sort'], 'classes': ['collapse']}),
+        ('Music folder', {'fields': ['drive_folder_url']}),
+        ('Claim & verification', {'fields': ['admin_email', 'claimed_by', 'is_verified', 'is_live',
+                                              'youtube_channel_id', 'view_count', 'linked_promoter']}),
+        ('MusicBrainz', {
+            'fields': ['mb_id', 'mb_verify_link'],
+            'description': (
+                'Paste the correct UUID from musicbrainz.org/artist/&lt;uuid&gt;, '
+                'or clear to remove the link from the public profile. '
+                'The enrichment cron will not overwrite a manually-set ID.'
+            ),
+        }),
+        ('Auto-generated', {'fields': ['is_stub', 'auto_bio', 'home_neighborhood', 'city',
+                                        'latitude', 'longitude', 'last_enriched_at',
+                                        'enrichment_locked'], 'classes': ['collapse']}),
+    ]
+
+    def get_urls(self):
+        from django.urls import path as _path
+        urls = super().get_urls()
+        return [
+            _path('<int:pk>/send-claim-email/',
+                  self.admin_site.admin_view(self._send_claim_email_view),
+                  name='events_artist_send_claim_email'),
+        ] + urls
+
+    def _send_claim_email_view(self, request, pk):
+        from django.shortcuts import redirect, get_object_or_404
+        from django.urls import reverse
+        obj = get_object_or_404(Artist, pk=pk)
+        if not obj.admin_email:
+            self.message_user(request, 'No admin email set on this artist.', level='error')
+        else:
+            PromoterProfileAdmin._do_send_claim_email(request, obj, 'artists')
+        return redirect(reverse('admin:events_artist_change', args=[pk]))
+
+    def mb_verify_link(self, obj):
+        from django.utils.html import format_html
+        if not obj.mb_id:
+            return '—  (no MusicBrainz ID set)'
+        url = f'https://musicbrainz.org/artist/{obj.mb_id}'
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener noreferrer" '
+            'style="font-family:monospace">{}</a>&nbsp;&nbsp;'
+            '<a href="{}" target="_blank" rel="noopener noreferrer" '
+            'style="font-size:.85em;color:#888">Verify on MusicBrainz ↗</a>',
+            url, obj.mb_id, url,
+        )
+    mb_verify_link.short_description = 'MB profile link'
+
+    def mb_badge(self, obj):
+        return '✓ MB' if obj.mb_id else '—'
+    mb_badge.short_description = 'MB'
+
+    def clear_mb_id(self, request, queryset):
+        updated = queryset.update(mb_id='')
+        self.message_user(request, f'Cleared MusicBrainz ID on {updated} artist(s).')
+    clear_mb_id.short_description = '🔗 Clear MusicBrainz ID (wrong match)'
+
+    def stub_badge(self, obj):
+        if obj.is_stub and not obj.claimed_by_id:
+            return '🤖 stub'
+        if obj.claimed_by_id:
+            return '✅ claimed'
+        return '—'
+    stub_badge.short_description = 'Status'
+
+    def show_count(self, obj):
+        return obj.events.filter(status='approved').count()
+    show_count.short_description = 'Shows'
 
     def has_drive(self, obj):
         return bool(obj.drive_folder_url)
     has_drive.boolean = True
     has_drive.short_description = 'Drive'
+
+    def rebuild_stubs(self, request, queryset):
+        from django.core.management import call_command
+        call_command('auto_stub_artists', '--force-refresh')
+        self.message_user(request, 'Stub rebuild triggered for all qualifying artists.')
+    rebuild_stubs.short_description = '🤖 Rebuild stubs (geo + auto-bio)'
+
+    def mark_not_stub(self, request, queryset):
+        updated = queryset.update(is_stub=False)
+        self.message_user(request, f'{updated} artist(s) unmarked as stubs.')
+    mark_not_stub.short_description = '✏️ Mark selected as real (not stub)'
+
+    def convert_to_crew(self, request, queryset):
+        """Create a PromoterProfile for each selected artist and link them (keeps Artist record)."""
+        from django.utils.text import slugify as _slugify
+        created = already = 0
+        for artist in queryset:
+            if artist.linked_promoter:
+                already += 1
+                continue
+            slug = _slugify(artist.name)
+            promoter, new = PromoterProfile.objects.get_or_create(
+                slug=slug,
+                defaults={
+                    'name':          artist.name,
+                    'promoter_type': 'crew',
+                    'bio':           artist.bio or artist.auto_bio,
+                    'website':       artist.website,
+                    'instagram':     artist.instagram,
+                    'soundcloud':    artist.soundcloud,
+                    'spotify':       artist.spotify,
+                    'claimed_by':    artist.claimed_by,
+                }
+            )
+            artist.linked_promoter = promoter
+            artist.save(update_fields=['linked_promoter'])
+            for ev in artist.events.all():
+                ev.promoters.add(promoter)
+            created += 1
+        self.message_user(request, f'{created} crew profile(s) created and linked, {already} already linked.')
+    convert_to_crew.short_description = '🔁 Link selected artists → Crew profile (keep Artist)'
+
+    def retire_as_crew(self, request, queryset):
+        """
+        Full crew migration: ensure PromoterProfile exists, move all event links,
+        copy missing profile fields, then DELETE the Artist stub.
+
+        Use this when the record is a crew/collective that was mistakenly
+        imported as an individual artist (e.g. Gnosis DnB, Subduction Audio).
+        """
+        from django.utils.text import slugify as _slugify
+        retired = skipped = 0
+        for artist in queryset:
+            # 1. Ensure PromoterProfile exists
+            promoter = artist.linked_promoter
+            if not promoter:
+                slug = _slugify(artist.name)
+                promoter, _ = PromoterProfile.objects.get_or_create(
+                    slug=slug,
+                    defaults={
+                        'name':          artist.name,
+                        'promoter_type': 'crew',
+                        'bio':           artist.bio or artist.auto_bio,
+                        'website':       artist.website,
+                        'instagram':     artist.instagram,
+                        'soundcloud':    artist.soundcloud,
+                        'spotify':       artist.spotify,
+                        'claimed_by':    artist.claimed_by,
+                    }
+                )
+
+            # 2. Copy any richer profile fields the promoter is missing
+            for field in ('bio', 'website', 'instagram', 'soundcloud',
+                          'bandcamp', 'mixcloud', 'youtube', 'spotify',
+                          'mastodon', 'bluesky'):
+                if not getattr(promoter, field, '') and getattr(artist, field, ''):
+                    setattr(promoter, field, getattr(artist, field))
+            if not promoter.bio and artist.auto_bio:
+                promoter.bio = artist.auto_bio
+            promoter.save()
+
+            # 3. Migrate all artist event links → promoter
+            for ev in artist.events.all():
+                ev.promoters.add(promoter)
+
+            # 4. Remove from recurring-event resident lists
+            for rec in artist.recurring_events.all():
+                rec.residents.remove(artist)
+            for feed in artist.resident_feeds.all():
+                feed.residents.remove(artist)
+
+            # 5. Delete the artist stub
+            name = artist.name
+            artist.delete()
+            retired += 1
+
+        noun = 'artist' if retired == 1 else 'artists'
+        self.message_user(
+            request,
+            f'{retired} {noun} retired → crew profile. {skipped} skipped (not stubs).',
+            messages.SUCCESS,
+        )
+    retire_as_crew.short_description = '🪦 Retire selected as Crew (migrate events + delete Artist)'
+
+
+def _promoter_score(p):
+    """Rank promoter profiles for canonical merge: verified > most events > claimed > older pk."""
+    return (
+        p.is_verified * 1000 +
+        p.events.count() * 10 +
+        bool(p.claimed_by) * 5 +
+        bool(p.bio) * 2 +
+        (-p.pk)  # lower pk = created earlier = more canonical
+    )
+
+
+def merge_promoters(modeladmin, request, queryset):
+    """Merge selected PromoterProfiles into the most canonical one."""
+    promoters = list(queryset)
+    if len(promoters) < 2:
+        modeladmin.message_user(request, 'Select at least 2 promoters/crews to merge.', messages.WARNING)
+        return
+
+    winner = max(promoters, key=_promoter_score)
+    losers = [p for p in promoters if p.pk != winner.pk]
+
+    for loser in losers:
+        # Events M2M
+        for event in loser.events.all():
+            event.promoters.remove(loser)
+            event.promoters.add(winner)
+        # Artist linked_promoter FK
+        from events.models import Artist
+        Artist.objects.filter(linked_promoter=loser).update(linked_promoter=winner)
+        # VenueFeed FK
+        from events.models import VenueFeed
+        VenueFeed.objects.filter(promoter=loser).update(promoter=winner)
+        # Carry over missing profile fields
+        for field in ('bio', 'photo', 'website', 'instagram', 'soundcloud',
+                      'bandcamp', 'mixcloud', 'youtube', 'spotify', 'mastodon',
+                      'bluesky', 'tiktok', 'drive_folder_url', 'admin_email',
+                      'name_variants'):
+            if not getattr(winner, field, '') and getattr(loser, field, ''):
+                setattr(winner, field, getattr(loser, field))
+        if not winner.claimed_by and loser.claimed_by:
+            winner.claimed_by = loser.claimed_by
+        if not winner.is_verified and loser.is_verified:
+            winner.is_verified = True
+        loser.delete()
+
+    winner.save()
+    modeladmin.message_user(
+        request,
+        f'Merged {len(losers)} duplicate(s) into "{winner.name}" (pk={winner.pk}).',
+        messages.SUCCESS,
+    )
+
+merge_promoters.short_description = 'Merge selected crews into the most canonical one'
+
+
+class PromoterProfileAdminForm(forms.ModelForm):
+    promoter_type = forms.MultipleChoiceField(
+        choices=PromoterProfile.TYPE_CHOICES,
+        widget=forms.CheckboxSelectMultiple,
+        required=True,
+    )
+
+    class Meta:
+        model = PromoterProfile
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = kwargs.get('instance')
+        if instance:
+            self.initial['promoter_type'] = instance.types
+
+    def clean_promoter_type(self):
+        return self.cleaned_data['promoter_type']
 
 
 @admin.register(PromoterProfile)
 class PromoterProfileAdmin(admin.ModelAdmin):
+    form = PromoterProfileAdminForm
     search_fields = ['name', 'slug', 'admin_email']
     ordering = ['name']
-    list_display = ['name', 'slug', 'admin_email', 'is_verified', 'is_public', 'has_drive', 'claimed_by']
+    list_display = ['name', 'slug', 'name_variants', 'admin_email', 'is_verified', 'is_public', 'has_drive', 'claimed_by']
     list_editable = ['is_verified', 'is_public']
-    list_filter = ['is_verified', 'is_public']
+    list_filter = ['is_verified', 'is_public', 'twitch_unresolvable', 'link_broken']
     raw_id_fields = ['claimed_by']
     filter_horizontal = ['genres']
-    actions = ['send_claim_instructions']
+    actions = [merge_promoters, 'send_claim_instructions', 'convert_to_artist']
 
     def has_drive(self, obj):
         return bool(obj.drive_folder_url)
     has_drive.boolean = True
     has_drive.short_description = 'Drive'
 
-    def send_claim_instructions(self, request, queryset):
+    change_form_template = 'admin/events/promoterprofile/change_form.html'
+
+    def get_urls(self):
+        from django.urls import path as _path
+        urls = super().get_urls()
+        return [
+            _path('<int:pk>/send-claim-email/',
+                  self.admin_site.admin_view(self._send_claim_email_view),
+                  name='events_promoterprofile_send_claim_email'),
+        ] + urls
+
+    def _send_claim_email_view(self, request, pk):
+        from django.shortcuts import redirect, get_object_or_404
+        from django.urls import reverse
+        obj = get_object_or_404(PromoterProfile, pk=pk)
+        if not obj.admin_email:
+            self.message_user(request, 'No admin email set on this profile.', level='error')
+        else:
+            self._do_send_claim_email(request, obj, 'promoters')
+        return redirect(reverse('admin:events_promoterprofile_change', args=[pk]))
+
+    @staticmethod
+    def _do_send_claim_email(request, obj, url_segment):
         from django.core.mail import send_mail
+        profile_url = f'https://communityplaylist.com/{url_segment}/{obj.slug}/'
+        body = (
+            'Hey!\n\n'
+            f'Your profile on Community Playlist is live:\n{profile_url}\n\n'
+            'To take ownership — manage events, sync your record shop, and keep your info '
+            'up to date — create a free account and then claim your profile:\n\n'
+            '1. Register (or log in): https://communityplaylist.com/register/\n'
+            f'2. Visit your profile:   {profile_url}\n'
+            '3. Click "Claim this profile" and you\'re in.\n\n'
+            'Any questions? Reply to this email.\n\n'
+            '-- Community Playlist\n'
+            'https://communityplaylist.com'
+        )
+        try:
+            send_mail(
+                subject=f'Claim your Community Playlist profile — {obj.name}',
+                message=body,
+                from_email='Community Playlist <noreply@communityplaylist.com>',
+                recipient_list=[obj.admin_email],
+                fail_silently=False,
+            )
+            from django.contrib import messages
+            messages.success(request, f'Claim email sent to {obj.admin_email}.')
+        except Exception as e:
+            from django.contrib import messages
+            messages.error(request, f'Mail error: {e}')
+
+    def send_claim_instructions(self, request, queryset):
         sent, skipped = 0, 0
         for promoter in queryset:
-            if not promoter.admin_email:
+            if not promoter.admin_email or promoter.claimed_by:
                 skipped += 1
                 continue
-            if promoter.claimed_by:
-                skipped += 1
-                continue
-            profile_url = f'https://communityplaylist.com/promoters/{promoter.slug}/'
-            body = (
-                'Hey!\n\n'
-                f'Your profile on Community Playlist is live:\n{profile_url}\n\n'
-                'To take ownership -- manage events, sync your record shop, and keep your info '
-                'up to date -- create a free account and then claim your profile:\n\n'
-                '1. Register (or log in): https://communityplaylist.com/register/\n'
-                f'2. Visit your profile:   {profile_url}\n'
-                '3. Click "Claim this profile" and you\'re in.\n\n'
-                'Any questions? Reply to this email.\n\n'
-                '-- Community Playlist\n'
-                'https://communityplaylist.com'
-            )
-            try:
-                send_mail(
-                    subject=f'Claim your Community Playlist profile — {promoter.name}',
-                    message=body,
-                    from_email='Community Playlist <noreply@communityplaylist.com>',
-                    recipient_list=[promoter.admin_email],
-                    fail_silently=False,
-                )
-                sent += 1
-            except Exception as e:
-                self.message_user(request, f'Mail error for {promoter.name}: {e}', level='error')
+            self._do_send_claim_email(request, promoter, 'promoters')
+            sent += 1
         if sent:
             self.message_user(request, f'Claim instructions sent to {sent} profile(s).')
         if skipped:
             self.message_user(request, f'{skipped} skipped (no email or already claimed).', level='warning')
     send_claim_instructions.short_description = 'Send claim instructions email'
+
+    def convert_to_artist(self, request, queryset):
+        """Create an Artist profile for each selected crew and link them."""
+        from django.utils.text import slugify as _slugify
+        created = already = 0
+        for promoter in queryset:
+            if promoter.linked_artists.exists():
+                already += 1
+                continue
+            slug = _slugify(promoter.name)
+            artist, new = Artist.objects.get_or_create(
+                slug=slug,
+                defaults={
+                    'name':       promoter.name,
+                    'bio':        promoter.bio,
+                    'website':    promoter.website,
+                    'instagram':  promoter.instagram,
+                    'soundcloud': promoter.soundcloud,
+                    'spotify':    promoter.spotify,
+                    'claimed_by': promoter.claimed_by,
+                    'is_stub':    not bool(promoter.bio),
+                }
+            )
+            artist.linked_promoter = promoter
+            artist.save(update_fields=['linked_promoter'])
+            # Pull all promoter events into the artist M2M
+            for ev in promoter.events.all():
+                ev.artists.add(artist)
+            created += 1
+        self.message_user(request, f'{created} artist profile(s) created and linked, {already} already linked.')
+    convert_to_artist.short_description = '🎤 Convert selected crews → Artist profile'
 
 
 class HasPreviewFilter(admin.SimpleListFilter):
@@ -237,6 +529,13 @@ class PlaylistTrackAdmin(admin.ModelAdmin):
     def source_display(self, obj):
         return obj.source_label
     source_display.short_description = 'Source'
+
+    def save_model(self, request, obj, form, change):
+        is_new = not obj.pk
+        super().save_model(request, obj, form, change)
+        if is_new:
+            from events.discord_bot import post_track_drop
+            post_track_drop(obj)
 
 
 @admin.register(VideoTrack)
@@ -329,14 +628,54 @@ def _scrape_venue_site(website):
     return result
 
 
+class CommunityAskInline(admin.TabularInline):
+    model  = CommunityAsk
+    extra  = 1
+    fields = ['ask_type', 'title', 'description', 'product_url', 'product_image_url', 'product_price', 'target_amount', 'donation_url', 'status', 'sort_order']
+
+
+@admin.register(CommunityAsk)
+class CommunityAskAdmin(admin.ModelAdmin):
+    list_display  = ['title', 'ask_type', 'status', 'community_space', 'venue', 'board_offering', 'created_at']
+    list_filter   = ['ask_type', 'status']
+    search_fields = ['title', 'description']
+    readonly_fields = ['board_offering', 'created_at']
+
+
+@admin.register(SupportTicket)
+class SupportTicketAdmin(admin.ModelAdmin):
+    list_display  = ['subject', 'ticket_type', 'from_name', 'from_email', 'status', 'created_at']
+    list_filter   = ['ticket_type', 'status']
+    search_fields = ['subject', 'body', 'from_name', 'from_email']
+    readonly_fields = ['created_at', 'updated_at', 'user']
+    list_editable = ['status']
+    ordering = ['-created_at']
+    fieldsets = [
+        (None,           {'fields': ['ticket_type', 'subject', 'body']}),
+        ('Submitter',    {'fields': ['from_name', 'from_email', 'user']}),
+        ('Admin',        {'fields': ['status', 'admin_notes']}),
+        ('Timestamps',   {'fields': ['created_at', 'updated_at'], 'classes': ['collapse']}),
+    ]
+
+
+@admin.register(KofiPost)
+class KofiPostAdmin(admin.ModelAdmin):
+    list_display  = ['kofi_type', 'from_name', 'amount', 'community_space', 'artist', 'promoter', 'is_public', 'timestamp']
+    list_filter   = ['kofi_type', 'is_public']
+    search_fields = ['from_name', 'message']
+    readonly_fields = ['raw_data', 'created_at', 'timestamp']
+    ordering = ['-timestamp']
+
+
 @admin.register(Venue)
 class VenueAdmin(admin.ModelAdmin):
     list_display  = ['name', 'neighborhood', 'verified', 'claimed_by', 'created_at']
-    list_filter   = ['verified', 'active']
+    list_filter   = ['verified', 'active', 'link_broken']
     search_fields = ['name', 'address', 'neighborhood']
     ordering      = ['name']
     readonly_fields = ['created_at']
-    actions = ['verify_venues', 'autofill_from_website', 'close_venue']
+    inlines = [CommunityAskInline]
+    actions = ['verify_venues', 'autofill_from_website', 'close_venue', 'queue_venue_geocoding']
 
     def verify_venues(self, request, queryset):
         queryset.update(verified=True)
@@ -415,6 +754,27 @@ class VenueAdmin(admin.ModelAdmin):
                 filled += 1
         self.message_user(request, f'Auto-filled {filled} venue(s) from their websites.')
     autofill_from_website.short_description = 'Auto-fill address & logo from website'
+
+    def queue_venue_geocoding(self, request, queryset):
+        """Queue geocode_venue tasks for venues that have an address but no coordinates."""
+        from events.models import WorkerTask
+        to_geocode = queryset.filter(address__gt='').filter(latitude__isnull=True)
+        tasks = [
+            WorkerTask(task_type='geocode_venue', payload={'venue_id': v.id, 'address': v.address})
+            for v in to_geocode
+        ]
+        if tasks:
+            WorkerTask.objects.bulk_create(tasks, ignore_conflicts=True)
+        already = queryset.count() - len(tasks)
+        parts = []
+        if tasks:    parts.append(f'{len(tasks)} venue{"s" if len(tasks) != 1 else ""} queued for geocoding')
+        if already:  parts.append(f'{already} already had coordinates')
+        self.message_user(
+            request,
+            ' · '.join(parts) if parts else 'No venues with addresses found to geocode.',
+            messages.SUCCESS if tasks else messages.WARNING,
+        )
+    queue_venue_geocoding.short_description = 'Queue geocoding for venues missing coordinates'
 
     def save_model(self, request, obj, form, change):
         # Auto-scrape website when address or logo is blank
@@ -540,17 +900,299 @@ def dedup_by_title_date(modeladmin, request, queryset):
 dedup_by_title_date.short_description = 'Auto-remove duplicates (same title + date, keep best)'
 
 
+def fill_address_and_geocode(modeladmin, request, queryset):
+    """Redirect to the geocode-progress page for live streaming output."""
+    ids = ','.join(str(e.pk) for e in queryset)
+    return HttpResponseRedirect(f'geocode-progress/?ids={ids}')
+
+fill_address_and_geocode.short_description = 'Geocode & assign neighborhood (live progress)'
+
+
+def link_twitch_location_artists(modeladmin, request, queryset):
+    """
+    For events whose location is a twitch.tv URL, extract the handle,
+    find or create an Artist with that Twitch handle, and link them to the event.
+    """
+    import re
+    from django.utils.text import slugify as _slugify
+
+    TWITCH_RE = re.compile(r'https?://(?:www\.)?twitch\.tv/([A-Za-z0-9_]+)/?', re.I)
+
+    created = linked = already = skipped = 0
+
+    for ev in queryset:
+        m = TWITCH_RE.match((ev.location or '').strip())
+        if not m:
+            skipped += 1
+            continue
+        handle = m.group(1).lower()
+
+        artist = Artist.objects.filter(twitch__iexact=handle).first()
+        if not artist:
+            # Humanise handle → name (beersandsbeatspdx → Beersandsbeatspdx)
+            name = handle.replace('_', ' ').title()
+            base_slug = _slugify(name) or handle
+            slug = base_slug
+            n = 1
+            while Artist.objects.filter(slug=slug).exists():
+                slug = f'{base_slug}-{n}'; n += 1
+            artist = Artist.objects.create(name=name, slug=slug, twitch=handle)
+            created += 1
+
+        if ev.artists.filter(pk=artist.pk).exists():
+            already += 1
+        else:
+            ev.artists.add(artist)
+            linked += 1
+
+    parts = []
+    if created:  parts.append(f'{created} artist stub{"s" if created != 1 else ""} created')
+    if linked:   parts.append(f'{linked} event{"s" if linked != 1 else ""} linked')
+    if already:  parts.append(f'{already} already linked')
+    if skipped:  parts.append(f'{skipped} skipped (no Twitch URL)')
+    modeladmin.message_user(
+        request,
+        ' · '.join(parts) if parts else 'No Twitch location URLs found in selection.',
+        messages.SUCCESS if (created or linked) else messages.WARNING,
+    )
+
+link_twitch_location_artists.short_description = 'Auto-create/link artists from Twitch location URLs'
+
+
+def scan_event_flyers(modeladmin, request, queryset):
+    """
+    Scan flyer_url for selected events using local Ollama (moondream) and
+    pre-fill any missing fields. Only events with flyer_url set are processed.
+    """
+    from events.utils.flyer_scan import scan_flyer
+    import re
+    from django.utils import timezone
+    from datetime import datetime
+
+    done = skipped = failed = 0
+    for ev in queryset:
+        if not ev.flyer_url:
+            skipped += 1
+            continue
+        result = scan_flyer(ev.flyer_url)
+        if not result:
+            failed += 1
+            ev.flyer_scanned = True
+            ev.save(update_fields=['flyer_scanned'])
+            continue
+
+        changed = []
+        if result.get('title') and not ev.title:
+            ev.title = result['title'][:200]; changed.append('title')
+        if result.get('description') and not ev.description:
+            ev.description = result['description']; changed.append('description')
+        if result.get('venue_name') and not ev.location:
+            loc = result['venue_name']
+            if result.get('venue_address'):
+                loc = f"{loc}, {result['venue_address']}"
+            ev.location = loc[:300]; changed.append('location')
+        if result.get('price') and not ev.price_info:
+            ev.price_info = result['price'][:100]; changed.append('price_info')
+            if re.search(r'\d', result['price'].lower()):
+                ev.is_free = False; changed.append('is_free')
+        if result.get('ticket_url') and not ev.website:
+            ev.website = result['ticket_url'][:500]; changed.append('website')
+
+        ev.flyer_scanned = True
+        save_fields = ['flyer_scanned'] + [f for f in changed if f in ['title', 'description', 'location', 'price_info', 'is_free', 'website']]
+        ev.save(update_fields=save_fields)
+        done += 1
+
+    parts = [f'{done} enriched']
+    if skipped: parts.append(f'{skipped} skipped (no URL)')
+    if failed:  parts.append(f'{failed} scan failed')
+    modeladmin.message_user(request, ' · '.join(parts),
+                             messages.SUCCESS if done else messages.WARNING)
+
+scan_event_flyers.short_description = '🎨 Scan flyer URL with Ollama (moondream) → pre-fill fields'
+
+
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ['title', 'start_date', 'location', 'neighborhood', 'status', 'is_free', 'submitted_by']
-    list_filter = ['status', 'is_free', 'neighborhood']
+    list_display = ['title', 'start_date', 'location', 'neighborhood', 'status', 'is_free', 'submitted_by', 'flyer_badge']
+    list_filter = ['status', 'is_free', 'neighborhood', 'flyer_scanned']
     search_fields = ['title', 'location', 'submitted_by']
     list_editable = ['status']
     ordering = ['start_date']
     prepopulated_fields = {'slug': ('title',)}
     autocomplete_fields = ['genres', 'artists']
     inlines = [EventPhotoInline]
-    actions = [merge_events, dedup_by_title_date]
+    actions = [merge_events, dedup_by_title_date, fill_address_and_geocode, link_twitch_location_artists, scan_event_flyers]
+    readonly_fields = ['flyer_scanned']
+
+    def flyer_badge(self, obj):
+        if obj.flyer_url and not obj.flyer_scanned:
+            return format_html('<span style="color:#ff9800;font-size:.8em">⏳ unscanned</span>')
+        if obj.flyer_url and obj.flyer_scanned:
+            return format_html('<span style="color:#4caf50;font-size:.8em">✓ scanned</span>')
+        return ''
+    flyer_badge.short_description = 'Flyer'
+
+    def get_urls(self):
+        from django.urls import path as _path
+        urls = super().get_urls()
+        custom = [
+            _path('geocode-progress/', self.admin_site.admin_view(self._geocode_progress_page), name='event_geocode_progress'),
+            _path('geocode-stream/',   self.admin_site.admin_view(self._geocode_stream),         name='event_geocode_stream'),
+        ]
+        return custom + urls
+
+    def _geocode_progress_page(self, request):
+        ids = request.GET.get('ids', '')
+        id_count = len([i for i in ids.split(',') if i.strip().isdigit()])
+        ctx = {**self.admin_site.each_context(request), 'ids': ids, 'id_count': id_count, 'title': 'Geocoding events…'}
+        return TemplateResponse(request, 'admin/events/geocode_progress.html', ctx)
+
+    def _geocode_stream(self, request):
+        ids_raw = request.GET.get('ids', '')
+        try:
+            ids = [int(i) for i in ids_raw.split(',') if i.strip().isdigit()]
+        except ValueError:
+            ids = []
+
+        auto_approve = request.GET.get('auto_approve') == '1'
+
+        def _stream(ids, auto_approve):
+            import re, unicodedata, time as _time
+            from events.models import Venue
+            from events.geocode import geocode_location, reverse_geocode_neighborhood
+
+            def _sse(data):
+                msg = f'data: {data}\n\n'
+                return msg + ':' + ' ' * max(0, 1024 - len(msg)) + '\n\n'
+
+            def _fold(s):
+                return unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode()
+
+            venues = list(Venue.objects.filter(active=True).only('name', 'address', 'latitude', 'longitude'))
+
+            def _match_venue(location):
+                if not location or location.startswith(('http://', 'https://')):
+                    return None
+                loc_f = _fold(location)
+                for v in venues:
+                    name_f = _fold(v.name.strip())
+                    addr_f = _fold(v.address.strip()) if v.address else ''
+                    if name_f and len(name_f) > 4 and name_f in loc_f:
+                        return v
+                    if addr_f and len(addr_f) > 8 and addr_f[:40] in loc_f:
+                        return v
+                return None
+
+            def _save_geocoded(ev, extra_fields):
+                """Save geocode fields and optionally approve the event."""
+                fields = list(extra_fields)
+                if auto_approve and ev.status != 'approved':
+                    ev.status = 'approved'
+                    fields.append('status')
+                ev.save(update_fields=fields)
+
+            def _tag(hood):
+                return f'[{hood}] ' if hood else ''
+
+            events = list(Event.objects.filter(pk__in=ids))
+            total = len(events)
+            yield _sse(f'TOTAL {total}')
+
+            done = coord_copied = geocoded = failed = already = approved = 0
+            for ev in events:
+                done += 1
+                if ev.latitude:
+                    already += 1
+                    # Still approve if requested and not yet approved
+                    if auto_approve and ev.status != 'approved':
+                        ev.status = 'approved'
+                        ev.save(update_fields=['status'])
+                        approved += 1
+                        yield _sse(f'SKIP [{done}/{total}] {ev.title[:50]} — already geocoded → ✓ approved')
+                    else:
+                        yield _sse(f'SKIP [{done}/{total}] {ev.title[:50]} — already geocoded')
+                    continue
+
+                # When location is blank/URL, try submitted_by as a venue name hint
+                if not ev.location or ev.location.startswith(('http', 'www')):
+                    submitter = (ev.submitted_by or '').strip()
+                    venue = _match_venue(submitter)
+                    if venue and venue.latitude and venue.address:
+                        ev.location = venue.address
+                        ev.latitude, ev.longitude = venue.latitude, venue.longitude
+                        hood = reverse_geocode_neighborhood(venue.latitude, venue.longitude)
+                        ev.neighborhood = hood
+                        _save_geocoded(ev, ['location', 'latitude', 'longitude', 'neighborhood', 'status'])
+                        coord_copied += 1
+                        if auto_approve: approved += 1
+                        yield _sse(f'VENUE [{done}/{total}] {_tag(hood)}{ev.title[:45]} → {venue.name} via submitter{" ✓" if auto_approve else ""}')
+                        _time.sleep(0.5)
+                    elif submitter and not submitter.startswith(('http', 'www')):
+                        try:
+                            query = f'{submitter}, Portland, OR'
+                            lat, lng = geocode_location(query)
+                            if lat and lng:
+                                hood = reverse_geocode_neighborhood(lat, lng)
+                                ev.location = query
+                                ev.latitude, ev.longitude = lat, lng
+                                ev.neighborhood = hood
+                                _save_geocoded(ev, ['location', 'latitude', 'longitude', 'neighborhood', 'status'])
+                                geocoded += 1
+                                if auto_approve: approved += 1
+                                yield _sse(f'OK [{done}/{total}] {_tag(hood)}{ev.title[:45]} → "{submitter}"{" ✓" if auto_approve else ""}')
+                            else:
+                                failed += 1
+                                yield _sse(f'FAIL [{done}/{total}] {ev.title[:50]} — "{submitter}" not found')
+                        except Exception as exc:
+                            failed += 1
+                            yield _sse(f'ERR [{done}/{total}] {ev.title[:50]} — {exc}')
+                        _time.sleep(1.1)
+                    else:
+                        failed += 1
+                        yield _sse(f'FAIL [{done}/{total}] {ev.title[:50]} — no location or submitter')
+                    continue
+
+                venue = _match_venue(ev.location)
+                if venue and venue.latitude:
+                    fields = ['latitude', 'longitude', 'neighborhood', 'status']
+                    ev.latitude, ev.longitude = venue.latitude, venue.longitude
+                    if venue.address and not re.search(r'\d+\s+\w', ev.location):
+                        ev.location = venue.address
+                        fields.append('location')
+                    hood = reverse_geocode_neighborhood(venue.latitude, venue.longitude)
+                    ev.neighborhood = hood
+                    _save_geocoded(ev, fields)
+                    coord_copied += 1
+                    if auto_approve: approved += 1
+                    yield _sse(f'VENUE [{done}/{total}] {_tag(hood)}{ev.title[:45]} → {venue.name}{" ✓" if auto_approve else ""}')
+                    _time.sleep(0.5)
+                    continue
+
+                try:
+                    lat, lng = geocode_location(ev.location)
+                    if lat and lng:
+                        ev.latitude, ev.longitude = lat, lng
+                        hood = reverse_geocode_neighborhood(lat, lng)
+                        ev.neighborhood = hood
+                        _save_geocoded(ev, ['latitude', 'longitude', 'neighborhood', 'status'])
+                        geocoded += 1
+                        if auto_approve: approved += 1
+                        yield _sse(f'OK [{done}/{total}] {_tag(hood)}{ev.title[:45]}{" ✓" if auto_approve else ""}')
+                    else:
+                        failed += 1
+                        yield _sse(f'FAIL [{done}/{total}] {ev.title[:50]} — no result for: {ev.location[:50]}')
+                except Exception as exc:
+                    failed += 1
+                    yield _sse(f'ERR [{done}/{total}] {ev.title[:50]} — {exc}')
+                _time.sleep(1.1)
+
+            yield _sse(f'DONE venue={coord_copied} geocoded={geocoded} approved={approved} failed={failed} skipped={already}')
+
+        resp = StreamingHttpResponse(_stream(ids, auto_approve), content_type='text/event-stream')
+        resp['Cache-Control'] = 'no-cache'
+        resp['X-Accel-Buffering'] = 'no'
+        return resp
 
     def save_model(self, request, obj, form, change):
         old_status = None
@@ -558,7 +1200,13 @@ class EventAdmin(admin.ModelAdmin):
             old_status = Event.objects.get(pk=obj.pk).status
         super().save_model(request, obj, form, change)
         if obj.status == 'approved' and old_status != 'approved':
-            post_to_discord_events(obj)
+            from board.social import post_event_discord, create_discord_scheduled_event
+            post_event_discord(obj)           # rich embed → #events text/forum channel
+            create_discord_scheduled_event(obj)  # native event → Discord Events tab
+            from events.discord_bot import post_event_approved
+            post_event_approved(obj)          # bot embed → #cp-events channel
+            from events.bluesky import post_event_to_bluesky
+            post_event_to_bluesky(obj)
 
 
 @admin.register(EventPhoto)
@@ -694,56 +1342,131 @@ CRON_JOBS = [
     {
         'name':     'Import user feeds',
         'command':  'import_feeds',
-        'log':      '/var/log/cp_import_feeds.log',
+        'log':      'logs/cp_import_feeds.log',
         'schedule': 'Mon + Thu  6:00 AM',
     },
     {
         'name':     'Import venue / PDX net feeds',
         'command':  'import_venue_feeds',
-        'log':      '/var/log/cp_import_venues.log',
+        'log':      'logs/cp_import_venues.log',
         'schedule': 'Mon + Thu  7:00 AM',
     },
     {
         'name':     'Generate recurring event instances',
         'command':  'generate_recurring_events',
-        'log':      '/var/log/cp_recurring.log',
+        'log':      'logs/cp_recurring.log',
         'schedule': 'Daily  6:05 AM',
     },
     {
         'name':     'Geocode events (20/night)',
         'command':  'geocode_events',
-        'log':      '/var/log/cp_geocode.log',
+        'log':      'logs/cp_geocode.log',
         'schedule': 'Daily  2:00 AM',
     },
     {
         'name':     'Fetch event images (og:image)',
         'command':  'fetch_event_images',
-        'log':      '/var/log/cp_fetch_images.log',
+        'log':      'logs/cp_fetch_images.log',
         'schedule': 'Daily  3:00 AM',
     },
     {
         'name':     'Daily Discord digest',
         'command':  'daily_digest',
-        'log':      '/var/log/cp_daily_digest.log',
+        'log':      'logs/cp_daily_digest.log',
         'schedule': 'Daily  9:00 AM',
     },
     {
         'name':     'Recheck inactive venue feeds',
         'command':  'recheck_venue_feeds',
-        'log':      '/var/log/cp_recheck_feeds.log',
+        'log':      'logs/cp_recheck_feeds.log',
         'schedule': '1st of month  8:00 AM',
     },
     {
         'name':     'Discover new PDX feeds',
         'command':  'discover_pdx_feeds',
-        'log':      '/var/log/cp_discover_feeds.log',
+        'log':      'logs/cp_discover_feeds.log',
         'schedule': '1st of month  8:05 AM',
+    },
+    {
+        'name':     'Check live streams (YouTube + Twitch)',
+        'command':  'check_live_streams',
+        'log':      'logs/cp_live_streams.log',
+        'schedule': 'Every 10 min',
+    },
+    {
+        'name':     'Dedup events (cross-feed merge)',
+        'command':  'dedup_events',
+        'log':      'logs/cp_dedup_events.log',
+        'schedule': 'Mon + Thu  7:30 AM (after import)',
+    },
+    {
+        'name':     'Enrich from Instagram (bio + links + photo)',
+        'command':  'enrich_instagram',
+        'log':      'logs/cp_enrich_instagram.log',
+        'schedule': 'Weekly  Sunday  4:00 AM',
+    },
+    {
+        'name':     'Check website links (broken URL detector)',
+        'command':  'check_links',
+        'log':      'logs/cp_check_links.log',
+        'schedule': 'Weekly  Sunday  5:00 AM',
+    },
+    {
+        'name':     'Auto-reject stale pending events',
+        'command':  'past_date_auto_reject',
+        'log':      'logs/cp_past_date_reject.log',
+        'schedule': 'Daily  4:00 AM',
+    },
+    {
+        'name':     'Check stale feeds (venue + calendar)',
+        'command':  'check_stale_feeds',
+        'log':      'logs/cp_stale_feeds.log',
+        'schedule': 'Daily  6:00 AM',
+    },
+    {
+        'name':     'Profile completeness report',
+        'command':  'profile_completeness',
+        'log':      'logs/cp_profile_completeness.log',
+        'schedule': 'Weekly  Monday  5:30 AM',
+    },
+    {
+        'name':     'Check media files (photos + Drive URLs)',
+        'command':  'check_media_files',
+        'log':      'logs/cp_check_media.log',
+        'schedule': 'Weekly  Monday  6:00 AM',
+    },
+    {
+        'name':     'Enrich missing profile photos (og:image / Instagram)',
+        'command':  'enrich_profile_photos',
+        'log':      'logs/cp_enrich_photos.log',
+        'schedule': 'Weekly  Monday  6:30 AM',
+    },
+    {
+        'name':     'DB health report (row counts + task queue + Discord alert)',
+        'command':  'db_health',
+        'log':      'logs/cp_db_health.log',
+        'schedule': 'Daily  8:00 AM',
+    },
+    {
+        'name':     'Enrich event flyers with Ollama moondream (tokyo7)',
+        'command':  'enrich_event_flyers',
+        'log':      'logs/cp_enrich_flyers.log',
+        'schedule': 'Daily  5:00 AM',
+    },
+    {
+        'name':     'Harvest Instagram flyers → create pending Events (tokyo7 moondream)',
+        'command':  'harvest_instagram_flyers',
+        'log':      'logs/cp_harvest_ig_flyers.log',
+        'schedule': 'Daily  5:30 AM  (after harvest_instagram)',
     },
 ]
 
 
 def _parse_log(path, tail_lines=25):
     """Read a log file. Returns (mtime_dt, last_lines, has_error)."""
+    if not os.path.isabs(path):
+        from django.conf import settings as _s
+        path = os.path.join(str(_s.BASE_DIR), path)
     if not os.path.exists(path):
         return None, [], False
     mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
@@ -756,7 +1479,8 @@ def _parse_log(path, tail_lines=25):
     has_error = any(
         kw in l
         for l in lines[-30:]
-        for kw in ('Traceback', 'SyntaxError', 'ImportError', 'ERROR:', 'Error:', 'FAILED')
+        for kw in ('Traceback', 'SyntaxError', 'ImportError', 'ERROR:', 'FAILED')
+        if 'Client Error' not in l  # HTTP 4xx from external APIs are not app errors
     )
     return mtime, last, has_error
 
@@ -825,6 +1549,74 @@ class EditSuggestionAdmin(admin.ModelAdmin):
     target_link.short_description = 'Target'
 
 
+def _build_system_stats():
+    """Quick counts for the ops health widget — runs on every cron page load."""
+    from django.utils import timezone as _tz
+    from datetime import timedelta as _td
+    from django.db.models import Count as _Count
+    from events.utils.url_safety import is_hard_feed_failure
+
+    now = _tz.now()
+
+    # Events
+    ev_counts = dict(
+        Event.objects.values_list('status').annotate(n=_Count('pk')).values_list('status', 'n')
+    )
+    pending   = ev_counts.get('pending', 0)
+    approved  = ev_counts.get('approved', 0)
+    stale_3d  = Event.objects.filter(status='pending', created_at__lt=now - _td(days=3)).count()
+
+    # WorkerTask
+    task_counts = {}
+    try:
+        from events.models import WorkerTask as _WT
+        task_counts = dict(
+            _WT.objects.values_list('status').annotate(n=_Count('pk')).values_list('status', 'n')
+        )
+        stuck = _WT.objects.filter(
+            status='running', created_at__lt=now - _td(minutes=30)
+        ).count()
+    except Exception:
+        stuck = 0
+
+    queued  = task_counts.get('queued',  0)
+    running = task_counts.get('running', 0)
+    errors  = task_counts.get('error',   0)
+
+    # Feeds
+    active_feeds = VenueFeed.objects.filter(active=True).count()
+    hard_fails   = sum(
+        1 for f in VenueFeed.objects.filter(active=True, last_error__gt='').only('last_error')
+        if is_hard_feed_failure(f.last_error)
+    )
+    soft_errors = VenueFeed.objects.filter(active=True, last_error__gt='').count() - hard_fails
+
+    task_status = 'ok'
+    if errors > 10 or stuck > 0 or queued > 50:
+        task_status = 'error'
+    elif errors > 0 or queued > 10:
+        task_status = 'warn'
+
+    ev_status = 'error' if stale_3d > 0 else ('warn' if pending > 5 else 'ok')
+    feed_status = 'error' if hard_fails > 0 else ('warn' if soft_errors > 0 else 'ok')
+
+    return {
+        'pending':      pending,
+        'approved':     approved,
+        'stale_3d':     stale_3d,
+        'ev_status':    ev_status,
+        'queued':       queued,
+        'running':      running,
+        'task_errors':  errors,
+        'stuck':        stuck,
+        'task_status':  task_status,
+        'active_feeds': active_feeds,
+        'hard_fails':   hard_fails,
+        'soft_errors':  soft_errors,
+        'feed_status':  feed_status,
+    }
+
+
 def _build_alerts():
     """Collect actionable items needing attention."""
     from board.models import Topic
@@ -836,7 +1628,7 @@ def _build_alerts():
             'level': 'warn',
             'icon': '📋',
             'label': f'{pending_events} event{"s" if pending_events != 1 else ""} pending approval',
-            'url': '/admin/events/event/?status__exact=pending',
+            'url': '/cp-manage/events/event/?status__exact=pending',
         })
 
     pending_edits = EditSuggestion.objects.filter(status=EditSuggestion.STATUS_PENDING).count()
@@ -845,7 +1637,7 @@ def _build_alerts():
             'level': 'warn',
             'icon': '✏️',
             'label': f'{pending_edits} edit suggestion{"s" if pending_edits != 1 else ""} to review',
-            'url': '/admin/events/editsuggestion/?status__exact=pending',
+            'url': '/cp-manage/events/editsuggestion/?status__exact=pending',
         })
 
     pending_photos = EventPhoto.objects.filter(approved=False).count()
@@ -854,7 +1646,7 @@ def _build_alerts():
             'level': 'warn',
             'icon': '🖼',
             'label': f'{pending_photos} event photo{"s" if pending_photos != 1 else ""} awaiting approval',
-            'url': '/admin/events/eventphoto/?approved__exact=0',
+            'url': '/cp-manage/events/eventphoto/?approved__exact=0',
         })
 
     claimed_unverified = Venue.objects.filter(verified=False, claimed_by__isnull=False).count()
@@ -863,7 +1655,7 @@ def _build_alerts():
             'level': 'info',
             'icon': '🏛',
             'label': f'{claimed_unverified} claimed venue{"s" if claimed_unverified != 1 else ""} not yet verified',
-            'url': '/admin/events/venue/?verified__exact=0',
+            'url': '/cp-manage/events/venue/?verified__exact=0',
         })
 
     spam_topics = Topic.objects.filter(flagged=True).count() if hasattr(Topic, 'flagged') else 0
@@ -872,7 +1664,7 @@ def _build_alerts():
             'level': 'error',
             'icon': '🚫',
             'label': f'{spam_topics} flagged board topic{"s" if spam_topics != 1 else ""}',
-            'url': '/admin/board/topic/',
+            'url': '/cp-manage/board/topic/',
         })
 
     return alerts
@@ -888,8 +1680,37 @@ _COMMAND_APP = {
     'daily_digest':              'events',
     'recheck_venue_feeds':       'events',
     'discover_pdx_feeds':        'events',
+    'check_live_streams':        'events',
     'sweep_spam_topics':         'board',
 }
+
+
+@admin.register(WorkerTask)
+class WorkerTaskAdmin(admin.ModelAdmin):
+    list_display  = ['task_type', 'status', 'payload_summary', 'created_at', 'completed_at', 'error_msg']
+    list_filter   = ['task_type', 'status']
+    ordering      = ['-created_at']
+    readonly_fields = ['task_type', 'payload', 'status', 'result', 'error_msg', 'created_at', 'completed_at']
+    actions       = ['retry_errored', 'clear_done']
+
+    def payload_summary(self, obj):
+        if 'address' in obj.payload:
+            return obj.payload['address'][:60]
+        return str(obj.payload)[:60]
+    payload_summary.short_description = 'Address / Payload'
+
+    def has_add_permission(self, request):
+        return False
+
+    def retry_errored(self, request, queryset):
+        n = queryset.filter(status='error').update(status='queued', error_msg='')
+        self.message_user(request, f'{n} task(s) re-queued.')
+    retry_errored.short_description = 'Re-queue errored tasks'
+
+    def clear_done(self, request, queryset):
+        n, _ = queryset.filter(status='done').delete()
+        self.message_user(request, f'{n} completed task(s) deleted.')
+    clear_done.short_description = 'Delete completed tasks'
 
 
 @admin.register(CronStatus)
@@ -918,27 +1739,33 @@ class CronStatusAdmin(admin.ModelAdmin):
             raise PermissionDenied
         if command not in _COMMAND_MAP:
             messages.error(request, f'Unknown command: {command}')
-            return HttpResponseRedirect('/admin/events/cronstatus/')
+            return HttpResponseRedirect('/cp-manage/events/cronstatus/')
 
-        _BASE = '/var/www/vhosts/communityplaylist.com/django'
-        _PYTHON = os.path.join(_BASE, 'venv/bin/python3')
-        _MANAGE = os.path.join(_BASE, 'manage.py')
+        import sys
+        from django.conf import settings as _settings
+        base_dir = str(_settings.BASE_DIR)
+        rel_log  = _COMMAND_MAP[command].get('log', f'logs/cp_{command}.log')
+        # Make log path absolute relative to project root
+        log_path = rel_log if os.path.isabs(rel_log) else os.path.join(base_dir, rel_log)
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+        manage_py = os.path.join(base_dir, 'manage.py')
+        python    = sys.executable  # same interpreter that's running gunicorn
 
         try:
-            # Fire-and-forget — do NOT wait (subprocess.run blocks gunicorn worker
-            # until the master kills it). The cron log file shows progress.
+            log_fh = open(log_path, 'a')
             subprocess.Popen(
-                [_PYTHON, _MANAGE, command],
-                cwd=_BASE,
+                [python, manage_py, command],
+                cwd=base_dir,
                 env={**os.environ, 'DJANGO_SETTINGS_MODULE': 'communityplaylist.settings'},
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,  # detach from gunicorn process group
+                stdout=log_fh,
+                stderr=log_fh,
+                start_new_session=True,
             )
             messages.success(request, f'✓ "{command}" launched — reload this page in a moment to see updated log output.')
         except Exception as e:
             messages.error(request, f'Failed to launch "{command}": {e}')
-        return HttpResponseRedirect('/admin/events/cronstatus/')
+        return HttpResponseRedirect('/cp-manage/events/cronstatus/')
 
     def changelist_view(self, request, _extra_context=None):
         if not request.user.is_staff:
@@ -956,13 +1783,441 @@ class CronStatusAdmin(admin.ModelAdmin):
                 'exists':    mtime is not None,
             })
 
-        alerts = _build_alerts()
+        alerts       = _build_alerts()
+        system_stats = _build_system_stats()
 
         context = {
             **self.admin_site.each_context(request),
             'title': 'Cron Status',
             'jobs':  jobs,
             'alerts': alerts,
+            'stats': system_stats,
             'now':   datetime.datetime.now(),
         }
         return TemplateResponse(request, 'admin/cron_status.html', context)
+
+# ── Shelter / Resource Admin ─────────────────────────────────────────────────
+
+PDX_SHELTER_SEED = [
+    # Emergency / Overnight
+    dict(name='JOIN PDX – Street Outreach',shelter_type='emergency',accepts='all',
+         address='4126 NE Sandy Blvd, Portland, OR 97212',phone='503-232-0007',
+         website='https://joinpdx.org',hours='Mon–Fri 9am–5pm (outreach 24/7)',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='Street outreach, shelter navigation, transitional housing referrals.'),
+    dict(name="Transition Projects – Jean's Place",shelter_type='day',accepts='all',
+         address='665 NW Hoyt St, Portland, OR 97209',phone='503-280-4712',
+         website='https://www.tprojects.org',hours='Daily 7am–10pm',
+         available_cold=True,available_hot=True,available_smoke=True,
+         notes='Day shelter, showers, laundry, meals. No intake barriers.'),
+    dict(name='Central City Concern – Old Town Recovery Center',shelter_type='sobering',accepts='all',
+         address='444 NW 5th Ave, Portland, OR 97209',phone='503-294-1681',
+         website='https://www.centralcityconcern.org',hours='24/7',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='Sobering center and detox. Medical staff on-site. No appointment needed.'),
+    dict(name='Blanchet House',shelter_type='day',accepts='all',
+         address='310 NW Glisan St, Portland, OR 97209',phone='503-241-4340',
+         website='https://www.blanchethouse.org',hours='Daily 6am–7pm',
+         available_cold=True,available_hot=True,available_smoke=True,
+         notes='Free meals three times daily. No ID required. Indoor dining room.'),
+    dict(name="Transition Projects – Clark Center (Men's)",shelter_type='overnight',accepts='men',
+         address='4611 SE Belmont St, Portland, OR 97215',phone='503-294-7400',
+         website='https://www.tprojects.org',hours='Nightly — call for intake hours',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes="Men's overnight shelter. Call ahead for current bed availability."),
+    dict(name='NAOMI – Safe House',shelter_type='womens',accepts='women',
+         address='Confidential – call for location',phone='503-295-3906',
+         website='https://www.naomipnw.org',hours='24/7',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='Domestic violence safe house for women and children. Location confidential — call first.'),
+    dict(name='Outside In – Youth Shelter',shelter_type='youth',accepts='youth',
+         address='1132 SW 13th Ave, Portland, OR 97205',phone='503-223-4121',
+         website='https://outsidein.org',hours='Mon–Fri 9am–5pm drop-in; overnight for enrolled youth',
+         available_cold=True,available_hot=True,available_smoke=True,
+         notes='Youth ages 13–25. LGBTQ+ affirming. Drop-in services, health clinic, meals.'),
+    dict(name='Youth Villages – New Directions',shelter_type='youth',accepts='youth',
+         address='Phone intake only',phone='503-872-0012',
+         website='https://youthvillages.org',hours='24/7 crisis line',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='Youth crisis intervention, shelter placement navigation.'),
+    dict(name='Portland Rescue Mission',shelter_type='overnight',accepts='all',
+         address='111 W Burnside St, Portland, OR 97209',phone='503-227-0421',
+         website='https://www.portlandrescuemission.org',hours='Nightly — call for hours',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='Meals and overnight shelter. ID not required for emergency services.'),
+    # Warming / Cooling
+    dict(name='Multnomah County – Extreme Heat Emergency Shelter',shelter_type='cooling',accepts='all',
+         address='Varies — check multco.us on heat advisory days',phone='211',
+         website='https://www.multco.us/emergency-management',hours='During heat advisories only',
+         available_cold=False,available_hot=True,available_smoke=False,
+         notes='County opens cooling centers at libraries and community centers during extreme heat. Call 211 for locations.'),
+    dict(name='Multnomah County – Warming Center Network',shelter_type='warming',accepts='all',
+         address='Varies — activated during freeze alerts',phone='211',
+         website='https://www.multco.us/emergency-management',hours='During freeze/cold weather alerts',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='County activates network of warming centers when temps drop below freezing. Call 211 for current locations.'),
+    # Hygiene
+    dict(name='JOIN PDX – Resource Navigation',shelter_type='hygiene',accepts='all',
+         address='4126 NE Sandy Blvd, Portland, OR 97212',phone='503-232-0007',
+         website='https://joinpdx.org',hours='Mon–Fri 9am–5pm',
+         available_cold=False,available_hot=False,available_smoke=False,
+         notes='Showers, hygiene kits, laundry referrals, storage lockers, mail service.'),
+    dict(name='SnowCap Community Charities',shelter_type='hygiene',accepts='all',
+         address='12655 NE Glisan St, Portland, OR 97230',phone='503-262-8706',
+         website='https://www.snowcap.org',hours='Mon–Fri 9am–4pm',
+         available_cold=False,available_hot=False,available_smoke=False,
+         notes='Food pantry, hygiene supplies, clothing. East Portland focus.'),
+    # Veterans
+    dict(name='VA Portland – Homeless Veterans Services',shelter_type='veteran',accepts='veteran',
+         address='3710 SW US Veterans Hospital Rd, Portland, OR 97239',phone='503-220-8262',
+         website='https://www.portland.va.gov',hours='Mon–Fri 8am–4:30pm',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='HUD-VASH vouchers, transitional housing, SSVF rapid re-housing. DD-214 required.'),
+    # Hotlines
+    dict(name='211info – Oregon/SW Washington',shelter_type='hotline',accepts='all',
+         address='Phone / text only',phone='211',
+         website='https://www.211info.org',hours='24/7',
+         available_cold=True,available_hot=True,available_smoke=True,
+         notes='Call or text 211 for shelter locations, food, utilities, mental health, and any social service need. Free, confidential, multilingual.'),
+    dict(name='Lines for Life – Crisis Line',shelter_type='hotline',accepts='all',
+         address='Phone only',phone='800-273-8255',
+         website='https://www.linesforlife.org',hours='24/7',
+         available_cold=True,available_hot=False,available_smoke=False,
+         notes='Mental health crisis line. Also text HOME to 741741. Suicide prevention and substance use crisis support.'),
+    dict(name='Oregon 211 – Heat/Cold Emergency Locations',shelter_type='hotline',accepts='all',
+         address='Phone only',phone='211',
+         website='https://www.211info.org',hours='24/7 during weather emergencies',
+         available_cold=True,available_hot=True,available_smoke=True,
+         notes='Dedicated line for real-time warming/cooling center locations during declared weather emergencies.'),
+]
+
+def _seed_shelters():
+    from events.models import Shelter
+    from django.utils.text import slugify
+    created = 0
+    for data in PDX_SHELTER_SEED:
+        slug = slugify(data['name'])
+        if not Shelter.objects.filter(slug=slug).exists():
+            s = Shelter(**data)
+            s.save()
+            created += 1
+    return created
+
+
+@admin.register(Shelter)
+class ShelterAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'shelter_type', 'accepts', 'pets_ok', 'phone',
+                     'available_cold', 'available_hot', 'available_smoke', 'active']
+    list_filter   = ['shelter_type', 'accepts', 'available_cold', 'available_hot',
+                     'available_smoke', 'active', 'pets_ok']
+    search_fields = ['name', 'address', 'neighborhood', 'notes']
+    ordering      = ['shelter_type', 'name']
+    readonly_fields = ['created_at', 'updated_at', 'slug']
+    actions       = ['activate', 'deactivate', 'seed_pdx_shelters']
+
+    fieldsets = [
+        ('Identity', {'fields': ['name', 'slug', 'shelter_type', 'accepts', 'pets_ok', 'active']}),
+        ('Location', {'fields': ['address', 'neighborhood', 'latitude', 'longitude']}),
+        ('Contact & Hours', {'fields': ['phone', 'website', 'hours', 'capacity']}),
+        ('Weather Flags', {
+            'description': 'Check the conditions under which this shelter should be surfaced automatically.',
+            'fields': ['available_cold', 'available_hot', 'available_smoke'],
+        }),
+        ('Notes', {'fields': ['notes']}),
+        ('Meta', {'fields': ['created_at', 'updated_at'], 'classes': ['collapse']}),
+    ]
+
+    def activate(self, request, queryset):
+        queryset.update(active=True)
+        self.message_user(request, f'{queryset.count()} shelter(s) activated.')
+    activate.short_description = '✅ Mark selected as active'
+
+    def deactivate(self, request, queryset):
+        queryset.update(active=False)
+        self.message_user(request, f'{queryset.count()} shelter(s) deactivated.')
+    deactivate.short_description = '🚫 Mark selected as inactive'
+
+    def seed_pdx_shelters(self, request, queryset):
+        n = _seed_shelters()
+        self.message_user(request, f'Seeded {n} new PDX shelters (skipped existing).')
+    seed_pdx_shelters.short_description = '🌱 Seed PDX shelter list (skips duplicates)'
+
+
+class InstagramPostInline(admin.TabularInline):
+    model = InstagramPost
+    extra = 0
+    readonly_fields = ['ig_post_id', 'shortcode', 'caption_preview', 'is_video', 'posted_at', 'fetched_at', 'permalink_link']
+    fields = ['ig_post_id', 'shortcode', 'caption_preview', 'is_video', 'posted_at', 'permalink_link']
+    ordering = ['-posted_at']
+    can_delete = True
+    max_num = 0
+
+    def caption_preview(self, obj):
+        return obj.caption[:120] + '…' if len(obj.caption) > 120 else obj.caption
+    caption_preview.short_description = 'Caption'
+
+    def permalink_link(self, obj):
+        return format_html('<a href="{}" target="_blank">Open ↗</a>', obj.permalink)
+    permalink_link.short_description = 'Link'
+
+
+@admin.register(InstagramAccount)
+class InstagramAccountAdmin(admin.ModelAdmin):
+    list_display   = ['handle', 'display_name', 'status_badge', 'follower_count', 'post_count', 'harvest_for_events', 'linked_badge', 'last_fetched']
+    list_filter    = ['status', 'harvest_for_events']
+    search_fields  = ['handle', 'display_name', 'bio', 'notes']
+    readonly_fields = ['ig_user_id', 'display_name', 'bio', 'follower_count', 'last_fetched']
+    list_editable  = ['harvest_for_events']
+    inlines        = [InstagramPostInline]
+    actions        = ['approve_selected', 'reject_selected', 'harvest_selected',
+                      'enable_flyer_scan', 'disable_flyer_scan',
+                      'create_promoter_stubs', 'auto_link_profiles']
+    fieldsets = [
+        (None, {'fields': ['handle', 'status', 'harvest_for_events', 'notes']}),
+        ('Linked profiles', {'fields': ['promoter_profile', 'artist']}),
+        ('Fetched data', {'fields': ['ig_user_id', 'display_name', 'bio', 'follower_count', 'last_fetched'],
+                          'classes': ['collapse']}),
+    ]
+
+    def post_count(self, obj):
+        return obj.posts.count()
+    post_count.short_description = 'Posts'
+
+    def linked_badge(self, obj):
+        if obj.promoter_profile_id:
+            return format_html(
+                '<a href="/cp-manage/events/promoterprofile/{}/change/" style="color:#4caf50;font-size:.8em">promoter</a>',
+                obj.promoter_profile_id
+            )
+        if obj.artist_id:
+            return format_html(
+                '<a href="/cp-manage/events/artist/{}/change/" style="color:#4caf50;font-size:.8em">artist</a>',
+                obj.artist_id
+            )
+        return format_html('<span style="color:#555;font-size:.8em">—</span>')
+    linked_badge.short_description = 'Linked'
+
+    def status_badge(self, obj):
+        colours = {
+            'pending':  '#e6a817',
+            'active':   '#2e7d32',
+            'rejected': '#888',
+        }
+        colour = colours.get(obj.status, '#888')
+        return format_html(
+            '<span style="color:{};font-weight:bold">{}</span>',
+            colour, obj.get_status_display()
+        )
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'status'
+
+    def approve_selected(self, request, queryset):
+        n = queryset.update(status=InstagramAccount.STATUS_ACTIVE)
+        self.message_user(request, f'{n} account(s) approved for harvesting.')
+    approve_selected.short_description = '✅ Approve — start harvesting'
+
+    def reject_selected(self, request, queryset):
+        n = queryset.update(status=InstagramAccount.STATUS_REJECTED)
+        self.message_user(request, f'{n} account(s) rejected.')
+    reject_selected.short_description = '🚫 Reject — skip this account'
+
+    def harvest_selected(self, request, queryset):
+        from django.core.management import call_command
+        harvested = 0
+        for account in queryset.filter(status=InstagramAccount.STATUS_ACTIVE):
+            call_command('harvest_instagram', '--handle', account.handle, '--force')
+            harvested += 1
+        self.message_user(request, f'Harvested {harvested} active account(s).')
+    harvest_selected.short_description = '📥 Harvest posts now'
+
+    def create_promoter_stubs(self, request, queryset):
+        """
+        For each selected InstagramAccount that has profile data and no linked
+        PromoterProfile, create a pending PromoterProfile stub.
+        """
+        from events.models import PromoterProfile
+        created = skipped = already = 0
+        for acc in queryset:
+            if acc.promoter_profile_id or acc.artist_id:
+                already += 1
+                continue
+            if not acc.display_name and not acc.bio:
+                skipped += 1
+                continue
+            name = acc.display_name or f'@{acc.handle}'
+            if PromoterProfile.objects.filter(name__iexact=name).exists():
+                # Link the existing one
+                acc.promoter_profile = PromoterProfile.objects.filter(name__iexact=name).first()
+                acc.save(update_fields=['promoter_profile'])
+                already += 1
+                continue
+            p = PromoterProfile.objects.create(
+                name      = name,
+                instagram = acc.handle,
+                bio       = acc.bio or '',
+                is_public = False,
+                notes     = f'Auto-created from @{acc.handle} Instagram account.',
+            )
+            acc.promoter_profile = p
+            acc.save(update_fields=['promoter_profile'])
+            created += 1
+        parts = [f'{created} created']
+        if already: parts.append(f'{already} already linked')
+        if skipped: parts.append(f'{skipped} skipped (no profile data yet — harvest first)')
+        self.message_user(request, ' · '.join(parts),
+                          messages.SUCCESS if created else messages.WARNING)
+    create_promoter_stubs.short_description = '🎪 Create PromoterProfile stubs from selected accounts'
+
+    def auto_link_profiles(self, request, queryset):
+        """
+        Match unlinked InstagramAccounts to existing Artist/PromoterProfile
+        records by their instagram handle field.
+        """
+        from events.models import Artist, PromoterProfile
+        linked = skipped = 0
+        for acc in queryset:
+            if acc.promoter_profile_id or acc.artist_id:
+                skipped += 1
+                continue
+            artist   = Artist.objects.filter(instagram__iexact=acc.handle, is_stub=False).first()
+            promoter = PromoterProfile.objects.filter(instagram__iexact=acc.handle).first()
+            if artist:
+                acc.artist = artist
+                acc.save(update_fields=['artist'])
+                linked += 1
+            elif promoter:
+                acc.promoter_profile = promoter
+                acc.save(update_fields=['promoter_profile'])
+                linked += 1
+            else:
+                skipped += 1
+        self.message_user(request, f'{linked} linked · {skipped} no match found',
+                          messages.SUCCESS if linked else messages.WARNING)
+    auto_link_profiles.short_description = '🔗 Auto-link to existing Artist/Promoter by handle'
+
+    def enable_flyer_scan(self, request, queryset):
+        n = queryset.update(harvest_for_events=True)
+        self.message_user(request, f'{n} account(s) enabled for moondream flyer scan.')
+    enable_flyer_scan.short_description = '🎨 Enable moondream flyer scan'
+
+    def disable_flyer_scan(self, request, queryset):
+        n = queryset.update(harvest_for_events=False)
+        self.message_user(request, f'{n} account(s) disabled from flyer scan.')
+    disable_flyer_scan.short_description = '⏸ Disable moondream flyer scan'
+
+
+def _scan_instagram_posts(modeladmin, request, queryset):
+    """Run moondream flyer scan on selected InstagramPost records."""
+    from events.utils.flyer_scan import scan_flyer
+    created = skipped = failed = 0
+    for post in queryset.filter(is_video=False):
+        result = scan_flyer(post.image_url or post.permalink)
+        if not result:
+            post.flyer_scanned = True
+            post.flyer_result = {}
+            post.save(update_fields=['flyer_scanned', 'flyer_result'])
+            failed += 1
+            continue
+        post.flyer_scanned = True
+        post.flyer_result  = result
+        save_fields = ['flyer_scanned', 'flyer_result']
+        if not post.sourced_event_id and result.get('title') and result.get('date'):
+            from events.management.commands.harvest_instagram_flyers import _build_event
+            ev = _build_event(result, post)
+            if ev:
+                ev.save()
+                post.sourced_event = ev
+                save_fields.append('sourced_event')
+                created += 1
+            else:
+                skipped += 1
+        else:
+            skipped += 1
+        post.save(update_fields=save_fields)
+    modeladmin.message_user(
+        request,
+        f'{created} events created · {skipped} no event · {failed} scan failed',
+        messages.SUCCESS if created else messages.WARNING,
+    )
+_scan_instagram_posts.short_description = '🎨 Scan selected posts with moondream → create pending Events'
+
+
+@admin.register(InstagramPost)
+class InstagramPostAdmin(admin.ModelAdmin):
+    list_display  = ['shortcode', 'account', 'caption_preview', 'is_video', 'posted_at', 'flyer_badge']
+    list_filter   = ['account', 'is_video', 'flyer_scanned']
+    search_fields = ['caption', 'shortcode', 'account__handle']
+    readonly_fields = ['ig_post_id', 'shortcode', 'account', 'is_video', 'posted_at', 'fetched_at',
+                       'permalink_link', 'flyer_result', 'sourced_event']
+    ordering      = ['-posted_at']
+    actions       = [_scan_instagram_posts]
+
+    def caption_preview(self, obj):
+        return obj.caption[:100] + '…' if len(obj.caption) > 100 else obj.caption
+    caption_preview.short_description = 'Caption'
+
+    def permalink_link(self, obj):
+        return format_html('<a href="{}" target="_blank">instagram.com/p/{}</a>', obj.permalink, obj.shortcode)
+    permalink_link.short_description = 'Permalink'
+
+    def flyer_badge(self, obj):
+        if obj.sourced_event_id:
+            return format_html(
+                '<a href="/cp-manage/events/event/{}/change/" style="color:#4caf50;font-size:.8em">✓ event #{}</a>',
+                obj.sourced_event_id, obj.sourced_event_id
+            )
+        if obj.flyer_scanned:
+            return format_html('<span style="color:#555;font-size:.8em">scanned / no event</span>')
+        return format_html('<span style="color:#888;font-size:.8em">—</span>')
+    flyer_badge.short_description = 'Event'
+
+
+@admin.register(CommunitySpace)
+class CommunitySpaceAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'space_type', 'neighborhood', 'is_verified', 'is_public', 'view_count', 'created_at']
+    list_filter   = ['space_type', 'is_verified', 'is_public']
+    search_fields = ['name', 'address', 'neighborhood', 'bio']
+    prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = ['view_count', 'created_at']
+    inlines = [CommunityAskInline]
+    fieldsets = [
+        ('Identity', {'fields': ['name', 'slug', 'space_type', 'bio', 'photo', 'brand_color', 'is_verified', 'is_public', 'claimed_by']}),
+        ('Location', {'fields': ['address', 'neighborhood', 'latitude', 'longitude']}),
+        ('Contact & Social', {'fields': ['contact_email', 'website', 'instagram', 'bluesky', 'mastodon', 'tiktok']}),
+        ('Resources & Funding', {'fields': ['drive_folder_url', 'show_audio', 'show_docs', 'donation_url', 'sol_wallet']}),
+        ('Custom Links', {'fields': ['custom_links']}),
+        ('Stats', {'fields': ['view_count', 'created_at'], 'classes': ['collapse']}),
+    ]
+
+
+@admin.register(GenreSuggestion)
+class GenreSuggestionAdmin(admin.ModelAdmin):
+    list_display  = ['submitted_at', 'artist_name', 'track_title', 'current_genre', 'suggested_genre', 'status', 'track_link']
+    list_filter   = ['status']
+    search_fields = ['artist_name', 'track_title', 'suggested_genre']
+    readonly_fields = ['submitted_at', 'track', 'video_track', 'artist_name', 'track_title',
+                       'current_genre', 'suggested_genre']
+    actions = ['accept_suggestions', 'reject_suggestions']
+
+    def track_link(self, obj):
+        if obj.track_id:
+            return format_html('<a href="/cp-manage/events/playlisttrack/{}/change/">PT #{}</a>', obj.track_id, obj.track_id)
+        return '—'
+    track_link.short_description = 'Track'
+
+    @admin.action(description='✓ Accept — apply genre to track')
+    def accept_suggestions(self, request, queryset):
+        applied = 0
+        for s in queryset.filter(status=GenreSuggestion.STATUS_PENDING):
+            genre_obj, _ = Genre.objects.get_or_create(name=s.suggested_genre)
+            if s.track_id:
+                PlaylistTrack.objects.filter(pk=s.track_id).update(genre=genre_obj, genre_raw=s.suggested_genre)
+            s.status = GenreSuggestion.STATUS_ACCEPTED
+            s.save(update_fields=['status'])
+            applied += 1
+        self.message_user(request, f'{applied} suggestion(s) accepted and applied.')
+
+    @admin.action(description='✗ Reject suggestions')
+    def reject_suggestions(self, request, queryset):
+        count = queryset.filter(status=GenreSuggestion.STATUS_PENDING).update(status=GenreSuggestion.STATUS_REJECTED)
+        self.message_user(request, f'{count} suggestion(s) rejected.')

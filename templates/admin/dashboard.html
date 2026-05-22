@@ -46,21 +46,21 @@
   <div class="gm-card warn">
     <div class="gm-label">Events Pending</div>
     <div class="gm-val">{{ events_pending }}</div>
-    <div class="gm-sub"><a href="/admin/events/event/?status__exact=pending" style="color:#ff6b35">Review →</a></div>
+    <div class="gm-sub"><a href="/cp-manage/events/event/?status__exact=pending" style="color:#ff6b35">Review →</a></div>
   </div>
   {% endif %}
   {% if venues_unverified %}
   <div class="gm-card warn">
     <div class="gm-label">Venues Unverified</div>
     <div class="gm-val">{{ venues_unverified }}</div>
-    <div class="gm-sub"><a href="/admin/events/venue/?verified__exact=0" style="color:#ff6b35">Review →</a></div>
+    <div class="gm-sub"><a href="/cp-manage/events/venue/?verified__exact=0" style="color:#ff6b35">Review →</a></div>
   </div>
   {% endif %}
   {% if suggestions_pend %}
   <div class="gm-card warn">
     <div class="gm-label">Edit Suggestions</div>
     <div class="gm-val">{{ suggestions_pend }}</div>
-    <div class="gm-sub"><a href="/admin/events/editsuggestion/?status__exact=pending" style="color:#ff6b35">Review →</a></div>
+    <div class="gm-sub"><a href="/cp-manage/events/editsuggestion/?status__exact=pending" style="color:#ff6b35">Review →</a></div>
   </div>
   {% endif %}
 </div>
@@ -80,7 +80,7 @@
   <div class="gm-card">
     <div class="gm-label">Upcoming Events</div>
     <div class="gm-val">{{ events_upcoming }}</div>
-    <div class="gm-sub"><a href="/admin/events/event/?start_date__gte=today" style="color:#ff6b35">View all →</a></div>
+    <div class="gm-sub"><a href="/cp-manage/events/event/?start_date__gte=today" style="color:#ff6b35">View all →</a></div>
   </div>
   <div class="gm-card">
     <div class="gm-label">Venues</div>
@@ -136,7 +136,7 @@
     <strong style="color:#eee">{{ img_count }} images · {{ img_size }} total.</strong>
     Run anytime; safe to re-run (skips files already under 40 KB).
   </p>
-  <form method="post" action="/admin/compress-images/" style="display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
+  <form method="post" action="/cp-manage/compress-images/" style="display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
     {% csrf_token %}
     <div>
       <label>JPEG quality (1–95)</label>
@@ -161,7 +161,7 @@
   <tr><th>Title</th><th>Submitted</th><th>Location</th><th></th></tr>
   {% for e in recent_pending %}
   <tr>
-    <td><a href="/admin/events/event/{{ e.pk }}/change/">{{ e.title|truncatechars:50 }}</a></td>
+    <td><a href="/cp-manage/events/event/{{ e.pk }}/change/">{{ e.title|truncatechars:50 }}</a></td>
     <td style="color:#555;white-space:nowrap">{{ e.created_at|date:"M j, g:i A" }}</td>
     <td style="color:#555">{{ e.location|truncatechars:30 }}</td>
     <td><span class="badge badge-pending">pending</span></td>
@@ -175,7 +175,7 @@
   <tr><th>Title</th><th>Date</th><th>Venue</th></tr>
   {% for e in recent_events %}
   <tr>
-    <td><a href="/admin/events/event/{{ e.pk }}/change/">{{ e.title|truncatechars:50 }}</a></td>
+    <td><a href="/cp-manage/events/event/{{ e.pk }}/change/">{{ e.title|truncatechars:50 }}</a></td>
     <td style="color:#555;white-space:nowrap">{{ e.start_date|date:"M j, g:i A" }}</td>
     <td style="color:#555">{{ e.location|truncatechars:28 }}</td>
   </tr>
@@ -183,10 +183,10 @@
 </table>
 
 <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap">
-  <a href="/admin/" class="gm-btn gm-btn-outline">← Admin Home</a>
-  <a href="/admin/events/event/add/" class="gm-btn gm-btn-outline">+ Add Event</a>
-  <a href="/admin/events/venue/add/" class="gm-btn gm-btn-outline">+ Add Venue</a>
-  <a href="/admin/events/venuefeed/" class="gm-btn gm-btn-outline">📡 Venue Feeds</a>
-  <a href="/admin/events/cronstatus/" class="gm-btn gm-btn-outline">⏱ Cron Status</a>
+  <a href="/cp-manage/" class="gm-btn gm-btn-outline">← Admin Home</a>
+  <a href="/cp-manage/events/event/add/" class="gm-btn gm-btn-outline">+ Add Event</a>
+  <a href="/cp-manage/events/venue/add/" class="gm-btn gm-btn-outline">+ Add Venue</a>
+  <a href="/cp-manage/events/venuefeed/" class="gm-btn gm-btn-outline">📡 Venue Feeds</a>
+  <a href="/cp-manage/events/cronstatus/" class="gm-btn gm-btn-outline">⏱ Cron Status</a>
 </div>
 {% endblock %}

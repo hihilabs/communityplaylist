@@ -1,9 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Edit — {{ promoter.name }} — Community Playlist</title>
+{% extends 'base.html' %}
+{% block title %}Edit — {{ promoter.name }} — Community Playlist{% endblock %}
+{% block styles %}
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#111;color:#eee;font-family:sans-serif;padding:24px 16px}
@@ -35,8 +32,8 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
 .members-note a:hover{text-decoration:underline}
 @media(max-width:500px){.social-grid{grid-template-columns:1fr}}
 </style>
-</head>
-<body>
+{% endblock %}
+{% block body %}
 <div class="wrap">
 <a href="{% url 'promoter_detail' promoter.slug %}" class="back">← {{ promoter.name }}</a>
 <h1>Edit profile</h1>
@@ -50,6 +47,27 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
     <span class="card-arrow">▼</span>
   </div>
   <div class="card-body">
+    <div class="fg">
+      <label>Type</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">
+        {% for val, label in type_choices %}
+        <input type="checkbox" name="promoter_type" id="pt_{{ val }}" value="{{ val }}" style="display:none" {% if val in promoter.types %}checked{% endif %}>
+        <label for="pt_{{ val }}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid #2a2a2a;background:#111;color:#666;font-size:.82em;cursor:pointer;transition:all .15s;white-space:nowrap">{{ label }}</label>
+        {% endfor %}
+      </div>
+      <style>input[name=promoter_type]:checked+label{border-color:#ff6b35 !important;color:#ff6b35 !important;background:#1a0d08 !important}</style>
+    </div>
+    <div class="fg">
+      <label>Genres</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:200px;overflow-y:auto;background:#111;border:1px solid #1e1e1e;border-radius:6px;padding:10px;margin-top:2px">
+        {% for g in all_genres %}
+        <label style="display:inline-flex;align-items:center;gap:5px;background:#1a1a1a;border:1px solid {% if g.pk in selected_genre_pks %}#cc88ff{% else %}#2a2a2a{% endif %};border-radius:20px;padding:4px 10px;cursor:pointer;font-size:.8em;color:{% if g.pk in selected_genre_pks %}#cc88ff{% else %}#888{% endif %}">
+          <input type="checkbox" name="genres" value="{{ g.pk }}" {% if g.pk in selected_genre_pks %}checked{% endif %} style="display:none" onchange="this.closest('label').style.borderColor=this.checked?'#cc88ff':'#2a2a2a';this.closest('label').style.color=this.checked?'#cc88ff':'#888'">
+          {{ g.name }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
     <div class="fg">
       <label>Name</label>
       <input type="text" name="name" value="{{ promoter.name }}">
@@ -66,6 +84,26 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
     <div class="fg">
       <label>Website</label>
       <input type="url" name="website" value="{{ promoter.website }}" placeholder="https://...">
+    </div>
+    <div class="fg" style="display:flex;align-items:center;gap:14px">
+      <div>
+        <label style="display:block;margin-bottom:5px">Profile accent color</label>
+        <input type="color" name="brand_color" id="brand-color-pick"
+               value="{{ promoter.brand_color|default:'#ff6b35' }}"
+               style="width:44px;height:36px;padding:2px;border:1px solid #333;border-radius:6px;background:#1a1a1a;cursor:pointer">
+      </div>
+      <div style="flex:1">
+        <div class="hint" style="margin-top:0">Your profile accent color — sets the heading, buttons, and highlight tones on your public page. Default is Community Playlist orange.</div>
+        <button type="button" onclick="document.getElementById('brand-color-pick').value='#ff6b35'"
+                style="margin-top:8px;background:transparent;border:1px solid #333;color:#555;font-size:.75em;padding:3px 10px;border-radius:4px;cursor:pointer">Reset to default</button>
+      </div>
+    </div>
+    <div class="fg" style="border-top:1px solid #1e1e1e;padding-top:14px;margin-top:4px">
+      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:#aaa;font-size:.84em;margin-bottom:0">
+        <input type="checkbox" name="accept_demos" {% if promoter.accept_demos %}checked{% endif %} style="width:auto;accent-color:#ff6b35">
+        🎵 Allow users to submit MP3 demos / mixes to this profile
+      </label>
+      <div class="hint">When enabled, a "+ Submit Demo" button appears on your public profile for logged-in users.</div>
     </div>
   </div>
 </div>
@@ -116,6 +154,10 @@ h1{color:#ff6b35;font-size:1.2em;margin-bottom:22px}
       <div class="fg">
         <label>Bluesky handle</label>
         <input type="text" name="bluesky" value="{{ promoter.bluesky }}" placeholder="you.bsky.social">
+      </div>
+      <div class="fg">
+        <label>Ko-fi username ☕</label>
+        <input type="text" name="kofi" value="{{ promoter.kofi }}" placeholder="yourname (from ko-fi.com/yourname)">
       </div>
       <div class="fg">
         <label>TikTok handle</label>
@@ -243,7 +285,6 @@ function cpToggle(header) {
   var card = header.closest('.card');
   card.classList.toggle('open');
 }
-// Persist collapse state in sessionStorage
 document.querySelectorAll('.card-header').forEach(function(h) {
   var card = h.closest('.card');
   var key = 'cp-card-' + h.querySelector('.card-title').textContent.trim();
@@ -255,5 +296,4 @@ document.querySelectorAll('.card-header').forEach(function(h) {
   });
 });
 </script>
-</body>
-</html>
+{% endblock %}

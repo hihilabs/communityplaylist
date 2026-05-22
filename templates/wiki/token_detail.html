@@ -1,0 +1,96 @@
+{% extends 'wiki/base.html' %}
+{% load wiki_tags %}
+
+{% block title %}{{ token.name }} — Genre Token{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom: 8px; font-size: 12px; color: var(--muted);">
+  <a href="{% url 'wiki:token_list' %}">← Token Index</a>
+</div>
+
+<h1>{{ token.name }}</h1>
+
+{% if token.bpm_min or token.bpm_max %}
+  <div style="display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap;">
+    {% if token.bpm_min and token.bpm_max %}
+      <span class="chip muted">{{ token.bpm_min }}–{{ token.bpm_max }} BPM</span>
+    {% elif token.bpm_min %}
+      <span class="chip muted">{{ token.bpm_min }}+ BPM</span>
+    {% endif %}
+    {% if token.energy %}
+      <span class="chip muted">{{ token.get_energy_display }} energy</span>
+    {% endif %}
+    {% if token.mood %}
+      {% for m in token.mood.split %}
+        <span class="chip muted">{{ m|cut:',' }}</span>
+      {% endfor %}
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if token.description %}
+  <p style="color: var(--text); margin-top: 12px; max-width: 680px;">{{ token.description }}</p>
+{% endif %}
+
+{% if token.compound_genres.all %}
+<h2>Found In</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+  {% for g in token.compound_genres.all %}
+    <a href="{{ g.get_absolute_url }}" class="chip accent">{{ g.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if token.related.all %}
+<h2>Related Tokens</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+  {% for r in token.related.all %}
+    <a href="{{ r.get_absolute_url }}" class="chip">{{ r.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if token.aliases.all %}
+<h2>Also Known As</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+  {% for a in token.aliases.all %}
+    <span class="chip muted">{{ a.alias }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if token.sources.all %}
+<h2>Sources &amp; Attribution</h2>
+<table class="source-table">
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Entry Name</th>
+      <th>Confidence</th>
+      <th>Link</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in token.sources.all %}
+    <tr>
+      <td style="font-weight: 600; color: var(--text);">{{ s.get_source_display }}</td>
+      <td style="color: var(--muted);">{{ s.source_name|default:"—" }}</td>
+      <td><span class="badge {{ s.confidence }}">{{ s.get_confidence_display }}</span></td>
+      <td>
+        {% if s.source_url %}
+          <a href="{{ s.source_url|safe_url }}" target="_blank" rel="noopener" style="font-size: 12px;">↗</a>
+        {% else %}—{% endif %}
+      </td>
+      <td style="color: var(--muted); font-size: 12px;">{{ s.notes|default:"" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p style="font-size: 11px; margin-top: 8px; font-style: italic;">
+  This wiki is an homage to these sources. Data may be incomplete — community improvements welcome.
+</p>
+{% endif %}
+
+{% endblock %}

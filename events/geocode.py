@@ -25,25 +25,42 @@ def is_in_pdx_area(lat, lng):
 # PDX-area neighborhoods returned by Nominatim reverse geocode
 # Maps Nominatim suburb/neighbourhood/city_district values to clean display names
 NEIGHBORHOOD_ALIASES = {
-    'northwest portland': 'NW Portland',
-    'nw portland': 'NW Portland',
+    # Keys are lowercase Nominatim suburb/neighbourhood/city_district values.
+    # Values are matched against Neighborhood.name / Neighborhood.aliases via icontains,
+    # so they must exactly match a Neighborhood name or one of its aliases.
+    'northwest portland': 'Northwest District',
+    'nw portland': 'Northwest District',
+    'northwest': 'Northwest District',
+    'nob hill': 'Northwest District',
+    'slabtown': 'Northwest District',
     'pearl district': 'Pearl District',
-    'old town': 'Old Town',
-    'old town chinatown': 'Old Town',
+    'pearl': 'Pearl District',
+    'old town': 'Old Town/Chinatown',
+    'old town chinatown': 'Old Town/Chinatown',
+    'chinatown': 'Old Town/Chinatown',
     'downtown': 'Downtown',
-    'southwest portland': 'SW Portland',
-    'sw portland': 'SW Portland',
-    'southeast portland': 'SE Portland',
-    'se portland': 'SE Portland',
-    'northeast portland': 'NE Portland',
-    'ne portland': 'NE Portland',
-    'north portland': 'N Portland',
-    'n portland': 'N Portland',
-    'alberta arts district': 'Alberta Arts',
-    'alberta': 'Alberta Arts',
-    'mississippi': 'Mississippi Ave',
-    'williams': 'Williams Ave',
-    'division': 'Division',
+    'goose hollow': 'Downtown',
+    'south portland': 'Downtown',
+    'southwest portland': 'Downtown',
+    'sw portland': 'Downtown',
+    'southeast portland': 'Inner SE',
+    'se portland': 'Inner SE',
+    'northeast portland': 'Irvington',
+    'ne portland': 'Irvington',
+    'north portland': 'North Portland',
+    'n portland': 'North Portland',
+    'alberta arts district': 'Alberta Arts District',
+    'alberta': 'Alberta Arts District',
+    'albina': 'Alberta Arts District',
+    'humboldt': 'North Portland',
+    'king': 'Alberta Arts District',
+    'woodlawn': 'North Portland',
+    'mississippi': 'Mississippi Avenue',
+    'williams': 'Mississippi Avenue',
+    'division': 'Division/Clinton',
+    'clinton': 'Division/Clinton',
+    'hosford-abernethy': 'Hawthorne',
+    'sunnyside': 'Hawthorne',
     'hawthorne': 'Hawthorne',
     'belmont': 'Belmont',
     'richmond': 'Richmond',
@@ -51,29 +68,38 @@ NEIGHBORHOOD_ALIASES = {
     'kerns': 'Kerns',
     'lloyd district': 'Lloyd District',
     'lloyd': 'Lloyd District',
+    "sullivan's gulch": 'Central Eastside',
+    'central eastside': 'Central Eastside',
     'irvington': 'Irvington',
-    'grant park': 'Grant Park',
-    'beaumont': 'Beaumont',
-    'hollywood': 'Hollywood',
+    'grant park': 'Irvington',
+    'beaumont': 'Concordia',
+    'concordia': 'Concordia',
+    'woodlawn': 'Concordia',
+    'hollywood': 'Montavilla',
     'montavilla': 'Montavilla',
-    'mt tabor': 'Mt Tabor',
-    'mount tabor': 'Mt Tabor',
-    'sellwood': 'Sellwood',
-    'moreland': 'Sellwood-Moreland',
+    'mt tabor': 'Montavilla',
+    'mount tabor': 'Montavilla',
+    'creston-kenilworth': 'Woodstock',
     'woodstock': 'Woodstock',
     'brooklyn': 'Brooklyn',
     'foster': 'Foster-Powell',
     'foster-powell': 'Foster-Powell',
     'lents': 'Lents',
-    'st johns': 'St Johns',
-    'saint johns': 'St Johns',
-    'cathedral park': 'St Johns',
-    'arbor lodge': 'Arbor Lodge',
-    'kenton': 'Kenton',
+    'sellwood': 'Sellwood/Moreland',
+    'moreland': 'Sellwood/Moreland',
+    'sellwood-moreland': 'Sellwood/Moreland',
+    'eastmoreland': 'Sellwood/Moreland',
+    'st johns': 'St. Johns',
+    'saint johns': 'St. Johns',
+    'cathedral park': 'St. Johns',
+    'university park': 'St. Johns',
+    'arbor lodge': 'North Portland',
+    'kenton': 'North Portland',
     'overlook': 'Overlook',
-    'boise': 'Boise',
-    'eliot': 'Eliot',
-    'sullivan\'s gulch': 'Sullivan\'s Gulch',
+    'boise': 'Boise/Eliot',
+    'eliot': 'Boise/Eliot',
+    'cully': 'Cully',
+    'laurelhurst': 'Laurelhurst',
     'portland': '',  # too generic — skip
 }
 
@@ -116,9 +142,29 @@ class NominatimRateLimited(Exception):
     pass
 
 
+def _geocode_photon(q):
+    """Forward geocode via Photon (Komoot, OSM-based). Returns (lat, lng) or (None, None)."""
+    try:
+        r = requests.get(
+            'https://photon.komoot.io/api/',
+            params={'q': q, 'limit': 1, 'lang': 'en'},
+            headers={'User-Agent': 'CommunityPlaylist/1.0 (andrew.jubinsky@gmail.com)'},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            return None, None
+        features = r.json().get('features', [])
+        if features:
+            coords = features[0]['geometry']['coordinates']  # [lng, lat]
+            return float(coords[1]), float(coords[0])
+    except Exception:
+        pass
+    return None, None
+
+
 def geocode_location(location_string):
     """Forward geocode. Returns (lat, lng) or (None, None).
-    Raises NominatimRateLimited on HTTP 429 so callers can abort early."""
+    Tries Nominatim first; falls back to Photon on 429."""
     if not location_string or location_string.startswith(('http://', 'https://', 'www.')):
         return None, None
     try:
@@ -138,7 +184,7 @@ def geocode_location(location_string):
         if data:
             return float(data[0]['lat']), float(data[0]['lon'])
     except NominatimRateLimited:
-        raise
+        return _geocode_photon(q)  # Nominatim throttled — fall back to Photon
     except Exception:
         pass
     return None, None
