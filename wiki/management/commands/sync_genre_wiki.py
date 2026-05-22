@@ -42,6 +42,25 @@ WIKI_PHRASES = {"R&B", "J-R&B", "Lo-Fi", "Hi-Fi", "G-Funk", "K-Pop", "J-Pop", "J
 # Splits on & , ; / | whitespace and underscore (library uses underscore as word sep)
 _SEP = re.compile(r'[&,;/|\s_]+')
 
+# Stop-words to discard — articles, prepositions, connectives in any language
+_STOP = {
+    'a', 'an', 'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with',
+    'de', 'del', 'la', 'el', 'los', 'las', 'les', 'le', 'du', 'des', 'et', 'en',
+    'no', 'up', 'e',
+}
+
+# Title-case normalisation table for common genre words the library stores in lowercase
+_TITLE = {
+    'hip': 'Hip', 'hop': 'Hop', 'jazz': 'Jazz', 'blues': 'Blues', 'pop': 'Pop',
+    'rock': 'Rock', 'soul': 'Soul', 'funk': 'Funk', 'rap': 'Rap', 'trap': 'Trap',
+    'house': 'House', 'jungle': 'Jungle', 'metal': 'Metal', 'punk': 'Punk',
+    'indie': 'Indie', 'wave': 'Wave', 'bass': 'Bass', 'drum': 'Drum',
+    'dance': 'Dance', 'chill': 'Chill', 'future': 'Future',
+    'progressive': 'Progressive', 'hardcore': 'Hardcore', 'neurofunk': 'Neurofunk',
+    'brostep': 'Brostep', 'chillstep': 'Chillstep', 'slowed': 'Slowed',
+    'jump': 'Jump', 'trap': 'Trap',
+}
+
 
 def wiki_tokenize(tag: str) -> list[str]:
     """Split an edit.music genre tag into atomic wiki tokens."""
@@ -52,8 +71,16 @@ def wiki_tokenize(tag: str) -> list[str]:
     result = []
     for p in parts:
         p = p.strip()
-        if p:
-            result.append(p)
+        if not p or len(p) < 2:  # skip single-char noise
+            continue
+        p_lower = p.lower()
+        if p_lower in _STOP:  # skip stop-words
+            continue
+        if '.' in p or '@' in p:  # skip domain names / emails
+            continue
+        # Normalise case for known genre words stored in lowercase by some taggers
+        p = _TITLE.get(p_lower, p)
+        result.append(p)
     return result
 
 
