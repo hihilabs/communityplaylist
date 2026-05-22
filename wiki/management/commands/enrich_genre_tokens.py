@@ -78,6 +78,9 @@ _BPM_HINTS = {
 _YEAR_EXACT  = re.compile(r'\bin\s+(1[89]\d\d|20[012]\d)\b')
 _YEAR_DECADE = re.compile(
     r'\bin\s+(?:the\s+)?(?:(early|mid|late)\s+)?(1[89]\d0|20[012]0)s\b', re.I)
+# Fallback: "Since the 1920s", "by the 1950s", "during the 1970s"
+_YEAR_SINCE  = re.compile(
+    r'\b(?:since|by|during|of)\s+(?:the\s+)?(?:(early|mid|late)\s+)?(1[89]\d0|20[012]0)s\b', re.I)
 _DERIVED_RX  = [
     re.compile(r'(?:sub-?genre|subtype|variant|form|style|type|offshoot|branch)\s+of\s+([^,.;\n]{4,50})', re.I),
     re.compile(r'evolved?\s+(?:out\s+of|from)\s+([^,.;\n]{4,50})', re.I),
@@ -92,6 +95,11 @@ def _year_from_text(text: str) -> int | None:
     if m:
         return int(m.group(1))
     m = _YEAR_DECADE.search(text)
+    if m:
+        decade = int(m.group(2))
+        offset = {'early': 2, 'mid': 5, 'late': 8}.get((m.group(1) or '').lower(), 0)
+        return decade + offset
+    m = _YEAR_SINCE.search(text)
     if m:
         decade = int(m.group(2))
         offset = {'early': 2, 'mid': 5, 'late': 8}.get((m.group(1) or '').lower(), 0)
