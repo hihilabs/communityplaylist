@@ -10,6 +10,7 @@ services:
       --timeout 60
       --reload
     volumes:
+      - ./.env:/app/.env:ro
       - ./db.sqlite3:/app/db.sqlite3
       - ./media:/app/media
       - ./templates:/app/templates
