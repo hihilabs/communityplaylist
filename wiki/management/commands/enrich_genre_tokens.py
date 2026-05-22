@@ -99,6 +99,10 @@ def _year_from_text(text: str) -> int | None:
     return None
 
 
+# Tokens too generic to be a meaningful parent
+_TOO_GENERIC = {'Music', 'Sound', 'Genre', 'Style', 'Listening', 'Recording', 'Song', 'Beat'}
+
+
 def _derived_from_text(text: str, known: set[str]) -> str | None:
     for rx in _DERIVED_RX:
         m = rx.search(text)
@@ -107,9 +111,13 @@ def _derived_from_text(text: str, known: set[str]) -> str | None:
         raw = re.sub(r'\s+', ' ', m.group(1)).strip().rstrip('.')
         raw_lower = raw.lower()
         for name in known:
+            if name in _TOO_GENERIC:
+                continue
             if name.lower() == raw_lower:
                 return name
         for name in known:
+            if name in _TOO_GENERIC:
+                continue
             if len(name) >= 4 and name.lower() in raw_lower:
                 return name
     return None
@@ -161,17 +169,39 @@ def _lastfm_top_tracks(tag: str, api_key: str, limit: int = 5) -> list:
 
 def _compound_lfm_search(token_names: list[str], api_key: str) -> tuple[str, list]:
     """Try permutations of token names as Last.fm tags; return (found_tag, tracks)."""
-    orderings = list(_perms(token_names)) if len(token_names) <= 3 else [token_names]
+    from itertools import permutations as perms_fn
+    n = len(token_names)
     tested = set()
-    for perm in orderings:
-        for joiner in (' ', ' & ', ' and ', '-'):
-            tag = joiner.join(perm).lower()
-            if tag in tested:
-                continue
-            tested.add(tag)
-            tracks = _lastfm_top_tracks(tag, api_key, limit=5)
-            if len(tracks) >= 3:
-                return tag, tracks
+
+    def _try(tag: str) -> list:
+        if tag in tested:
+            return []
+        tested.add(tag)
+        return _lastfm_top_tracks(tag, api_key, limit=5)
+
+    # Full permutations for small sets (4! = 24 — feasible)
+    if n <= 4:
+        for perm in perms_fn(token_names):
+            for joiner in (' ', '-', ' & ', ' and '):
+                t = _try(joiner.join(perm).lower())
+                if len(t) >= 3:
+                    return joiner.join(perm).lower(), t
+    else:
+        for joiner in (' ', '-', ' & ', ' and '):
+            t = _try(joiner.join(token_names).lower())
+            if len(t) >= 3:
+                return joiner.join(token_names).lower(), t
+
+    # Sub-permutation fallback: shorter tags catch "trip hop" inside [Downtempo, Hop, Trip]
+    for sub_len in (3, 2):
+        if sub_len >= n:
+            continue
+        for perm in perms_fn(token_names, sub_len):
+            for joiner in (' ', '-'):
+                t = _try(joiner.join(perm).lower())
+                if len(t) >= 3:
+                    return joiner.join(perm).lower(), t
+
     return '', []
 
 

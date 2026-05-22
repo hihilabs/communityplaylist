@@ -280,14 +280,14 @@
 
     simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links)
-        .id(d => d.slug).distance(65).strength(0.35))
+        .id(d => d.slug).distance(70).strength(0.25))
       .force('charge', d3.forceManyBody()
-        .strength(d => -55 - nodeR(d) * 6).distanceMax(300))
-      .force('center', d3.forceCenter(0, 0).strength(0.05))
-      .force('collision', d3.forceCollide(d => nodeR(d) + 3))
+        .strength(d => -45 - nodeR(d) * 5).distanceMax(260))
+      .force('center', d3.forceCenter(0, 0).strength(0.04))
+      .force('collision', d3.forceCollide(d => nodeR(d) + 4))
       .force('family', familyForce)
-      .alphaDecay(0.035)
-      .velocityDecay(0.45)
+      .alphaDecay(0.04)
+      .velocityDecay(0.65)
       .on('tick', () => {
         linkSel
           .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
@@ -310,51 +310,77 @@
     return set;
   }
 
+  function setNodeText(node, role) {
+    // role: 'focus' | 'neighbor' | 'dim' | 'reset'
+    node.select('text')
+      .style('display', role === 'dim' ? 'none'
+           : role === 'reset' ? (d => d.track_count > 150 ? null : 'none')
+           : null)
+      .attr('fill', role === 'focus' ? 'white'
+          : role === 'neighbor' ? 'var(--text)'
+          : 'var(--muted)')
+      .attr('font-size', role === 'focus' ? '12px'
+          : d => d.track_count > 500 ? '11px' : '9px');
+  }
+
   function highlightNeighborhood(slug) {
     const hood = neighborhoodOf([slug]);
-    nodeSel.select('circle')
-      .style('opacity', n => hood.has(n.slug) ? 1 : 0.08)
-      .attr('stroke', n => n.slug === slug ? 'white' : genreColor(n.name))
-      .attr('stroke-width', n => n.slug === slug ? 3 : 1.5)
-      .attr('stroke-opacity', n => n.slug === slug ? 1 : 0.45);
+    nodeSel.each(function(n) {
+      const sel = d3.select(this);
+      const role = n.slug === slug ? 'focus' : hood.has(n.slug) ? 'neighbor' : 'dim';
+      sel.select('circle')
+        .style('opacity', role === 'dim' ? 0.07 : 1)
+        .attr('stroke', role === 'focus' ? 'white' : genreColor(n.name))
+        .attr('stroke-width', role === 'focus' ? 3 : 1.5)
+        .attr('stroke-opacity', role === 'focus' ? 1 : 0.45);
+      setNodeText(sel, role);
+    });
     linkSel.style('opacity', l => {
-      const s = l.source.slug || l.source;
-      const t = l.target.slug || l.target;
+      const s = l.source.slug || l.source, t = l.target.slug || l.target;
       return (s === slug || t === slug) ? 0.85 : 0.03;
     });
   }
 
   function applyHighlight() {
     if (activeSearch) {
-      const matches = allNodes
-        .filter(n => n.name.toLowerCase().includes(activeSearch))
-        .map(n => n.slug);
-      if (matches.length) {
-        const hood = neighborhoodOf(matches);
-        nodeSel.select('circle')
-          .style('opacity', n => hood.has(n.slug) ? 1 : 0.07)
-          .attr('stroke', n => matches.includes(n.slug) ? 'white' : genreColor(n.name))
-          .attr('stroke-width', n => matches.includes(n.slug) ? 2.5 : 1.5)
-          .attr('stroke-opacity', n => matches.includes(n.slug) ? 0.9 : 0.45);
+      const matchSlugs = new Set(
+        allNodes.filter(n => n.name.toLowerCase().includes(activeSearch)).map(n => n.slug)
+      );
+      if (matchSlugs.size) {
+        const hood = neighborhoodOf([...matchSlugs]);
+        nodeSel.each(function(n) {
+          const sel  = d3.select(this);
+          const role = matchSlugs.has(n.slug) ? 'focus' : hood.has(n.slug) ? 'neighbor' : 'dim';
+          sel.select('circle')
+            .style('opacity', role === 'dim' ? 0.06 : 1)
+            .attr('stroke', role === 'focus' ? 'white' : genreColor(n.name))
+            .attr('stroke-width', role === 'focus' ? 2.5 : 1.5)
+            .attr('stroke-opacity', role === 'focus' ? 0.9 : 0.45);
+          setNodeText(sel, role);
+        });
         linkSel.style('opacity', l => {
-          const s = l.source.slug || l.source;
-          const t = l.target.slug || l.target;
-          return hood.has(s) && hood.has(t) ? 0.6 : 0.03;
+          const s = l.source.slug || l.source, t = l.target.slug || l.target;
+          return hood.has(s) && hood.has(t) ? 0.55 : 0.02;
         });
         return;
       }
     }
     if (activeLegend) {
-      nodeSel.select('circle')
-        .style('opacity', n => genreColor(n.name) === activeLegend ? 1 : 0.07)
-        .attr('stroke', d => genreColor(d.name))
-        .attr('stroke-width', 1.5)
-        .attr('stroke-opacity', 0.45);
+      nodeSel.each(function(n) {
+        const sel    = d3.select(this);
+        const active = genreColor(n.name) === activeLegend;
+        sel.select('circle')
+          .style('opacity', active ? 1 : 0.06)
+          .attr('stroke', genreColor(n.name))
+          .attr('stroke-width', 1.5)
+          .attr('stroke-opacity', active ? 0.7 : 0.3);
+        setNodeText(sel, active ? 'focus' : 'dim');
+      });
       linkSel.style('opacity', l => {
         const s = l.source.slug || l.source, t = l.target.slug || l.target;
         const sn = allNodes.find(n => n.slug === s), tn = allNodes.find(n => n.slug === t);
         return (sn && genreColor(sn.name) === activeLegend) ||
-               (tn && genreColor(tn.name) === activeLegend) ? 0.5 : 0.02;
+               (tn && genreColor(tn.name) === activeLegend) ? 0.45 : 0.02;
       });
       return;
     }
@@ -362,6 +388,7 @@
   }
 
   function resetHighlight() {
+    nodeSel.each(function() { setNodeText(d3.select(this), 'reset'); });
     nodeSel.select('circle')
       .style('opacity', null)
       .attr('stroke', d => genreColor(d.name))

@@ -39,8 +39,8 @@ from wiki.models import GenreToken, CompoundGenre
 # Tags that must never be split — single-concept genre names containing separators
 WIKI_PHRASES = {"R&B", "J-R&B", "Lo-Fi", "Hi-Fi", "G-Funk", "K-Pop", "J-Pop", "J-Rock"}
 
-# Splits on & , ; / | and whitespace
-_SEP = re.compile(r'[&,;/|\s]+')
+# Splits on & , ; / | whitespace and underscore (library uses underscore as word sep)
+_SEP = re.compile(r'[&,;/|\s_]+')
 
 
 def wiki_tokenize(tag: str) -> list[str]:
