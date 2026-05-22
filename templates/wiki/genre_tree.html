@@ -208,16 +208,32 @@
         .domain([minY, maxY])
         .range([MARGIN.left, W - MARGIN.right]);
 
-      // Position each node in its family lane with slight jitter to avoid overlap
-      const laneCount = Array(N_LANES).fill(0);
+      // Assign lane and base X position
       nodes.forEach(n => {
         const color = genreColor(n.name);
-        const lane  = FAMILY_LANES[color] ?? 7;
-        n._lane = lane;
-        // Spread within lane slightly by year fraction
-        const yBase = MARGIN.top + lane * LANE_H + LANE_H / 2;
+        n._lane = FAMILY_LANES[color] ?? 7;
         n._x = xScale(n.year);
-        n._y = yBase;
+        n._y = MARGIN.top + n._lane * LANE_H + LANE_H / 2;
+      });
+
+      // Spread nodes that cluster in the same lane + year area vertically
+      const byLane = Array.from({ length: N_LANES }, () => []);
+      nodes.forEach(n => byLane[n._lane].push(n));
+      byLane.forEach((laneNodes, lane) => {
+        laneNodes.sort((a, b) => a._x - b._x);
+        const yMid = MARGIN.top + lane * LANE_H + LANE_H / 2;
+        let i = 0;
+        while (i < laneNodes.length) {
+          let j = i + 1;
+          while (j < laneNodes.length && laneNodes[j]._x - laneNodes[i]._x < 50) j++;
+          const cluster = laneNodes.slice(i, j);
+          const count = cluster.length;
+          const step = Math.min((LANE_H * 0.72) / Math.max(count - 1, 1), 22);
+          cluster.forEach((n, k) => {
+            n._y = count === 1 ? yMid : yMid + (k - (count - 1) / 2) * step;
+          });
+          i = j;
+        }
       });
 
       // ── Decade grid lines ──────────────────────────────────────
@@ -268,8 +284,17 @@
 
       nodeG.append('text')
         .text(n => n.name)
-        .attr('x', n => nodeR(n.track_count) + 3)
-        .attr('y', '0.35em')
+        .attr('x', 0)
+        .attr('text-anchor', 'middle')
+        .attr('y', n => {
+          const yMid = MARGIN.top + n._lane * LANE_H + LANE_H / 2;
+          const r = nodeR(n.track_count);
+          return n._y >= yMid ? r + 11 : -(r + 5);
+        })
+        .attr('dominant-baseline', n => {
+          const yMid = MARGIN.top + n._lane * LANE_H + LANE_H / 2;
+          return n._y >= yMid ? 'hanging' : 'auto';
+        })
         .attr('fill', 'var(--muted)')
         .attr('font-size', n => n.track_count > 500 ? '11px' : '9px')
         .style('display', n => n.track_count > 100 ? null : 'none');
