@@ -34,6 +34,12 @@ jobs:
             fi
             echo "Health check passed (HTTP $HTTP_STATUS)"
 
+            # ── Purge Cloudflare cache ───────────────────────────────────
+            curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+              -H "Authorization: Bearer ${{ secrets.CF_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              --data '{"purge_everything":true}' | grep -o '"success":[^,}]*' || true
+
             # Quick DB sanity + optional Discord ping
             python manage.py db_health --quiet 2>&1 | tail -5 || true
 
