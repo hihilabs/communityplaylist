@@ -1,20 +1,29 @@
 """
 Social auto-posting for Community Playlist.
 
-Handles Bluesky (AT Protocol, no external deps) and Discord (webhooks)
-for board topics, Free & Trade offerings, and new approved events.
+Handles Bluesky (AT Protocol, no external deps), Discord (webhooks),
+and Buffer (queued publishing — YouTube Community, Instagram, Facebook,
+TikTok, LinkedIn, Twitter/X) for board topics, Free & Trade offerings,
+new approved events, and promoter profiles.
 
 Entry points:
-  post_topic(topic)         — board topic → both platforms
-  post_offering(offering)   — Free & Trade item → both platforms
-  post_event_discord(event) — new approved event → Discord embed
+  post_topic(topic)         — board topic → Bluesky + Discord + Buffer (FB/Threads)
+  post_offering(offering)   — Free & Trade item → Bluesky + Discord + Buffer
+  post_event_discord(event) — new approved event → Discord only (no Buffer — too frequent)
+  post_promoter(promoter)   — profile blast → Bluesky + Discord + Buffer
+                              max 2/day via daily cap; trigger on is_verified or shop sync
   bluesky_events_digest()   — called by bluesky_digest management command;
                               handles 27-post split-by-category logic
+
+Buffer config:
+  Only BUFFER_ACCESS_TOKEN needed in settings — channel IDs hardwired in social.py.
+  YouTube: add channel ID to BUFFER_CHANNELS after connecting UCiwtsacGi0MUuHzBzUQR7gA in Buffer.
 """
 import json
 import re
 import time
 import unicodedata
+import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone as dt_tz
@@ -198,10 +207,11 @@ def _discord_send(webhook_url, payload):
 # ── Board topic posting ────────────────────────────────────────────────────────
 
 def post_topic(topic):
-    """Post a board topic to both Bluesky and Discord. Returns (bsky_ok, discord_ok)."""
+    """Post a board topic to Bluesky, Discord, and Buffer. Returns (bsky_ok, discord_ok, buffer_ok)."""
     return (
         _post_topic_bluesky(topic),
         _post_topic_discord(topic),
+        post_buffer_topic(topic),
     )
 
 
@@ -274,10 +284,11 @@ def _post_topic_discord(topic):
 # ── Free & Trade offering posting ─────────────────────────────────────────────
 
 def post_offering(offering):
-    """Post a Free & Trade offering to both platforms."""
+    """Post a Free & Trade offering to Bluesky, Discord, and Buffer."""
     return (
         _post_offering_bluesky(offering),
         _post_offering_discord(offering),
+        post_buffer_offering(offering),
     )
 
 
@@ -541,3 +552,367 @@ def build_event_batch_posts(events, daily_limit=27):
         batches.append((header, link, event_texts))
 
     return batches
+
+
+# ── Promoter profile blast ─────────────────────────────────────────────────────
+
+def _hex_to_discord_int(hex_color, default=0xff6b35):
+    try:
+        return int((hex_color or '').lstrip('#'), 16)
+    except ValueError:
+        return default
+
+
+def _post_promoter_bluesky(promoter):
+    try:
+        token, did = _bsky_session()
+        if not token:
+            return False
+
+        url      = f'{CP_BASE}{promoter.get_absolute_url()}'
+        genres   = list(promoter.genres.values_list('name', flat=True)[:5])
+        bio_prev = (promoter.bio or '')[:180].strip()
+        if len(promoter.bio or '') > 180:
+            bio_prev += '…'
+
+        type_icon = promoter.get_type_icons()
+
+        listings   = promoter.record_listings.filter(is_available=True)
+        shop_count = listings.count()
+        shop_line  = ''
+        if shop_count:
+            formats  = list(listings.exclude(format='').values_list('format', flat=True).distinct()[:3])
+            pay_opts = []
+            if promoter.sol_wallet:             pay_opts.append('SOL')
+            if promoter.shop_pay_in_person:     pay_opts.append('in person')
+            if promoter.shop_open_to_trade:     pay_opts.append('trades')
+            fmt_str  = ' · '.join(formats) if formats else 'Vinyl'
+            pay_str  = ' / '.join(pay_opts)
+            shop_line = f'\n🛒 {shop_count} records for sale ({fmt_str})'
+            if pay_str:
+                shop_line += f' — {pay_str}'
+
+        live_line    = f'\n🔴 LIVE on Twitch right now' if promoter.is_live and promoter.twitch else ''
+        verified_mark = ' ✓' if promoter.is_verified else ''
+        genre_tags   = ' '.join(_slugify_tag(g) for g in genres)
+        tag_str      = f'{genre_tags} #PDX #Portland'.strip()
+
+        text = (
+            f'{type_icon} {promoter.name}{verified_mark}\n\n'
+            f'{bio_prev}'
+            f'{shop_line}'
+            f'{live_line}\n\n'
+            f'{url}\n\n'
+            f'{tag_str}'
+        )[:300]
+
+        tag_list = [t for t in tag_str.split() if t.startswith('#')]
+        facets   = _bsky_facets(text, links=[url], hashtags=tag_list)
+
+        thumb = None
+        if promoter.photo:
+            thumb = _bsky_upload_blob(f'{CP_BASE}{promoter.photo.url}', token)
+
+        embed = {
+            '$type': 'app.bsky.embed.external',
+            'external': {
+                'uri':         url,
+                'title':       f'{promoter.name} — Community Playlist',
+                'description': (promoter.bio or '')[:200],
+            },
+        }
+        if thumb:
+            embed['external']['thumb'] = thumb
+
+        _bsky_create(token, did, text, facets=facets, embed=embed)
+        return True
+    except Exception as e:
+        print(f'[Bluesky] promoter post failed: {e}')
+        return False
+
+
+def _post_promoter_discord(promoter):
+    from django.conf import settings
+    webhook = (getattr(settings, 'DISCORD_WEBHOOK_PROFILES', '')
+               or getattr(settings, 'DISCORD_WEBHOOK_EVENTS', ''))
+    if not webhook:
+        return False
+
+    url       = f'{CP_BASE}{promoter.get_absolute_url()}'
+    color     = _hex_to_discord_int(promoter.brand_color)
+    type_line = promoter.get_types_display()
+    img       = f'{CP_BASE}{promoter.photo.url}' if promoter.photo else LOGO
+
+    socials = []
+    if promoter.instagram:  socials.append(f'[IG](https://instagram.com/{promoter.instagram})')
+    if promoter.soundcloud: socials.append(f'[SC](https://soundcloud.com/{promoter.soundcloud})')
+    if promoter.mixcloud:   socials.append(f'[MC](https://mixcloud.com/{promoter.mixcloud}/)')
+    if promoter.spotify:    socials.append(f'[Spotify]({promoter.spotify})')
+    if promoter.bandcamp:   socials.append(f'[Bandcamp]({promoter.bandcamp})')
+    if promoter.youtube:    socials.append(f'[YouTube]({promoter.youtube})')
+    if promoter.twitch:     socials.append(f'[Twitch](https://twitch.tv/{promoter.twitch})')
+    if promoter.bluesky:    socials.append(f'[Bsky](https://bsky.app/profile/{promoter.bluesky})')
+    if promoter.discord:    socials.append(f'[Discord]({promoter.discord})')
+    if promoter.website:    socials.append(f'[Website]({promoter.website})')
+
+    listings   = promoter.record_listings.filter(is_available=True)
+    shop_count = listings.count()
+    shop_text  = None
+    if shop_count:
+        formats   = list(listings.exclude(format='').values_list('format', flat=True).distinct()[:4])
+        fmt_str   = ' · '.join(formats) if formats else 'Vinyl'
+        pay_parts = []
+        if promoter.sol_wallet:             pay_parts.append('◎ SOL')
+        if promoter.shop_pay_in_person:     pay_parts.append('🤝 In Person')
+        if promoter.shop_open_to_trade:     pay_parts.append('🔄 Trade')
+        pay_str  = '  '.join(pay_parts)
+        shop_text = f'{shop_count} records for sale — {fmt_str}'
+        if pay_str:
+            shop_text += f'\n{pay_str}'
+
+    genres = ', '.join(promoter.genres.values_list('name', flat=True)[:6]) or None
+
+    fields = []
+    if genres:
+        fields.append({'name': '🎵 Genres',    'value': genres,                    'inline': True})
+    if type_line:
+        fields.append({'name': '🏷 Type',      'value': type_line,                 'inline': True})
+    if socials:
+        fields.append({'name': '🔗 Links',     'value': '  ·  '.join(socials[:6]), 'inline': False})
+    if shop_text:
+        fields.append({'name': '🛒 Record Shop', 'value': shop_text,               'inline': False})
+    if promoter.is_live and promoter.twitch:
+        fields.append({'name': '📺 Live Now',
+                       'value': f'[twitch.tv/{promoter.twitch}](https://twitch.tv/{promoter.twitch})',
+                       'inline': False})
+
+    verified_mark = ' ✓' if promoter.is_verified else ''
+    payload = {
+        'embeds': [{
+            'title':       f'{promoter.name}{verified_mark}',
+            'url':         url,
+            'description': (promoter.bio or '')[:300],
+            'color':       color,
+            'thumbnail':   {'url': img},
+            'fields':      fields,
+            'author':      {'name': f'🌹 Community Playlist — {type_line}'},
+            'footer':      {'text': 'communityplaylist.com', 'icon_url': LOGO},
+            'timestamp':   promoter.created_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        }],
+    }
+    return _discord_send(webhook, payload)
+
+
+def post_promoter(promoter):
+    """Blast a promoter profile to Bluesky, Discord, and Buffer.
+
+    Trigger on is_verified transitioning True, or after a record shop sync
+    adds new listings. Returns (bsky_ok, discord_ok, buffer_ok).
+    """
+    return (
+        _post_promoter_bluesky(promoter),
+        _post_promoter_discord(promoter),
+        post_buffer_promoter(promoter),
+    )
+
+
+# ── Buffer (queued publishing — FB, Instagram, Threads, YouTube Community) ─────
+#
+# Uses Buffer's GraphQL API (v2 personal key tokens only — v1 is blocked).
+# Channel IDs are hardwired; only BUFFER_ACCESS_TOKEN lives in settings.
+# Add YouTube channel ID below once connected in Buffer dashboard.
+
+BUFFER_GQL  = 'https://api.buffer.com/graphql'
+BUFFER_DAILY_PROMOTER_LIMIT = 2  # max profile highlights queued per day
+
+# Hardwired channel IDs (fetched 2026-05-22 via API)
+BUFFER_CHANNELS = {
+    'instagram': '6a10766c090476fb994aff0a',   # @community_playlist
+    'facebook':  '6a107692090476fb994affaa',   # Community Playlist
+    'threads':   '6a1077a7090476fb994b0473',   # @community_playlist
+    # 'youtube': '<id>',                        # UCiwtsacGi0MUuHzBzUQR7gA — add after connecting in Buffer
+}
+
+# Required post-type metadata per channel
+_BUFFER_META = {
+    'instagram': {'instagram': {'type': 'post', 'shouldShareToFeed': True}},
+    'facebook':  {'facebook':  {'type': 'post'}},
+    'threads':   {'threads':   {'type': 'post'}},
+}
+
+_BUFFER_MUTATION = """
+mutation CreatePost($input: CreatePostInput!) {
+    createPost(input: $input) {
+        __typename
+        ... on PostActionSuccess { post { id status } }
+        ... on UnexpectedError   { message }
+        ... on InvalidInputError { message }
+        ... on LimitReachedError { message }
+    }
+}
+"""
+
+
+def _buffer_post_channel(token, channel_key, text, image_urls=None):
+    """Queue one post to a single Buffer channel. Returns True on success.
+
+    image_urls: list of absolute image URLs (carousel if >1, single image if 1).
+    Instagram requires at least one image — channel is skipped if none provided.
+    """
+    channel_id = BUFFER_CHANNELS.get(channel_key)
+    if not channel_id:
+        return False
+    # Instagram requires an image
+    if channel_key == 'instagram' and not image_urls:
+        return False
+
+    inp = {
+        'channelId':      channel_id,
+        'text':           text[:2000],
+        'schedulingType': 'automatic',
+        'mode':           'addToQueue',
+        'metadata':       _BUFFER_META.get(channel_key, {}),
+    }
+    if image_urls:
+        inp['assets'] = [{'image': {'url': u}} for u in image_urls]
+
+    payload = json.dumps({'query': _BUFFER_MUTATION, 'variables': {'input': inp}}).encode()
+    req = urllib.request.Request(
+        BUFFER_GQL, data=payload,
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'},
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            result = json.loads(r.read())
+        cp = result.get('data', {}).get('createPost', {})
+        if cp.get('__typename') == 'PostActionSuccess':
+            return True
+        if cp.get('message'):
+            print(f'[Buffer:{channel_key}] {cp["message"]}')
+        return False
+    except Exception as e:
+        print(f'[Buffer:{channel_key}] request failed: {e}')
+        return False
+
+
+def _buffer_send(text, channels=None, image_url=None, image_urls=None):
+    """Queue a post to Buffer. channels=None → all channels. Staggers calls by 0.5s.
+
+    image_urls (list) takes priority over single image_url for carousel posts.
+    """
+    from django.conf import settings
+    token = getattr(settings, 'BUFFER_ACCESS_TOKEN', '')
+    if not token:
+        return False
+
+    urls    = image_urls or ([image_url] if image_url else None)
+    targets = channels or list(BUFFER_CHANNELS.keys())
+    results = []
+    for i, ch in enumerate(targets):
+        results.append(_buffer_post_channel(token, ch, text, image_urls=urls))
+        if i < len(targets) - 1:
+            time.sleep(0.5)
+    return any(results)
+
+
+def _buffer_promoter_quota_ok():
+    """Return True if today's promoter highlight cap hasn't been reached."""
+    try:
+        from django.core.cache import cache
+        from django.utils.timezone import now
+        key = f'buffer_promoter_{now().date().isoformat()}'
+        count = cache.get(key, 0)
+        if count >= BUFFER_DAILY_PROMOTER_LIMIT:
+            print(f'[Buffer] daily promoter limit ({BUFFER_DAILY_PROMOTER_LIMIT}) reached — skipping')
+            return False
+        cache.set(key, count + 1, timeout=86400)
+        return True
+    except Exception:
+        return True  # don't block on cache errors
+
+
+def post_buffer_promoter(promoter):
+    """Queue a promoter highlight to Buffer (FB + Threads always; IG if photo exists).
+
+    Capped at BUFFER_DAILY_PROMOTER_LIMIT per day — slow and steady.
+    """
+    if not _buffer_promoter_quota_ok():
+        return False
+
+    url      = f'{CP_BASE}{promoter.get_absolute_url()}'
+    bio_prev = (promoter.bio or '')[:200].strip()
+    if len(promoter.bio or '') > 200:
+        bio_prev += '…'
+    genre_tags   = ' '.join(_slugify_tag(g) for g in promoter.genres.values_list('name', flat=True)[:5])
+    type_icon    = promoter.get_type_icons()
+    listings     = promoter.record_listings.filter(is_available=True)
+    shop_count   = listings.count()
+    shop_line    = ''
+    if shop_count:
+        formats   = list(listings.exclude(format='').values_list('format', flat=True).distinct()[:3])
+        pay_parts = []
+        if promoter.sol_wallet:             pay_parts.append('◎ SOL')
+        if promoter.shop_pay_in_person:     pay_parts.append('🤝 in person')
+        if promoter.shop_open_to_trade:     pay_parts.append('🔄 trades')
+        shop_line = f'\n🛒 {shop_count} records for sale — {" · ".join(formats) or "Vinyl"}'
+        if pay_parts:
+            shop_line += f'  ({" / ".join(pay_parts)})'
+
+    socials = []
+    if promoter.instagram:  socials.append(f'📷 @{promoter.instagram}')
+    if promoter.soundcloud: socials.append(f'☁ SC/{promoter.soundcloud}')
+    if promoter.mixcloud:   socials.append(f'🎛 MC/{promoter.mixcloud}')
+    social_line = '\n' + '  ·  '.join(socials[:3]) if socials else ''
+
+    verified_mark = ' ✓' if promoter.is_verified else ''
+    text = (
+        f'{type_icon} {promoter.name}{verified_mark}\n\n'
+        f'{bio_prev}'
+        f'{social_line}'
+        f'{shop_line}\n\n'
+        f'{url}\n\n'
+        f'{genre_tags} #PDX #Portland #CommunityPlaylist'
+    )
+    # Generate PIL social cards (hero + info + shop); fall back to raw photo
+    image_urls = None
+    try:
+        from board.social_cards import generate_promoter_cards
+        image_urls = generate_promoter_cards(promoter) or None
+    except Exception as e:
+        print(f'[Buffer] card generation failed: {e}')
+    if not image_urls and promoter.photo:
+        image_urls = [f'{CP_BASE}{promoter.photo.url}']
+
+    return _buffer_send(text, image_urls=image_urls)
+
+
+def post_buffer_offering(offering):
+    """Queue a Free & Trade offering to FB + Threads (+ IG if photo)."""
+    url       = f'{CP_BASE}{offering.get_absolute_url()}'
+    cat_icons = {'give': '🎁 FREE', 'trade': '🔄 TRADE', 'iso': '🔍 ISO'}
+    cat_label = cat_icons.get(offering.category, '🎁')
+    hood      = f' · {offering.neighborhood.name}' if offering.neighborhood else ''
+    body_prev = (offering.body or '')[:220].strip()
+
+    text = (
+        f'{cat_label} — {offering.title}{hood}\n\n'
+        f'{body_prev}\n\n'
+        f'{url}\n\n'
+        f'#PDXFree #BuyNothingPDX #Portland'
+    )
+    img = f'{CP_BASE}{offering.photo.url}' if offering.photo else None
+    return _buffer_send(text, image_url=img)
+
+
+def post_buffer_topic(topic):
+    """Queue a board topic to FB + Threads (no IG — text-only)."""
+    url       = f'{CP_BASE}{topic.get_absolute_url()}'
+    tags      = BOARD_TAGS.get(topic.category, '#PDXCommunity #Portland')
+    body_prev = (topic.body or '')[:220].strip()
+    if len(topic.body or '') > 220:
+        body_prev += '…'
+
+    text = f'💬 {topic.title}\n\n{body_prev}\n\n{url}\n\n{tags}'
+    # Topics are text-only → skip Instagram
+    return _buffer_send(text, channels=['facebook', 'threads'])

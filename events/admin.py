@@ -471,6 +471,16 @@ class PromoterProfileAdmin(admin.ModelAdmin):
         self.message_user(request, f'{created} artist profile(s) created and linked, {already} already linked.')
     convert_to_artist.short_description = '🎤 Convert selected crews → Artist profile'
 
+    def save_model(self, request, obj, form, change):
+        was_unverified = change and PromoterProfile.objects.filter(pk=obj.pk, is_verified=False).exists()
+        super().save_model(request, obj, form, change)
+        if was_unverified and obj.is_verified:
+            try:
+                from board.social import post_promoter
+                post_promoter(obj)
+            except Exception as e:
+                self.message_user(request, f'Profile saved — blast failed: {e}', level='warning')
+
 
 class HasPreviewFilter(admin.SimpleListFilter):
     title = 'preview video'

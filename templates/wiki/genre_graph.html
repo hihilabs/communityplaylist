@@ -249,7 +249,7 @@
       .selectAll('g').data(nodes).join('g')
       .attr('class', 'g-node')
       .call(makeDrag())
-      .on('click', (e, d) => { window.location.href = "{% url 'wiki:token_detail' '@@' %}".replace('@@', d.slug); })
+      .on('click', (e, d) => { window.location.href = "{% url 'wiki:token_detail' 'SLUG' %}".replace('SLUG', d.slug); })
       .on('mouseover', (e, d) => { showTip(e, d); highlightNeighborhood(d.slug); })
       .on('mousemove', moveTip)
       .on('mouseout',  ()  => { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); });

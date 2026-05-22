@@ -180,6 +180,11 @@ DISCORD_CHAN_EVENTS = config('DISCORD_CHAN_EVENTS', default='')  # #cp-events
 DISCORD_CHAN_TRADE  = config('DISCORD_CHAN_TRADE',  default='')  # #cp-free-trade
 DISCORD_CHAN_DROPS  = config('DISCORD_CHAN_DROPS',  default='')  # #cp-drops
 
+# Buffer — queued publishing (FB, Instagram, Threads, YouTube Community)
+# Personal key: publish.buffer.com/settings/api → Personal Keys
+# Channel IDs are hardwired in board/social.py — only the token goes in .env
+BUFFER_ACCESS_TOKEN = config('BUFFER_ACCESS_TOKEN', default='')
+
 # Social auto-posting limits
 SOCIAL_DAILY_POST_LIMIT  = 27  # max Bluesky posts/day; above this, events split by category
 SOCIAL_BOARD_DELAY_HOURS = 1   # hours after topic creation before auto-posting

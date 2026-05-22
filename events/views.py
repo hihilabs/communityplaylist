@@ -4493,8 +4493,15 @@ def promoter_sync_shop(request, slug):
     if not promoter.shop_sheet_url:
         messages.warning(request, 'No sheet URL set — add one in your profile settings.')
         return redirect('promoter_edit', slug=slug)
+    first_sync = not promoter.record_listings.filter(is_available=True).exists()
     created, updated = _sync_record_shop(promoter)
     messages.success(request, f'Shop synced: {created} new, {updated} updated.')
+    if first_sync and created > 0:
+        try:
+            from board.social import post_promoter
+            post_promoter(promoter)
+        except Exception:
+            pass
     return redirect('promoter_detail', slug=slug)
 
 
@@ -4777,7 +4784,7 @@ def shop(request):
 # ── RSS Feed for new approved events (Zapier / IFTTT trigger) ─────────────────
 
 def events_rss(request):
-    """RSS 2.0 feed of recently approved events — consumed by Zapier for social posting."""
+    """RSS 2.0 feed of recently approved events — consumed by Buffer (or Zapier/IFTTT) for social posting."""
     from django.utils.feedgenerator import Rss201rev2Feed, Enclosure
     import io
 
