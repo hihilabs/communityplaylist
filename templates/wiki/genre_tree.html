@@ -190,7 +190,7 @@
   function hideTip() { tip.style.display = 'none'; }
 
   // ── Load & render ─────────────────────────────────────────────────
-  fetch('/wiki/api/tree/')
+  fetch("{% url 'wiki:api_tree_data' %}")
     .then(r => r.json())
     .then(({ nodes }) => {
       // Build parent name lookup
@@ -254,7 +254,7 @@
         .selectAll('g').data(nodes).join('g')
         .attr('class', 't-node')
         .attr('transform', n => `translate(${n._x},${n._y})`)
-        .on('click', (e, n) => { window.location.href = '/wiki/token/' + n.slug + '/'; })
+        .on('click', (e, n) => { window.location.href = "{% url 'wiki:token_detail' '@@' %}".replace('@@', n.slug); })
         .on('mouseover', (e, n) => { showTip(e, n); highlightLineage(n); })
         .on('mousemove', moveTip)
         .on('mouseout',  ()  => { hideTip(); resetHighlight(); });

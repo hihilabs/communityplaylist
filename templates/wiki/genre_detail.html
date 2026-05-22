@@ -86,7 +86,7 @@ function _wikiLoadTrack(query, title, artist) {
   document.getElementById('wiki-player-artist').textContent = artist;
   _wikiShowBar(); _wikiHighlight();
   if (_wikiCache[query]) { _wikiStartVideo(_wikiCache[query]); return; }
-  fetch('/wiki/api/yt/?q=' + encodeURIComponent(query))
+  fetch("{% url 'wiki:api_yt_search' %}?q=" + encodeURIComponent(query))
     .then(function(r){return r.json();})
     .then(function(d){ if(d.id){_wikiCache[query]=d.id;_wikiStartVideo(d.id);} });
 }
