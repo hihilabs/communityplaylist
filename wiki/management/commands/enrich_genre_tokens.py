@@ -108,7 +108,12 @@ def _year_from_text(text: str) -> int | None:
 
 
 # Tokens too generic to be a meaningful parent
-_TOO_GENERIC = {'Music', 'Sound', 'Genre', 'Style', 'Listening', 'Recording', 'Song', 'Beat'}
+_TOO_GENERIC = {
+    'Music', 'Sound', 'Genre', 'Style', 'Listening', 'Recording', 'Song', 'Beat',
+    'Dance', 'Time', 'West', 'East', 'North', 'South', 'Free', 'Easy', 'Romantic',
+    'Classical', 'Modern', 'Heavy', 'Science', 'Films', 'Underground', 'Vocal',
+    'Opera', 'Revival', 'Traditional', 'Contemporary', 'World', 'New',
+}
 
 
 def _derived_from_text(text: str, known: set[str]) -> str | None:
