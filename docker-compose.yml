@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  communityplaylist-dev:
+    image: python:3.12-slim
+    container_name: cp-dev
+    working_dir: /app
+    volumes:
+      - /mnt/user/appdata/communityplaylist:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --workers 2 --bind 0.0.0.0:8000 communityplaylist.wsgi:application"
+    env_file:
+      - /mnt/user/appdata/communityplaylist/.env
+    network_mode: bridge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cp-dev.rule=Host(`local.communityplaylist.com`)"
+      - "traefik.http.routers.cp-dev.entrypoints=websecure"
+      - "traefik.http.routers.cp-dev.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.cp-dev.middlewares=cp-rate-limit@file,cp-headers@file"
+      - "traefik.http.services.cp-dev.loadbalancer.server.port=8000"
+    restart: unless-stopped

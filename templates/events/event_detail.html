@@ -1,5 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}{{ event.title }} - Community Playlist{% endblock %}
+{% block meta_description %}{{ event.description|striptags|truncatewords:30 }}{% endblock %}
+{% block canonical %}https://communityplaylist.com/events/{{ event.slug }}/{% endblock %}
+{% block og_title %}{{ event.title }} — Community Playlist{% endblock %}
+{% block og_description %}{{ event.description|striptags|truncatewords:30 }}{% endblock %}
+{% block og_url %}https://communityplaylist.com/events/{{ event.slug }}/{% endblock %}
+{% block og_image %}{% if event.photo %}{{ event.photo.url }}{% else %}https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png{% endif %}{% endblock %}
 {% block styles %}
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -36,7 +42,7 @@ h1{color:#ff6b35;font-size:1.8em;margin-bottom:10px}
 .form-group{margin-bottom:14px}
 .form-group label{display:block;font-size:.85em;color:#aaa;margin-bottom:4px}
 .form-group input,.form-group textarea{width:100%;background:#222;border:1px solid #333;border-radius:6px;padding:10px;color:#eee;font-size:.9em}
-.form-group input:focus,.form-group textarea:focus{outline:none;border-color:#ff6b35}
+.form-group input:focus,.form-group textarea:focus,.form-group input:focus-visible,.form-group textarea:focus-visible{outline:none;border-color:#ff6b35}
 .btn{background:#ff6b35;color:#fff;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;font-size:.9em}
 .btn:hover{background:#e55a25}
 .more-link{display:inline-block;margin-top:16px;color:#ff6b35;text-decoration:none;font-size:.9em}

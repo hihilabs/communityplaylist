@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 from decouple import config, Csv
 from pathlib import Path
-CSRF_TRUSTED_ORIGINS = ['https://communityplaylist.com', 'https://www.communityplaylist.com']
+CSRF_TRUSTED_ORIGINS = ['https://communityplaylist.com', 'https://www.communityplaylist.com', 'https://local.communityplaylist.com']
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-h+uj_=cyo*v!34-=wvv8_xrdk0a-pjpselopb8)aeb-jx+66=c
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['communityplaylist.com', 'www.communityplaylist.com', '66.175.239.235']
+ALLOWED_HOSTS = ['communityplaylist.com', 'www.communityplaylist.com', '66.175.239.235', 'local.communityplaylist.com', 'localhost', '127.0.0.1']
 
 # Application definition
 
@@ -38,7 +38,7 @@ DEBUG = True
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['communityplaylist.com', 'www.communityplaylist.com', '66.175.239.235']
+ALLOWED_HOSTS = ['communityplaylist.com', 'www.communityplaylist.com', '66.175.239.235', 'local.communityplaylist.com', 'localhost', '127.0.0.1']
 
 # Application definition
 
@@ -51,7 +51,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'events',
     'board',
+    'social',
 ]
+
+BLUESKY_HANDLE       = config('BLUESKY_HANDLE', default='')
+BLUESKY_APP_PASSWORD = config('BLUESKY_APP_PASSWORD', default='')
+SITE_URL             = config('SITE_URL', default='https://communityplaylist.com')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

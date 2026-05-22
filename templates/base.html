@@ -4,9 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Community Playlist{% endblock %}</title>
+<meta name="description" content="{% block meta_description %}Portland community events — music, arts, food, fundraisers and more. By the people, for the people.{% endblock %}">
+<link rel="canonical" href="{% block canonical %}https://communityplaylist.com{{ request.path }}{% endblock %}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Community Playlist PDX">
+<meta property="og:title" content="{% block og_title %}Community Playlist — PDX Events{% endblock %}">
+<meta property="og:description" content="{% block og_description %}Portland community events — music, arts, food, fundraisers and more.{% endblock %}">
+<meta property="og:url" content="{% block og_url %}https://communityplaylist.com{{ request.path }}{% endblock %}">
+<meta property="og:image" content="{% block og_image %}https://hihi.communityplaylist.com/files/timeline_files/store_file6809b5ed4135d-community_playlist_site_logo_2025.png{% endblock %}">
+<meta name="twitter:card" content="summary_large_image">
 {% block head_extra %}{% endblock %}
 <script src="https://cdn.jsdelivr.net/npm/@hotwired/turbo@7.3.0/dist/turbo.es2017-umd.js" data-turbo-track="reload"></script>
 <style>
+/* Suppress browser :focus-visible ring on form elements — templates use border-color instead */
+input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible{outline:none}
+
 /* ── Footer Player ── */
 .cp-player{
   position:fixed;bottom:0;left:0;right:0;z-index:9000;
@@ -184,11 +196,107 @@ body.has-player{padding-bottom:56px}
   .cp-sep{display:none}
   .cp-title-link{font-size:.95em}
 }
+/* ── Weather Panel ── */
+.wx-panel{position:fixed;top:64px;left:8px;z-index:8902;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:10px;width:288px;padding:16px;opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .18s,transform .18s;box-shadow:0 8px 40px rgba(0,0,0,.88)}
+.wx-panel.open{opacity:1;transform:translateY(0);pointer-events:auto}
+.wx-bd{position:fixed;inset:0;z-index:8901;display:none}
+.wx-bd.open{display:block}
+.wx-now{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.wx-big-icon{font-size:2.4em;line-height:1;flex-shrink:0}
+.wx-big-temp{font-size:2em;font-weight:700;color:#eee;line-height:1;font-family:monospace}
+.wx-cond-lbl{font-size:.68em;color:#555;margin-top:4px;text-transform:uppercase;letter-spacing:.08em}
+.wx-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:2px}
+.wx-mi{background:#111;border:1px solid #1c1c1c;border-radius:5px;padding:7px 9px}
+.wx-ml{font-size:.53em;color:#333;font-family:monospace;letter-spacing:.12em;display:block;margin-bottom:3px}
+.wx-mv{font-size:.82em;color:#999;font-family:monospace}
+.wx-sl{font-size:.55em;color:#2a2a2a;font-family:monospace;letter-spacing:.14em;margin:12px 0 6px;padding-top:10px;border-top:1px solid #161616}
+.wx-hourly{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-bottom:2px}
+.wx-hourly::-webkit-scrollbar{display:none}
+.wx-hr{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;min-width:37px;padding:6px 3px;background:#111;border:1px solid #1c1c1c;border-radius:5px}
+.wx-hr-t{font-size:.55em;color:#333;font-family:monospace}
+.wx-hr-i{font-size:.95em;line-height:1}
+.wx-hr-c{font-size:.68em;color:#bbb;font-family:monospace}
+.wx-hr-p{font-size:.55em;color:#4455aa;font-family:monospace}
+.wx-daily{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px}
+.wx-day{background:#111;border:1px solid #1c1c1c;border-radius:5px;padding:8px 4px;text-align:center}
+.wx-dl{font-size:.55em;color:#333;font-family:monospace;letter-spacing:.06em;display:block;margin-bottom:4px}
+.wx-di{font-size:1.1em;display:block;margin-bottom:3px;line-height:1}
+.wx-dh{font-size:.72em;color:#ccc;font-family:monospace}
+.wx-do{font-size:.64em;color:#333;font-family:monospace}
+.wx-ft{font-size:.52em;color:#1c1c1c;font-family:monospace;text-align:right;letter-spacing:.04em;margin-top:4px}
+/* Language toggle */
+.sh-lang-btn,.cp-lang-pill{font-family:monospace;font-size:.72em;font-weight:700;letter-spacing:.06em;color:#555;border:1px solid #252525;padding:0 7px;height:26px;border-radius:3px;line-height:1;flex-shrink:0;transition:all .12s;background:transparent;cursor:pointer;display:inline-flex;align-items:center}
+.sh-lang-btn:hover,.cp-lang-pill:hover{color:#ff6b35;border-color:#ff6b35}
 </style>
 {% block styles %}{% endblock %}
 </head>
 <body>
 {% block body %}{% endblock %}
 {% include 'events/_player.html' %}
+
+<!-- ── Weather Panel ── -->
+<div id="wx-panel" class="wx-panel" role="dialog" aria-label="Portland weather">
+  <div class="wx-now">
+    <span class="wx-big-icon" id="wxp-icon">⛅</span>
+    <div>
+      <div class="wx-big-temp" id="wxp-temp">—°</div>
+      <div class="wx-cond-lbl" id="wxp-cond">Portland, OR</div>
+    </div>
+  </div>
+  <div class="wx-meta">
+    <div class="wx-mi"><span class="wx-ml">FEELS LIKE</span><span class="wx-mv" id="wxp-feel">—</span></div>
+    <div class="wx-mi"><span class="wx-ml">WIND</span><span class="wx-mv" id="wxp-wind">—</span></div>
+    <div class="wx-mi"><span class="wx-ml">HUMIDITY</span><span class="wx-mv" id="wxp-humid">—</span></div>
+    <div class="wx-mi"><span class="wx-ml">UV INDEX</span><span class="wx-mv" id="wxp-uv">—</span></div>
+  </div>
+  <div class="wx-sl">HOURLY FORECAST</div>
+  <div class="wx-hourly" id="wxp-hourly"><span style="color:#2a2a2a;font-family:monospace;font-size:.75em;padding:8px">loading…</span></div>
+  <div class="wx-sl">3-DAY FORECAST</div>
+  <div class="wx-daily" id="wxp-daily"></div>
+  <div class="wx-ft">Portland, OR · open-meteo.com</div>
+</div>
+<div id="wx-bd" class="wx-bd"></div>
+
+<script>
+// ── i18n / language system ────────────────────────────────────────────────────
+(function(){
+  var LANGS=['en','es','ja'];
+  var S={
+    en:{'nav.artists':'Artists','nav.crews':'Crews','nav.venues':'Venues','nav.shop':'Shop','nav.calendar':'Calendar','nav.features':'Features','nav.board':'Board','nav.freetrade':'Free/Trade','nav.hoods':'Hoods','cat.music':'Music','cat.arts':'Arts','cat.bike':'Bike','cat.food':'Food','cat.fund':'Support','cat.hybrid':'Hybrid','free':'FREE','happening_now':'Happening now','search_ph':'Search events, artists, crews…'},
+    es:{'nav.artists':'Artistas','nav.crews':'Equipos','nav.venues':'Lugares','nav.shop':'Tienda','nav.calendar':'Calendario','nav.features':'Destacados','nav.board':'Tablón','nav.freetrade':'Gratis','nav.hoods':'Barrios','cat.music':'Música','cat.arts':'Arte','cat.bike':'Bici','cat.food':'Comida','cat.fund':'Apoyo','cat.hybrid':'Mixto','free':'GRATIS','happening_now':'Ahora mismo','search_ph':'Busca eventos, artistas…'},
+    ja:{'nav.artists':'アーティスト','nav.crews':'クルー','nav.venues':'会場','nav.shop':'店','nav.calendar':'カレンダー','nav.features':'特集','nav.board':'掲示板','nav.freetrade':'無料','nav.hoods':'地区','cat.music':'音楽','cat.arts':'芸術','cat.bike':'自転車','cat.food':'食べ物','cat.fund':'支援','cat.hybrid':'複合','free':'無料','happening_now':'今すぐ','search_ph':'イベントを検索…'}
+  };
+  var LBL={en:'EN',es:'ES',ja:'日'};
+  function applyLang(lang){
+    if(!S[lang])lang='en';
+    var s=S[lang];
+    document.querySelectorAll('[data-i18n]').forEach(function(el){var k=el.getAttribute('data-i18n');if(s[k])el.textContent=s[k];});
+    document.querySelectorAll('[data-i18n-ph]').forEach(function(el){var k=el.getAttribute('data-i18n-ph');if(s[k])el.placeholder=s[k];});
+    ['cp-lang-btn','cp-lang-pill-el'].forEach(function(id){var b=document.getElementById(id);if(b)b.textContent=LBL[lang]||lang.toUpperCase();});
+    document.documentElement.setAttribute('lang',lang==='ja'?'ja':lang==='es'?'es':'en');
+    localStorage.setItem('cpLang',lang);
+    window._cpLang=lang;
+  }
+  window.cpCycleLang=function(){var cur=window._cpLang||localStorage.getItem('cpLang')||'en';applyLang(LANGS[(LANGS.indexOf(cur)+1)%LANGS.length]);};
+  function init(){applyLang(localStorage.getItem('cpLang')||'en');}
+  document.addEventListener('turbo:load',init);
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+})();
+
+// ── Weather panel open/close ──────────────────────────────────────────────────
+window.cpOpenWeather=function(){
+  var p=document.getElementById('wx-panel'),b=document.getElementById('wx-bd');
+  if(!p)return; p.classList.add('open'); if(b)b.classList.add('open');
+  if(window._portlandWx&&window._portlandWxFull) window._cpPopulateWxPanel(window._portlandWx,window._portlandWxFull);
+};
+window.cpCloseWeather=function(){
+  var p=document.getElementById('wx-panel'),b=document.getElementById('wx-bd');
+  if(p)p.classList.remove('open'); if(b)b.classList.remove('open');
+};
+document.addEventListener('click',function(e){
+  var b=document.getElementById('wx-bd');
+  if(b&&b.classList.contains('open')&&e.target===b)window.cpCloseWeather();
+});
+</script>
 </body>
 </html>
