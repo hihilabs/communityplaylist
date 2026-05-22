@@ -166,17 +166,57 @@
     .wiki-player-btns button:hover { border-color: var(--accent); color: var(--accent); }
     body.wiki-player-open { padding-bottom: 60px; }
 
-    /* ── Mobile ─────────────────────────────────────────────── */
+    /* ── Mobile hamburger ───────────────────────────────────── */
+    .nav-toggle {
+      display: none; margin-left: auto; flex-shrink: 0;
+      background: transparent; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); width: 34px; height: 34px;
+      font-size: 16px; cursor: pointer; font-family: inherit;
+      align-items: center; justify-content: center;
+      transition: border-color .15s, color .15s;
+    }
+    .nav-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Slide-down drawer ──────────────────────────────────── */
+    #nav-drawer {
+      position: fixed; top: 56px; left: 0; right: 0;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      z-index: 200; display: none;
+      transform: translateY(-6px); opacity: 0;
+      transition: transform 0.18s ease, opacity 0.18s ease;
+      pointer-events: none;
+    }
+    #nav-drawer.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    #nav-drawer nav { display: flex; flex-direction: column; }
+    #nav-drawer nav a {
+      padding: 14px 20px; color: var(--muted); font-size: 14px;
+      border-bottom: 1px solid var(--border); display: block;
+    }
+    #nav-drawer nav a:last-child { border-bottom: none; }
+    #nav-drawer nav a:hover { color: var(--text); background: rgba(255,255,255,0.03); text-decoration: none; }
+    #nav-drawer .drawer-search {
+      padding: 14px 20px; display: flex; gap: 8px;
+      border-top: 1px solid var(--border);
+    }
+    #nav-drawer .drawer-search input {
+      flex: 1; min-width: 0;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--text); padding: 9px 12px; font-size: 13px; font-family: inherit;
+    }
+    #nav-drawer .drawer-search input:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Backdrop ───────────────────────────────────────────── */
+    #nav-backdrop {
+      position: fixed; inset: 56px 0 0 0;
+      background: rgba(0,0,0,0.55); z-index: 199;
+      display: none; opacity: 0; transition: opacity 0.18s ease;
+    }
+
+    /* ── Mobile overrides ───────────────────────────────────── */
     @media (max-width: 640px) {
-      /* Scroll header horizontally — keeps it single-line (56px) so graph/tree inset stays correct */
-      header { overflow-x: auto; padding: 10px 14px; gap: 14px; scrollbar-width: none; }
-      header::-webkit-scrollbar { display: none; }
-      header .logo, header nav, header .search-form { flex-shrink: 0; }
-      header .search-form { margin-left: 10px; }
-      header .search-form input { width: 120px; }
-      .nav-cp-long { display: none; }
-      .nav-cp-short { display: inline !important; }
-      /* Content pages */
+      header { padding: 10px 16px; gap: 0; }
+      header nav, header .search-form { display: none; }
+      .nav-toggle { display: inline-flex; }
       .container { padding: 20px 16px; }
       h1 { font-size: 22px; }
       h2 { font-size: 13px; }
@@ -192,12 +232,28 @@
     <a href="{% url 'wiki:token_list' %}">Tokens</a>
     <a href="{% url 'wiki:genre_graph' %}">◉ Graph</a>
     <a href="{% url 'wiki:genre_tree' %}">⊕ Tree</a>
-    <a href="https://communityplaylist.com"><span class="nav-cp-long">← Community Playlist</span><span class="nav-cp-short" style="display:none">← CP</span></a>
+    <a href="https://communityplaylist.com">← Community Playlist</a>
   </nav>
   <form class="search-form" action="{% url 'wiki:token_list' %}" method="get">
     <input name="q" value="{{ q|default:'' }}" placeholder="Search tokens, genres…" autocomplete="off">
   </form>
+  <button class="nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
 </header>
+
+<div id="nav-drawer" aria-hidden="true">
+  <nav>
+    <a href="{% url 'wiki:token_list' %}">☰  Tokens</a>
+    <a href="{% url 'wiki:genre_graph' %}">◉  Graph</a>
+    <a href="{% url 'wiki:genre_tree' %}">⊕  Tree</a>
+    <a href="https://communityplaylist.com">←  Community Playlist</a>
+  </nav>
+  <div class="drawer-search">
+    <form style="display:flex;gap:8px;width:100%" action="{% url 'wiki:token_list' %}" method="get">
+      <input name="q" value="{{ q|default:'' }}" placeholder="Search tokens, genres…" autocomplete="off">
+    </form>
+  </div>
+</div>
+<div id="nav-backdrop"></div>
 
 <div class="container">
   {% block content %}{% endblock %}
@@ -208,5 +264,44 @@
   — Portland, OR
 </footer>
 
+<script>
+(function () {
+  var toggle   = document.getElementById('nav-toggle');
+  var drawer   = document.getElementById('nav-drawer');
+  var backdrop = document.getElementById('nav-backdrop');
+
+  function openMenu() {
+    drawer.style.display = 'block';
+    backdrop.style.display = 'block';
+    requestAnimationFrame(function () {
+      drawer.classList.add('open');
+      backdrop.style.opacity = '1';
+    });
+    toggle.textContent = '✕';
+    toggle.setAttribute('aria-expanded', 'true');
+    drawer.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeMenu() {
+    drawer.classList.remove('open');
+    backdrop.style.opacity = '0';
+    toggle.textContent = '☰';
+    toggle.setAttribute('aria-expanded', 'false');
+    drawer.setAttribute('aria-hidden', 'true');
+    setTimeout(function () {
+      drawer.style.display = 'none';
+      backdrop.style.display = 'none';
+    }, 180);
+  }
+
+  toggle.addEventListener('click', function () {
+    drawer.classList.contains('open') ? closeMenu() : openMenu();
+  });
+  backdrop.addEventListener('click', closeMenu);
+  drawer.querySelectorAll('a').forEach(function (a) {
+    a.addEventListener('click', closeMenu);
+  });
+})();
+</script>
 </body>
 </html>
