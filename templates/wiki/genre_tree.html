@@ -254,7 +254,7 @@
         .selectAll('g').data(nodes).join('g')
         .attr('class', 't-node')
         .attr('transform', n => `translate(${n._x},${n._y})`)
-        .on('click', (e, n) => { window.location.href = "{% url 'wiki:token_detail' 'SLUG' %}".replace('SLUG', n.slug); })
+        .on('click', (e, n) => { window.location.href = "{{ token_url_base }}" + n.slug + '/'; })
         .on('mouseover', (e, n) => { showTip(e, n); highlightLineage(n); })
         .on('mousemove', moveTip)
         .on('mouseout',  ()  => { hideTip(); resetHighlight(); });
