@@ -103,6 +103,38 @@ def genre_graph(request):
     return render(request, 'wiki/genre_graph.html', {})
 
 
+def genre_tree(request):
+    return render(request, 'wiki/genre_tree.html', {})
+
+
+def api_tree_data(request):
+    """JSON payload for the chronological tree — nodes with origin_year + parent links."""
+    cached = cache.get('wiki_tree_data_v1')
+    if cached:
+        return JsonResponse(cached)
+
+    tokens = list(
+        GenreToken.objects
+        .filter(origin_year__isnull=False)
+        .select_related('derived_from')
+        .values('slug', 'name', 'track_count', 'origin_year',
+                'derived_from__slug', 'derived_from__name')
+    )
+    nodes = []
+    for t in tokens:
+        nodes.append({
+            'slug':        t['slug'],
+            'name':        t['name'],
+            'track_count': t['track_count'],
+            'year':        t['origin_year'],
+            'parent':      t['derived_from__slug'],
+        })
+
+    data = {'nodes': nodes}
+    cache.set('wiki_tree_data_v1', data, 60 * 60)
+    return JsonResponse(data)
+
+
 def api_graph_data(request):
     """JSON payload for the D3.js force graph — nodes (tokens) + links (related edges)."""
     cached = cache.get('wiki_graph_data_v1')

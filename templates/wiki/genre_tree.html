@@ -1,0 +1,327 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}Genre Timeline — Community Playlist{% endblock %}
+
+{% block extra_head %}
+<style>
+  body { overflow: hidden; }
+  .container { padding: 0; max-width: none; }
+  footer { display: none; }
+
+  #tree-wrap {
+    position: fixed; inset: 56px 0 0 0;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  #tree-svg { width: 100%; height: 100%; cursor: grab; }
+  #tree-svg:active { cursor: grabbing; }
+
+  .t-node circle {
+    cursor: pointer;
+    stroke-width: 1.5;
+    transition: stroke 0.1s, stroke-width 0.1s;
+  }
+  .t-node text {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    pointer-events: none;
+    user-select: none;
+  }
+  .t-link {
+    fill: none;
+    stroke-width: 1.2;
+    opacity: 0.35;
+    transition: opacity 0.15s;
+  }
+
+  /* ── Axis ──────────────────────────────────────────── */
+  .decade-line {
+    stroke: var(--border);
+    stroke-width: 1;
+    opacity: 0.5;
+  }
+  .decade-label {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: 10px;
+    fill: var(--muted);
+    text-anchor: middle;
+    pointer-events: none;
+  }
+
+  /* ── Top-right controls ─────────────────────────── */
+  #view-toggle {
+    position: fixed; top: 68px; right: 14px;
+    display: flex; gap: 6px; z-index: 10;
+  }
+  .view-btn {
+    background: rgba(23,23,26,0.88);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    padding: 6px 12px; font-size: 11px; font-family: inherit;
+    cursor: pointer; backdrop-filter: blur(6px);
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: all .15s;
+  }
+  .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+  /* ── Tooltip ────────────────────────────────────── */
+  #tree-tip {
+    position: fixed;
+    background: rgba(23,23,26,0.96);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 20;
+    display: none;
+    max-width: 220px;
+    backdrop-filter: blur(6px);
+  }
+  #tip-name  { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; }
+  #tip-meta  { color: var(--muted); font-size: 11px; display: block; }
+
+  /* ── Info panel ─────────────────────────────────── */
+  #tree-info {
+    position: fixed; top: 68px; left: 14px;
+    background: rgba(23,23,26,0.88);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 14px;
+    font-size: 11px; color: var(--muted);
+    backdrop-filter: blur(6px);
+    max-width: 200px; z-index: 10;
+    line-height: 1.6;
+  }
+  #tree-info strong { color: var(--text); display: block; font-size: 12px; margin-bottom: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="tree-wrap">
+  <svg id="tree-svg"></svg>
+</div>
+
+<div id="view-toggle">
+  <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
+  <a href="{% url 'wiki:genre_graph' %}" class="view-btn">◉ Graph</a>
+  <button class="view-btn active">⊕ Tree</button>
+</div>
+
+<div id="tree-info">
+  <strong>Genre Timeline</strong>
+  Nodes sized by library track count.<br>
+  Lines show genre lineage.<br>
+  Drag to pan · scroll to zoom.<br>
+  Click a node to explore.
+</div>
+
+<div id="tree-tip">
+  <span id="tip-name"></span>
+  <span id="tip-meta"></span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── Color family (shared with graph) ────────────────────────────
+  function genreColor(name) {
+    const n = name.toLowerCase();
+    if (/house|techno|trance|electro|synth|rave|ambient|wave|drone|noise|industrial|ebm|idm|glitch|electronica|dubstep|edm/.test(n)) return '#7c6af7';
+    if (/hip|hop|rap|trap|drill|grime|boom|bap|crunk|mumble|cloud|gangsta/.test(n)) return '#f59e0b';
+    if (/rock|metal|punk|grunge|hardcore|doom|thrash|death|black|shoegaze/.test(n)) return '#ef4444';
+    if (/jazz|soul|blues|funk|gospel|swing|bossa|latin|reggae|ska|dub|r&b|rnb/.test(n)) return '#22c55e';
+    if (/drum|bass|jungle|neurofunk|liquid|footwork|break/.test(n)) return '#06b6d4';
+    if (/pop|indie|alternative|dream|bedroom|chillwave/.test(n)) return '#ec4899';
+    if (/folk|world|afro|celtic|country|bluegrass|cumbia|flamenco|bhangra/.test(n)) return '#f97316';
+    return '#6b7280';
+  }
+
+  // ── Family Y-lanes ────────────────────────────────────────────────
+  // Each color family gets a horizontal lane on the y-axis
+  const FAMILY_LANES = {
+    '#22c55e': 0,    // Jazz / Soul / Blues / Funk / Reggae
+    '#ef4444': 1,    // Rock / Metal / Punk
+    '#f59e0b': 2,    // Hip-Hop / Rap / Trap
+    '#7c6af7': 3,    // Electronic / House / Techno / Trance
+    '#06b6d4': 4,    // Drum & Bass / Jungle
+    '#ec4899': 5,    // Pop / Indie
+    '#f97316': 6,    // World / Folk
+    '#6b7280': 7,    // Other
+  };
+  const N_LANES = 8;
+
+  function nodeR(track_count) {
+    return Math.max(4, Math.min(20, Math.sqrt(track_count || 1) * 0.85));
+  }
+
+  // ── SVG setup ────────────────────────────────────────────────────
+  const wrap = document.getElementById('tree-wrap');
+  let W = wrap.clientWidth, H = wrap.clientHeight;
+  const MARGIN = { top: 40, right: 60, bottom: 40, left: 60 };
+  const LANE_H = (H - MARGIN.top - MARGIN.bottom) / N_LANES;
+
+  const svg = d3.select('#tree-svg');
+  const g = svg.append('g').attr('class', 'tree-root');
+
+  const zoom = d3.zoom()
+    .scaleExtent([0.2, 5])
+    .on('zoom', e => g.attr('transform', e.transform));
+  svg.call(zoom);
+
+  // ── Tooltip ───────────────────────────────────────────────────────
+  const tip = document.getElementById('tree-tip');
+  function showTip(e, d) {
+    document.getElementById('tip-name').textContent = d.name;
+    const meta = [
+      `~${d.year}`,
+      d.track_count ? `${d.track_count} tracks` : '',
+      d.parent ? `← ${d.parent_name}` : '',
+    ].filter(Boolean).join('  ·  ');
+    document.getElementById('tip-meta').textContent = meta;
+    tip.style.display = 'block';
+  }
+  function moveTip(e) {
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top  = (e.clientY - 10) + 'px';
+  }
+  function hideTip() { tip.style.display = 'none'; }
+
+  // ── Load & render ─────────────────────────────────────────────────
+  fetch('/wiki/api/tree/')
+    .then(r => r.json())
+    .then(({ nodes }) => {
+      // Build parent name lookup
+      const bySlug = {};
+      nodes.forEach(n => { bySlug[n.slug] = n; });
+      nodes.forEach(n => {
+        n.parent_name = n.parent ? (bySlug[n.parent] || {}).name || '' : '';
+      });
+
+      const years = nodes.map(n => n.year);
+      const minY = Math.min(...years) - 5;
+      const maxY = Math.max(...years) + 15;
+
+      const xScale = d3.scaleLinear()
+        .domain([minY, maxY])
+        .range([MARGIN.left, W - MARGIN.right]);
+
+      // Position each node in its family lane with slight jitter to avoid overlap
+      const laneCount = Array(N_LANES).fill(0);
+      nodes.forEach(n => {
+        const color = genreColor(n.name);
+        const lane  = FAMILY_LANES[color] ?? 7;
+        n._lane = lane;
+        // Spread within lane slightly by year fraction
+        const yBase = MARGIN.top + lane * LANE_H + LANE_H / 2;
+        n._x = xScale(n.year);
+        n._y = yBase;
+      });
+
+      // ── Decade grid lines ──────────────────────────────────────
+      const startDecade = Math.ceil(minY / 10) * 10;
+      const decades = d3.range(startDecade, maxY, 10);
+      g.append('g').attr('class', 'decade-grid')
+        .selectAll('line').data(decades).join('line')
+        .attr('class', 'decade-line')
+        .attr('x1', d => xScale(d)).attr('x2', d => xScale(d))
+        .attr('y1', MARGIN.top).attr('y2', H - MARGIN.bottom);
+      g.append('g').attr('class', 'decade-labels')
+        .selectAll('text').data(decades).join('text')
+        .attr('class', 'decade-label')
+        .attr('x', d => xScale(d))
+        .attr('y', H - MARGIN.bottom + 14)
+        .text(d => d);
+
+      // ── Links ──────────────────────────────────────────────────
+      const links = nodes.filter(n => n.parent && bySlug[n.parent]);
+      g.append('g').attr('class', 't-links')
+        .selectAll('path').data(links).join('path')
+        .attr('class', 't-link')
+        .attr('stroke', n => genreColor(n.name))
+        .attr('d', n => {
+          const src = bySlug[n.parent];
+          const x1 = src._x, y1 = src._y;
+          const x2 = n._x,   y2 = n._y;
+          const mx = (x1 + x2) / 2;
+          return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+        });
+
+      // ── Nodes ──────────────────────────────────────────────────
+      const nodeG = g.append('g').attr('class', 't-nodes')
+        .selectAll('g').data(nodes).join('g')
+        .attr('class', 't-node')
+        .attr('transform', n => `translate(${n._x},${n._y})`)
+        .on('click', (e, n) => { window.location.href = '/wiki/token/' + n.slug + '/'; })
+        .on('mouseover', (e, n) => { showTip(e, n); highlightLineage(n); })
+        .on('mousemove', moveTip)
+        .on('mouseout',  ()  => { hideTip(); resetHighlight(); });
+
+      nodeG.append('circle')
+        .attr('r', n => nodeR(n.track_count))
+        .attr('fill', n => genreColor(n.name))
+        .attr('fill-opacity', 0.8)
+        .attr('stroke', n => genreColor(n.name))
+        .attr('stroke-opacity', 0.5);
+
+      nodeG.append('text')
+        .text(n => n.name)
+        .attr('x', n => nodeR(n.track_count) + 3)
+        .attr('y', '0.35em')
+        .attr('fill', 'var(--muted)')
+        .attr('font-size', n => n.track_count > 500 ? '11px' : '9px')
+        .style('display', n => n.track_count > 100 ? null : 'none');
+
+      // ── Highlight lineage on hover ──────────────────────────────
+      function getLineage(node) {
+        const set = new Set([node.slug]);
+        // Walk up ancestors
+        let cur = node;
+        while (cur.parent && bySlug[cur.parent]) {
+          set.add(cur.parent);
+          cur = bySlug[cur.parent];
+        }
+        // Walk down descendants
+        function addDescendants(slug) {
+          nodes.forEach(n => { if (n.parent === slug) { set.add(n.slug); addDescendants(n.slug); } });
+        }
+        addDescendants(node.slug);
+        return set;
+      }
+
+      function highlightLineage(node) {
+        const lineage = getLineage(node);
+        nodeG.select('circle')
+          .style('opacity', n => lineage.has(n.slug) ? 1 : 0.08)
+          .attr('stroke-width', n => n.slug === node.slug ? 3 : 1.5)
+          .attr('stroke', n => n.slug === node.slug ? 'white' : genreColor(n.name));
+        nodeG.select('text')
+          .style('display', n => lineage.has(n.slug) ? null : 'none')
+          .attr('fill', n => n.slug === node.slug ? 'white' : 'var(--text)');
+        d3.selectAll('.t-link')
+          .style('opacity', n => lineage.has(n.slug) ? 0.85 : 0.03);
+      }
+
+      function resetHighlight() {
+        nodeG.select('circle')
+          .style('opacity', null)
+          .attr('stroke-width', 1.5)
+          .attr('stroke', n => genreColor(n.name));
+        nodeG.select('text')
+          .style('display', n => n.track_count > 100 ? null : 'none')
+          .attr('fill', 'var(--muted)');
+        d3.selectAll('.t-link').style('opacity', 0.35);
+      }
+
+      // Auto-fit
+      const totalW = xScale(maxY) - xScale(minY) + MARGIN.left + MARGIN.right;
+      const scaleX = W / (totalW + 40);
+      svg.call(zoom.transform, d3.zoomIdentity.scale(scaleX).translate(0, 0));
+    });
+
+  window.addEventListener('resize', () => { W = wrap.clientWidth; H = wrap.clientHeight; });
+})();
+</script>
+{% endblock %}
