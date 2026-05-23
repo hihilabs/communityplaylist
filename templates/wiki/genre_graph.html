@@ -133,18 +133,35 @@
   .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
   body.wire #btn-wire { border-color: var(--accent); color: var(--accent); }
 
-  /* ── Tour — legend stays readable while graph dims ──────────────────── */
+  /* ── Tour — CSS compositor handles all animation, JS just sets targets ── */
+  body.touring .g-node circle {
+    transition: fill 13s ease-in-out !important;
+  }
+  body.touring .g-node text {
+    transition: opacity 9s ease-in-out !important;
+  }
+  body.touring .g-link {
+    transition: opacity 10s ease-in-out !important;
+  }
+
+  /* Legend: solid bg, dim others, pop the active one */
   body.touring #graph-legend {
-    background: rgba(18,18,22,0.98);
+    background: rgba(14,14,18,0.98);
     backdrop-filter: none;
   }
   body.touring .legend-item {
-    opacity: 0.28;
-    transition: opacity 0.6s ease;
+    opacity: 0.22;
+    transition: opacity 2s ease, transform 0.8s ease;
   }
   body.touring .legend-item.active {
     opacity: 1;
     color: var(--text);
+    transform: scaleX(1.04);
+    transform-origin: left center;
+  }
+  body.touring .legend-item.active .legend-dot {
+    box-shadow: 0 0 7px 2px currentColor;
+    transition: box-shadow 1.5s ease;
   }
 
   /* ── Tour label overlay ──────────────────────────────────────────────── */
@@ -158,7 +175,7 @@
     font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
     pointer-events: none; z-index: 15;
     opacity: 0;
-    transition: opacity 0.35s ease, border-color 0.6s ease, box-shadow 0.6s ease, color 0.5s ease;
+    transition: opacity 0.8s ease, border-color 1.2s ease, box-shadow 1.2s ease, color 1s ease;
     white-space: nowrap;
     backdrop-filter: blur(8px);
   }
@@ -588,15 +605,16 @@
   });
 
   // ── Auto-tour ─────────────────────────────────────────────────────────
+  // Ordered by musical lineage — each family shares DNA with its neighbours
   const TOUR_FAMILIES = [
-    { color: '#7c6af7', label: 'Electronic' },
-    { color: '#f59e0b', label: 'Hip-Hop / Rap' },
-    { color: '#ef4444', label: 'Rock / Metal' },
-    { color: '#22c55e', label: 'Jazz / Soul' },
-    { color: '#06b6d4', label: 'Drum & Bass' },
-    { color: '#ec4899', label: 'Pop / Indie' },
-    { color: '#f97316', label: 'World / Folk' },
-    { color: '#6b7280', label: 'Other' },
+    { color: '#22c55e', label: 'Jazz / Soul' },    // roots
+    { color: '#f97316', label: 'World / Folk' },   // roots → diaspora
+    { color: '#f59e0b', label: 'Hip-Hop / Rap' },  // soul/funk → hip-hop
+    { color: '#06b6d4', label: 'Drum & Bass' },    // hip-hop breaks → jungle → d&b
+    { color: '#7c6af7', label: 'Electronic' },     // rave culture bridges d&b
+    { color: '#ec4899', label: 'Pop / Indie' },    // electronic → synth-pop → indie
+    { color: '#ef4444', label: 'Rock / Metal' },   // indie → alt-rock → metal
+    { color: '#6b7280', label: 'Other' },          // catch-all dissolve
   ];
   const TOUR_DWELL    = 20000;  // ms visible per family
   const TOUR_ZOOM_MS  = 16000;  // zoom morph duration (unused while zoom off)
@@ -627,47 +645,27 @@
   }
 
   function tourMorphHighlight(color) {
-    // Selection-level named transitions — no per-element loop, no anonymous interrupt
+    // Drain inactive circles to near-black via fill — all circles stay fully visible.
+    // CSS 13s transition does the smooth morph, no D3 timing needed.
     nodeSel.select('circle')
-      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity',       d => genreColor(d.name) === color ? 1    : 0.12)
-      .attr('stroke-opacity', d => genreColor(d.name) === color ? 0.8  : 0.18)
-      .attr('stroke-width',   d => genreColor(d.name) === color ? 2    : 1.5);
-
+      .style('fill', d => genreColor(d.name) === color ? genreColor(d.name) : '#1c1c26');
+    // Text: show labels only for active family
     nodeSel.select('text')
       .style('display', null)
-      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity', d => genreColor(d.name) === color ? 1 : 0)
-      .attr('fill',      d => genreColor(d.name) === color ? '#ffffff' : '#c8c8d8')
-      .attr('font-size', d => genreColor(d.name) === color
-        ? (d.track_count > 500 ? '12px' : '10px') : '9px');
-
-    linkSel.transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity', l => {
-        const sc = genreColor((l.source.name) || '');
-        const tc = genreColor((l.target.name) || '');
-        return (sc === color || tc === color) ? 0.5 : 0.02;
-      });
+      .style('opacity', d => genreColor(d.name) === color ? '1' : '0');
+    // Links: glow for active, nearly invisible for rest
+    linkSel.style('opacity', l => {
+      const sc = genreColor(l.source.name || '');
+      const tc = genreColor(l.target.name || '');
+      return (sc === color || tc === color) ? '0.5' : '0.03';
+    });
   }
 
   function tourMorphReset() {
-    nodeSel.select('circle')
-      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity', null)
-      .attr('stroke-opacity', 0.45)
-      .attr('stroke-width', 1.5);
-
-    nodeSel.select('text')
-      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity', d => d.track_count > 150 ? 1 : 0)
-      .attr('fill', '#c8c8d8')
-      .attr('font-size', d => d.track_count > 500 ? '11px' : '9px')
-      .on('end', function(d) {
-        d3.select(this).style('opacity', null).style('display', d.track_count > 150 ? null : 'none');
-      });
-
-    linkSel.transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity', 0.3);
+    // body.touring removed before this call — no CSS transitions, instant reset
+    nodeSel.select('circle').style('fill', null).style('opacity', null);
+    nodeSel.select('text').style('opacity', null).style('display', d => d.track_count > 150 ? null : 'none');
+    linkSel.style('opacity', '0.3');
   }
 
   function tourStep() {
@@ -683,7 +681,7 @@
       tourLabel.style.borderColor = fam.color + '55';
       tourLabel.style.boxShadow   = `0 0 18px ${fam.color}33`;
       tourLabel.classList.add('visible');
-    }, 260);
+    }, 700);
 
     // Sync legend chip
     activeLegend = fam.color;
@@ -706,12 +704,12 @@
       tourBtn.classList.remove('active');
       tourBtn.textContent = '⏵ Tour';
       tourLabel.classList.remove('visible');
-      document.body.classList.remove('touring');
+      document.body.classList.remove('touring'); // remove before reset so snap is instant
       activeLegend = null;
       activeSearch = '';
       document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
       tourMorphReset();
-      setTimeout(() => fitToView(true), TOUR_FADE_MS);
+      fitToView(true);
     } else {
       tourActive = true;
       tourIdx = 0;

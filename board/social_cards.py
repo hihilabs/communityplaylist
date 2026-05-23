@@ -133,10 +133,8 @@ def _card_hero(promoter, accent):
     name_y = CARD_SIZE - 310
     draw.text((GUTTER, name_y), name, font=f_name, fill=C_TEXT_HI)
 
-    # Type + verified badge
+    # Type label (no verified badge — verified status drives auto-promote, not display)
     type_str = promoter.get_types_display()
-    if promoter.is_verified:
-        type_str = f'{type_str}  ✓ verified'
     draw.text((GUTTER, name_y + 96), type_str, font=f_sub, fill=accent)
 
     # Genres
@@ -144,9 +142,12 @@ def _card_hero(promoter, accent):
     if genres:
         draw.text((GUTTER, name_y + 150), genres, font=f_genre, fill=C_TEXT_MID)
 
-    # Type icon top-left
-    type_icon = promoter.get_type_icons()
-    draw.text((GUTTER, GUTTER), type_icon, font=_font(52), fill=accent)
+    # Type label top-left (text only — PIL default font can't render emoji)
+    type_label = promoter.get_types_display().split(' · ')[0].upper()
+    f_badge = _font(28)
+    badge_w = int(draw.textlength(type_label, font=f_badge)) + 24
+    draw.rectangle([(GUTTER, GUTTER), (GUTTER + badge_w, GUTTER + 38)], fill=accent)
+    draw.text((GUTTER + 12, GUTTER + 6), type_label, font=f_badge, fill=(255, 255, 255))
 
     _watermark(draw)
     return img
@@ -183,17 +184,17 @@ def _card_info(promoter, accent):
             y += 48
         y += 24
 
-    # Social links
+    # Social links (plain text — PIL default font cannot render emoji)
     socials = []
-    if promoter.instagram:  socials.append(f'📷  @{promoter.instagram}')
-    if promoter.soundcloud: socials.append(f'☁   soundcloud.com/{promoter.soundcloud}')
-    if promoter.mixcloud:   socials.append(f'🎛   mixcloud.com/{promoter.mixcloud}')
-    if promoter.bandcamp:   socials.append(f'🏕   Bandcamp')
-    if promoter.spotify:    socials.append(f'🎵  Spotify')
-    if promoter.twitch:     socials.append(f'📺  twitch.tv/{promoter.twitch}')
-    if promoter.website:    socials.append(f'🌐  {promoter.website[:45]}')
-    if promoter.discord:    socials.append(f'💬  Discord')
-    if promoter.kofi:       socials.append(f'☕  ko-fi.com/{promoter.kofi}')
+    if promoter.instagram:  socials.append(f'IG  @{promoter.instagram}')
+    if promoter.soundcloud: socials.append(f'SC  soundcloud.com/{promoter.soundcloud}')
+    if promoter.mixcloud:   socials.append(f'MX  mixcloud.com/{promoter.mixcloud}')
+    if promoter.bandcamp:   socials.append(f'BC  Bandcamp')
+    if promoter.spotify:    socials.append(f'SP  Spotify')
+    if promoter.twitch:     socials.append(f'TW  twitch.tv/{promoter.twitch}')
+    if promoter.website:    socials.append(f'WW  {promoter.website[:45]}')
+    if promoter.discord:    socials.append(f'DC  Discord')
+    if promoter.kofi:       socials.append(f'KF  ko-fi.com/{promoter.kofi}')
 
     y = max(y, 550)
     for s in socials[:6]:
@@ -220,7 +221,7 @@ def _card_shop(promoter, accent, listings):
     f_sm     = _font(26)
 
     y = 50
-    draw.text((GUTTER, y), '🛒 Record Shop', font=f_title, fill=accent)
+    draw.text((GUTTER, y), 'RECORD SHOP', font=f_title, fill=accent)
     y += 90
 
     draw.text((GUTTER, y), promoter.name, font=f_header, fill=C_TEXT_HI)
@@ -248,9 +249,9 @@ def _card_shop(promoter, accent, listings):
 
     # Payment options
     pay_parts = []
-    if promoter.sol_wallet:             pay_parts.append('◎ SOL')
-    if promoter.shop_pay_in_person:     pay_parts.append('🤝 In Person')
-    if promoter.shop_open_to_trade:     pay_parts.append('🔄 Trade')
+    if promoter.sol_wallet:             pay_parts.append('SOL')
+    if promoter.shop_pay_in_person:     pay_parts.append('In Person')
+    if promoter.shop_open_to_trade:     pay_parts.append('Trade')
 
     if pay_parts:
         pay_str = '  ·  '.join(pay_parts)

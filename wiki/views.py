@@ -152,7 +152,8 @@ def api_graph_data(request):
     tokens = list(
         GenreToken.objects
         .prefetch_related('related')
-        .values('slug', 'name', 'track_count', 'bpm_min', 'bpm_max', 'energy')
+        .values('slug', 'name', 'track_count', 'bpm_min', 'bpm_max', 'energy',
+                'origin_year', 'derived_from__slug', 'derived_from__name')
     )
     slug_index = {t['slug']: t for t in tokens}
 

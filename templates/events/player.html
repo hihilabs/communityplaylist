@@ -1569,7 +1569,7 @@ if (new URLSearchParams(location.search).get('from') === 'widget') {
       var t = tracks[current] || {};
       fetch('/api/suggest-genre/', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': (document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||''},
         body: JSON.stringify({
           track_id:     t.id || null,
           artist:       t.artist || '',

@@ -5768,3 +5768,16 @@ from django.views.decorators.csrf import csrf_exempt as _csrf_exempt
 def kofi_webhook_view(request):
     from events.kofi import kofi_webhook
     return kofi_webhook(request)
+
+
+# ── Player auth status ─────────────────────────────────────────────────────────
+
+def api_me(request):
+    """
+    Lightweight auth-status endpoint for the standalone player.
+    Replaces the `data-auth` Django template variable so the player HTML
+    can be served as a static file or from any origin.
+    """
+    if request.user.is_authenticated:
+        return JsonResponse({'authenticated': True, 'username': request.user.username})
+    return JsonResponse({'authenticated': False, 'username': None})

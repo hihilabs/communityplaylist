@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/queue/', views.api_queue, name='api_queue'),
     path('api/saved-tracks/', views.saved_tracks_json, name='saved_tracks_json'),
     path('api/videos/', views.api_video_queue, name='api_video_queue'),
+    path('api/me/', views.api_me, name='api_me'),
     path('api/parse-lineup/', views.api_parse_lineup, name='api_parse_lineup'),
     path('api/artist-lookup/', views.api_artist_lookup, name='api_artist_lookup'),
     path('api/search/', views.api_global_search, name='api_global_search'),

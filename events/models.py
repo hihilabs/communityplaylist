@@ -1331,6 +1331,10 @@ class UserProfile(models.Model):
         help_text='Solana wallet address (Phantom public key, etc.)',
     )
 
+    # Social handles — used to tag users in promotional posts (opt-in)
+    instagram = models.CharField(max_length=100, blank=True, help_text='Instagram handle without @')
+    bluesky   = models.CharField(max_length=100, blank=True, help_text='Bluesky handle e.g. you.bsky.social')
+
     # Music service usernames
     lastfm_username        = models.CharField(max_length=100, blank=True, help_text='Last.fm username')
     listenbrainz_username  = models.CharField(max_length=100, blank=True, help_text='ListenBrainz username')
