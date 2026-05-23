@@ -76,8 +76,10 @@
     background: rgba(23,23,26,0.88);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 8px 4px;
+    padding: 4px 0;
     backdrop-filter: blur(6px);
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
   }
   .legend-item {
     display: flex; align-items: center; gap: 8px;
@@ -95,6 +97,33 @@
   .legend-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
     transition: box-shadow 0.12s;
+  }
+
+  /* ── Accordion sub-genre panel ─────────────────────────── */
+  .family-label { flex: 1; }
+  .family-count { font-size: 9px; opacity: 0.32; }
+  .family-caret {
+    font-size: 8px; opacity: 0.28; margin-left: 3px; flex-shrink: 0;
+    transition: transform 0.25s ease;
+  }
+  .family-section.open .family-caret { transform: rotate(90deg); }
+  .family-children {
+    overflow: hidden; max-height: 0;
+    transition: max-height 0.38s ease;
+  }
+  .family-section.open .family-children { max-height: 340px; }
+  .family-node {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 3px 10px 3px 26px;
+    font-size: 10px; color: var(--muted);
+    background: none; border: none; cursor: pointer;
+    text-align: left; font-family: inherit; border-radius: 3px;
+  }
+  .family-node:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .family-node-count { font-size: 9px; opacity: 0.22; flex-shrink: 0; }
+  .family-roots {
+    padding: 2px 10px 7px 26px;
+    font-size: 9px; color: rgba(255,255,255,0.18); font-style: italic;
   }
 
   /* ── Tooltip ──────────────────────────────────────────── */
@@ -208,21 +237,7 @@
 
 <div id="graph-panel">
   <input id="graph-search" type="text" placeholder="Search genres…" autocomplete="off">
-  <div id="graph-legend">
-    {% for item in legend_items %}<button class="legend-item" data-color="{{ item.color }}">
-      <span class="legend-dot" style="background:{{ item.color }}"></span>{{ item.label }}
-    </button>
-    {% empty %}
-    <button class="legend-item" data-color="#7c6af7"><span class="legend-dot" style="background:#7c6af7"></span>Electronic</button>
-    <button class="legend-item" data-color="#f59e0b"><span class="legend-dot" style="background:#f59e0b"></span>Hip-Hop / Rap</button>
-    <button class="legend-item" data-color="#ef4444"><span class="legend-dot" style="background:#ef4444"></span>Rock / Metal</button>
-    <button class="legend-item" data-color="#22c55e"><span class="legend-dot" style="background:#22c55e"></span>Jazz / Soul</button>
-    <button class="legend-item" data-color="#06b6d4"><span class="legend-dot" style="background:#06b6d4"></span>Drum &amp; Bass</button>
-    <button class="legend-item" data-color="#ec4899"><span class="legend-dot" style="background:#ec4899"></span>Pop / Indie</button>
-    <button class="legend-item" data-color="#f97316"><span class="legend-dot" style="background:#f97316"></span>World / Folk</button>
-    <button class="legend-item" data-color="#6b7280"><span class="legend-dot" style="background:#6b7280"></span>Other</button>
-    {% endfor %}
-  </div>
+  <div id="graph-legend"></div>
 </div>
 
 <div id="view-toggle">
@@ -304,6 +319,7 @@
       allNodes = data.nodes;
       allLinks = data.links;
       buildGraph(allNodes, allLinks);
+      buildFamilyPanel(allNodes);
       if (focusSlug) {
         setTimeout(() => focusNode(focusSlug), 2800);
       } else {
@@ -384,6 +400,81 @@
         nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
       })
       .on('end', () => {});
+  }
+
+  // ── Family accordion panel ────────────────────────────────────────────────
+  function buildFamilyPanel(nodes) {
+    const legend = document.getElementById('graph-legend');
+    legend.innerHTML = '';
+
+    // Bucket nodes by family color
+    const famMap = {};
+    TOUR_FAMILIES.forEach(f => { famMap[f.color] = { ...f, nodes: [] }; });
+    nodes.forEach(n => {
+      const c = genreColor(n.name);
+      if (famMap[c]) famMap[c].nodes.push(n);
+    });
+
+    TOUR_FAMILIES.forEach(fam => {
+      const famNodes = famMap[fam.color].nodes
+        .slice().sort((a, b) => (b.track_count || 0) - (a.track_count || 0));
+      const topNodes = famNodes.slice(0, 8);
+      const years = famNodes.map(n => n.origin_year).filter(Boolean);
+      const earliestYear = years.length ? Math.min(...years) : null;
+
+      const section = document.createElement('div');
+      section.className = 'family-section';
+      section.dataset.color = fam.color;
+
+      const header = document.createElement('button');
+      header.className = 'legend-item';
+      header.dataset.color = fam.color;
+      header.innerHTML =
+        `<span class="legend-dot" style="background:${fam.color}"></span>` +
+        `<span class="family-label">${fam.label}</span>` +
+        `<span class="family-count">${famNodes.length}</span>` +
+        `<span class="family-caret">&#9654;</span>`;
+
+      header.addEventListener('click', () => {
+        const wasOpen = section.classList.contains('open');
+        document.querySelectorAll('.family-section').forEach(s => s.classList.remove('open'));
+        document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
+        if (!wasOpen) {
+          section.classList.add('open');
+          header.classList.add('active');
+          activeLegend = fam.color;
+        } else {
+          activeLegend = null;
+        }
+        activeSearch = '';
+        searchInput.value = '';
+        applyHighlight();
+      });
+      section.appendChild(header);
+
+      const children = document.createElement('div');
+      children.className = 'family-children';
+
+      topNodes.forEach(n => {
+        const btn = document.createElement('button');
+        btn.className = 'family-node';
+        btn.innerHTML =
+          `<span>${n.name}</span>` +
+          `<span class="family-node-count">${n.track_count || 0}</span>`;
+        btn.addEventListener('click', e => { e.stopPropagation(); focusNode(n.slug); });
+        children.appendChild(btn);
+      });
+
+      if (earliestYear) {
+        const roots = document.createElement('div');
+        roots.className = 'family-roots';
+        roots.textContent = `born: ${earliestYear}`;
+        children.appendChild(roots);
+      }
+
+      section.appendChild(children);
+      legend.appendChild(section);
+    });
   }
 
   // ── Fit viewport to settled nodes (percentile bounds ignore outliers) ────
@@ -683,12 +774,15 @@
       tourLabel.classList.add('visible');
     }, 700);
 
-    // Sync legend chip
+    // Sync legend chip + accordion
     activeLegend = fam.color;
     activeSearch = '';
     searchInput.value = '';
     document.querySelectorAll('.legend-item').forEach(b => {
       b.classList.toggle('active', b.dataset.color === fam.color);
+    });
+    document.querySelectorAll('.family-section').forEach(s => {
+      s.classList.toggle('open', s.dataset.color === fam.color);
     });
 
     // Smooth crossfade — user controls zoom
@@ -708,6 +802,7 @@
       activeLegend = null;
       activeSearch = '';
       document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.family-section').forEach(s => s.classList.remove('open'));
       tourMorphReset();
       fitToView(true);
     } else {
@@ -715,6 +810,12 @@
       tourIdx = 0;
       tourBtn.classList.add('active');
       tourBtn.textContent = '⏹ Stop';
+      // Pre-set inline styles before body.touring so CSS transitions have explicit starting values
+      if (nodeSel) {
+        nodeSel.select('circle').style('fill', d => genreColor(d.name));
+        nodeSel.select('text').style('display', null).style('opacity', '0');
+        linkSel.style('opacity', '0.03');
+      }
       document.body.classList.add('touring');
       tourStep();
     }
