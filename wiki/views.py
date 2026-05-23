@@ -101,13 +101,13 @@ def genre_detail(request, slug):
 
 def genre_graph(request):
     from django.urls import reverse
-    token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER', '')
+    token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER/', '')
     return render(request, 'wiki/genre_graph.html', {'token_url_base': token_url_base})
 
 
 def genre_tree(request):
     from django.urls import reverse
-    token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER', '')
+    token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER/', '')
     return render(request, 'wiki/genre_tree.html', {'token_url_base': token_url_base})
 
 
@@ -184,7 +184,7 @@ def api_yt_search(request):
 
     params = urllib.parse.urlencode({
         'part': 'snippet', 'q': q, 'type': 'video',
-        'videoCategoryId': '10', 'maxResults': 1, 'key': api_key,
+        'maxResults': 1, 'key': api_key,
     })
     try:
         req = urllib.request.Request(

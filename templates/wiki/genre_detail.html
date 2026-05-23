@@ -91,6 +91,7 @@ function _wikiLoadTrack(query, title, artist) {
     .then(function(d){ if(d.id){_wikiCache[query]=d.id;_wikiStartVideo(d.id);} });
 }
 function _wikiStartVideo(videoId) {
+  if (!_ytReady) { setTimeout(function() { _wikiStartVideo(videoId); }, 150); return; }
   if (_wikiPlayer) { _wikiPlayer.loadVideoById(videoId); return; }
   _wikiPlayer = new YT.Player('wiki-player-yt', {
     height:'0', width:'0', videoId: videoId,
@@ -127,8 +128,9 @@ function _wikiHighlight() {
     b.classList.toggle('wiki-active',a); b.textContent=a?'⏸':'▶';
   });
 }
+var _ytReady = false;
 (function(){var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);})();
-window.onYouTubeIframeAPIReady=function(){};
+window.onYouTubeIframeAPIReady=function(){ _ytReady = true; };
 </script>
 {% endif %}
 

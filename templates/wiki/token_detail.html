@@ -130,6 +130,7 @@ function _wikiLoadTrack(query, title, artist) {
 }
 
 function _wikiStartVideo(videoId) {
+  if (!_ytReady) { setTimeout(function() { _wikiStartVideo(videoId); }, 150); return; }
   if (_wikiPlayer) {
     _wikiPlayer.loadVideoById(videoId);
   } else {
@@ -185,12 +186,13 @@ function _wikiHighlight() {
 }
 
 // Load YouTube IFrame API once
+var _ytReady = false;
 (function() {
   var s = document.createElement('script');
   s.src = 'https://www.youtube.com/iframe_api';
   document.head.appendChild(s);
 })();
-window.onYouTubeIframeAPIReady = function() {};
+window.onYouTubeIframeAPIReady = function() { _ytReady = true; };
 </script>
 {% endif %}
 
