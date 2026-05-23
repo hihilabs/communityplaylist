@@ -1,4 +1,5 @@
 import json
+import re
 import urllib.request
 import urllib.parse
 
@@ -167,45 +168,41 @@ def api_graph_data(request):
     return JsonResponse(data)
 
 
+def _yt_search_scrape(q):
+    """Find the first YouTube video ID for a query — no API key, no quota."""
+    url = 'https://www.youtube.com/results?' + urllib.parse.urlencode({'search_query': q})
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+    })
+    with urllib.request.urlopen(req, timeout=10) as r:
+        html = r.read().decode('utf-8', errors='replace')
+    m = re.search(r'"videoId":"([A-Za-z0-9_-]{11})"', html)
+    return m.group(1) if m else None
+
+
 def api_yt_search(request):
     """Proxy a YouTube video search, server-side cached so we don't burn quota on repeats."""
     q = request.GET.get('q', '').strip()
     if not q:
         return JsonResponse({'error': 'no query'}, status=400)
 
-    cache_key = f'wiki_yt_{urllib.parse.quote(q[:100])}'
+    cache_key = f'wiki_yt2_{urllib.parse.quote(q[:100])}'
     cached = cache.get(cache_key)
     if cached:
         return JsonResponse(cached)
 
-    api_key = getattr(settings, 'YOUTUBE_API_KEY', '')
-    if not api_key:
-        return JsonResponse({'error': 'no key'}, status=503)
-
-    params = urllib.parse.urlencode({
-        'part': 'snippet', 'q': q, 'type': 'video',
-        'maxResults': 1, 'key': api_key,
-    })
     try:
-        req = urllib.request.Request(
-            f'https://www.googleapis.com/youtube/v3/search?{params}',
-            headers={'User-Agent': 'CommunityPlaylistWiki/1.0'},
-        )
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.load(r)
-        items = data.get('items', [])
-        if not items:
-            return JsonResponse({'error': 'no results'}, status=404)
-        item = items[0]
-        result = {
-            'id':    item['id']['videoId'],
-            'title': item['snippet']['title'],
-            'thumb': item['snippet']['thumbnails'].get('default', {}).get('url', ''),
-        }
-        cache.set(cache_key, result, 60 * 60 * 24 * 30)  # 30-day cache
-        return JsonResponse(result)
+        video_id = _yt_search_scrape(q)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=502)
+
+    if not video_id:
+        return JsonResponse({'error': 'no results'}, status=404)
+
+    result = {'id': video_id}
+    cache.set(cache_key, result, 60 * 60 * 24 * 30)  # 30-day cache
+    return JsonResponse(result)
 
 
 def api_search(request):
