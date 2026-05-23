@@ -8,6 +8,7 @@ from django.core.cache import cache
 from django.shortcuts import get_object_or_404, render
 from django.db.models import Q, Count
 from django.http import JsonResponse
+from django.views.decorators.cache import never_cache
 from .models import GenreToken, CompoundGenre, TokenAlias
 
 
@@ -100,12 +101,14 @@ def genre_detail(request, slug):
     return render(request, 'wiki/genre_detail.html', {'genre': genre})
 
 
+@never_cache
 def genre_graph(request):
     from django.urls import reverse
     token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER/', '')
     return render(request, 'wiki/genre_graph.html', {'token_url_base': token_url_base})
 
 
+@never_cache
 def genre_tree(request):
     from django.urls import reverse
     token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER/', '')

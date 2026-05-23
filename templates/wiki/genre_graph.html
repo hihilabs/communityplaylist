@@ -134,6 +134,23 @@
   .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
   body.wire #btn-wire { border-color: var(--accent); color: var(--accent); }
 
+  /* ── Tour label overlay ──────────────────────────────────────────────── */
+  #tour-label {
+    position: fixed;
+    top: 76px; left: 50%; transform: translateX(-50%);
+    background: rgba(14,14,18,0.92);
+    border: 1px solid transparent;
+    border-radius: 20px;
+    padding: 6px 22px;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
+    pointer-events: none; z-index: 15;
+    opacity: 0;
+    transition: opacity 0.35s ease, border-color 0.6s ease, box-shadow 0.6s ease, color 0.5s ease;
+    white-space: nowrap;
+    backdrop-filter: blur(8px);
+  }
+  #tour-label.visible { opacity: 1; }
+
   @media (max-width: 640px) {
     /* Search bar moves to bottom, full-width — thumb-reachable */
     #graph-panel {
@@ -182,8 +199,12 @@
   <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
   <a href="{% url 'wiki:genre_tree' %}" class="view-btn">⊕ Tree</a>
   <button id="btn-wire" class="view-btn" onclick="toggleWire()" title="Toggle wireframe">◎ Wire</button>
+  <button id="btn-tour" class="view-btn" onclick="toggleTour()" title="Auto-tour genre families">⏵ Tour</button>
   <button class="view-btn active">◉ Graph</button>
+  <button class="view-btn" onclick="location.reload(true)" title="Hard reload">↺</button>
 </div>
+
+<div id="tour-label"></div>
 
 <div id="graph-tip">
   <span id="tip-name"></span>
@@ -253,7 +274,11 @@
       allNodes = data.nodes;
       allLinks = data.links;
       buildGraph(allNodes, allLinks);
-      if (focusSlug) setTimeout(() => focusNode(focusSlug), 2800);
+      if (focusSlug) {
+        setTimeout(() => focusNode(focusSlug), 2800);
+      } else {
+        setTimeout(() => fitToView(true), 3500);
+      }
     });
 
   // ── Build ─────────────────────────────────────────────────────────────
@@ -328,22 +353,23 @@
           .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
         nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
       })
-      .on('end', () => fitToView(true));
+      .on('end', () => {});
   }
 
-  // ── Fit viewport to settled nodes ────────────────────────────────────────
+  // ── Fit viewport to settled nodes (percentile bounds ignore outliers) ────
   function fitToView(animate) {
     if (!allNodes.length) return;
     const PAD = 60;
-    const xs = allNodes.map(n => n.x || 0);
-    const ys = allNodes.map(n => n.y || 0);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs);
-    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const xs = allNodes.map(n => n.x || 0).sort((a, b) => a - b);
+    const ys = allNodes.map(n => n.y || 0).sort((a, b) => a - b);
+    const q = (arr, p) => arr[Math.max(0, Math.min(arr.length - 1, Math.floor(arr.length * p)))];
+    const x0 = q(xs, 0.02), x1 = q(xs, 0.98);
+    const y0 = q(ys, 0.02), y1 = q(ys, 0.98);
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     const scale = Math.min(
       (W - PAD * 2) / Math.max(x1 - x0, 1),
       (H - PAD * 2) / Math.max(y1 - y0, 1),
-      2
+      3
     );
     const t = d3.zoomIdentity.translate(W / 2, H / 2).scale(scale).translate(-cx, -cy);
     (animate ? svg.transition().duration(900) : svg).call(zoom.transform, t);
@@ -547,6 +573,141 @@
   window.addEventListener('resize', () => {
     W = wrap.clientWidth; H = wrap.clientHeight;
   });
+
+  // ── Auto-tour ─────────────────────────────────────────────────────────
+  const TOUR_FAMILIES = [
+    { color: '#7c6af7', label: 'Electronic' },
+    { color: '#f59e0b', label: 'Hip-Hop / Rap' },
+    { color: '#ef4444', label: 'Rock / Metal' },
+    { color: '#22c55e', label: 'Jazz / Soul' },
+    { color: '#06b6d4', label: 'Drum & Bass' },
+    { color: '#ec4899', label: 'Pop / Indie' },
+    { color: '#f97316', label: 'World / Folk' },
+    { color: '#6b7280', label: 'Other' },
+  ];
+  const TOUR_DWELL    = 15000;  // ms visible per family
+  const TOUR_ZOOM_MS  = 16000;  // zoom morph duration
+  const TOUR_FADE_MS  = 7000;   // node opacity crossfade
+  let tourActive = false, tourIdx = 0, tourTimer = null;
+  const tourLabel = document.getElementById('tour-label');
+  const tourBtn   = document.getElementById('btn-tour');
+
+  function fitFamily(color) {
+    const fam = allNodes.filter(n => genreColor(n.name) === color && n.x != null);
+    if (!fam.length) return;
+    const PAD = 80;
+    const xs = fam.map(n => n.x).sort((a, b) => a - b);
+    const ys = fam.map(n => n.y).sort((a, b) => a - b);
+    const q  = (arr, p) => arr[Math.max(0, Math.min(arr.length - 1, Math.floor(arr.length * p)))];
+    const x0 = q(xs, 0.05), x1 = q(xs, 0.95);
+    const y0 = q(ys, 0.05), y1 = q(ys, 0.95);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const scale = Math.min(
+      (W - PAD * 2) / Math.max(x1 - x0, 1),
+      (H - PAD * 2) / Math.max(y1 - y0, 1),
+      4.5
+    );
+    const t = d3.zoomIdentity.translate(W / 2, H / 2).scale(scale).translate(-cx, -cy);
+    svg.transition().duration(TOUR_ZOOM_MS).ease(d3.easeCubicInOut)
+      .call(zoom.transform, t);
+  }
+
+  function tourMorphHighlight(color) {
+    // Crossfade circles and links with D3 transitions — no snap
+    nodeSel.each(function(n) {
+      const active = genreColor(n.name) === color;
+      d3.select(this).select('circle')
+        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+        .style('opacity',       active ? 1    : 0.04)
+        .attr('stroke-opacity', active ? 0.8  : 0.12)
+        .attr('stroke-width',   active ? 2    : 1.5);
+      d3.select(this).select('text')
+        .style('display', null)
+        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+        .style('opacity', active ? 1 : 0)
+        .attr('fill',      active ? '#ffffff' : '#c8c8d8')
+        .attr('font-size', active ? (d => d.track_count > 500 ? '12px' : '10px') : '9px');
+    });
+    linkSel.transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+      .style('opacity', l => {
+        const s = l.source.slug || l.source, t = l.target.slug || l.target;
+        const sn = allNodes.find(n => n.slug === s), tn = allNodes.find(n => n.slug === t);
+        return (sn && genreColor(sn.name) === color) ||
+               (tn && genreColor(tn.name) === color) ? 0.5 : 0.02;
+      });
+  }
+
+  function tourMorphReset() {
+    nodeSel.each(function(n) {
+      d3.select(this).select('circle')
+        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+        .style('opacity', null)
+        .attr('stroke-opacity', 0.45)
+        .attr('stroke-width', 1.5);
+      const show = n.track_count > 150;
+      d3.select(this).select('text')
+        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+        .style('opacity', show ? 1 : 0)
+        .attr('fill', '#c8c8d8')
+        .attr('font-size', n.track_count > 500 ? '11px' : '9px')
+        .on('end', function() {
+          d3.select(this).style('opacity', null).style('display', show ? null : 'none');
+        });
+    });
+    linkSel.transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+      .style('opacity', 0.3);
+  }
+
+  function tourStep() {
+    if (!tourActive) return;
+    const fam = TOUR_FAMILIES[tourIdx];
+    tourIdx = (tourIdx + 1) % TOUR_FAMILIES.length;
+
+    // Label: fade out, swap, fade in
+    tourLabel.classList.remove('visible');
+    setTimeout(() => {
+      tourLabel.textContent = fam.label;
+      tourLabel.style.color = fam.color;
+      tourLabel.style.borderColor = fam.color + '55';
+      tourLabel.style.boxShadow   = `0 0 18px ${fam.color}33`;
+      tourLabel.classList.add('visible');
+    }, 260);
+
+    // Sync legend chip
+    activeLegend = fam.color;
+    activeSearch = '';
+    searchInput.value = '';
+    document.querySelectorAll('.legend-item').forEach(b => {
+      b.classList.toggle('active', b.dataset.color === fam.color);
+    });
+
+    // Smooth crossfade then glide zoom
+    tourMorphHighlight(fam.color);
+    fitFamily(fam.color);
+
+    tourTimer = setTimeout(tourStep, TOUR_DWELL);
+  }
+
+  window.toggleTour = function () {
+    if (tourActive) {
+      tourActive = false;
+      clearTimeout(tourTimer);
+      tourBtn.classList.remove('active');
+      tourBtn.textContent = '⏵ Tour';
+      tourLabel.classList.remove('visible');
+      activeLegend = null;
+      activeSearch = '';
+      document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
+      tourMorphReset();
+      setTimeout(() => fitToView(true), TOUR_FADE_MS);
+    } else {
+      tourActive = true;
+      tourIdx = 0;
+      tourBtn.classList.add('active');
+      tourBtn.textContent = '⏹ Stop';
+      tourStep();
+    }
+  };
 })();
 </script>
 {% endblock %}
