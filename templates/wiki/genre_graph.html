@@ -679,9 +679,8 @@
       b.classList.toggle('active', b.dataset.color === fam.color);
     });
 
-    // Smooth crossfade then glide zoom
+    // Smooth crossfade — user controls zoom
     tourMorphHighlight(fam.color);
-    fitFamily(fam.color);
 
     tourTimer = setTimeout(tourStep, TOUR_DWELL);
   }
