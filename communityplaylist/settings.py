@@ -66,6 +66,15 @@ TEMPLATES = [
 WSGI_APPLICATION = 'communityplaylist.wsgi.application'
 
 
+# Cache — file-based so YouTube search results (30-day TTL) survive gunicorn reloads/deploys
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': BASE_DIR / '.cache',
+    }
+}
+
+
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
