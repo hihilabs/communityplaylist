@@ -2136,6 +2136,8 @@ def profile_settings(request):
             profile.show_following       = bool(request.POST.get('show_following'))
             profile.show_saved_tracks    = bool(request.POST.get('show_saved_tracks'))
             profile.show_upcoming_events = bool(request.POST.get('show_upcoming_events'))
+            profile.instagram = request.POST.get('instagram', '').strip().lstrip('@')[:100]
+            profile.bluesky   = request.POST.get('bluesky',   '').strip().lstrip('@')[:100]
             # Links: up to 5 {label, url} pairs
             labels = request.POST.getlist('link_label')[:5]
             urls   = request.POST.getlist('link_url')[:5]

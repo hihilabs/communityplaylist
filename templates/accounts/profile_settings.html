@@ -200,6 +200,27 @@ h1{color:#ff6b35;font-size:1.3em;margin-bottom:24px}
   </div>
 </div>
 
+<div class="card">
+  <div class="card-title">Social Handles</div>
+  <p style="font-size:.8em;color:#555;margin-bottom:14px;line-height:1.6">Optional. Add your handles and we'll tag you when we post events you're part of — on Instagram and Bluesky.</p>
+  <div class="form-group">
+    <label>Instagram</label>
+    <div class="handle-prefix">
+      <span style="font-size:.78em">@</span>
+      <input type="text" name="instagram" value="{{ profile.instagram }}" maxlength="100" placeholder="yourhandle">
+    </div>
+    <p class="hint">No @ needed. We'll tag you when promoting events you're listed on.</p>
+  </div>
+  <div class="form-group" style="margin-bottom:0">
+    <label>Bluesky</label>
+    <div class="handle-prefix">
+      <span style="font-size:.78em">@</span>
+      <input type="text" name="bluesky" value="{{ profile.bluesky }}" maxlength="100" placeholder="you.bsky.social">
+    </div>
+    <p class="hint">Full handle including domain (e.g. you.bsky.social).</p>
+  </div>
+</div>
+
 <button type="submit" class="btn">Save profile</button>
 </form>
 
