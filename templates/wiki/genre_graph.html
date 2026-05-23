@@ -28,6 +28,10 @@
     pointer-events: none;
     user-select: none;
     transition: opacity 0.2s;
+    paint-order: stroke fill;
+    stroke: rgba(14,14,16,0.92);
+    stroke-width: 3px;
+    stroke-linejoin: round;
   }
   .g-link {
     stroke: #2e2e38;
@@ -294,7 +298,7 @@
       .text(d => d.name)
       .attr('x', d => nodeR(d) + 3)
       .attr('y', '0.35em')
-      .attr('fill', 'var(--muted)')
+      .attr('fill', '#c8c8d8')
       .attr('font-size', d => d.track_count > 500 ? '11px' : '9px')
       .style('display', d => d.track_count > 150 ? null : 'none');
 
@@ -348,7 +352,7 @@
            : null)
       .attr('fill', role === 'focus' ? 'white'
           : role === 'neighbor' ? 'var(--text)'
-          : 'var(--muted)')
+          : '#c8c8d8')
       .attr('font-size', role === 'focus' ? '12px'
           : d => d.track_count > 500 ? '11px' : '9px');
   }

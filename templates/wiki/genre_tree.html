@@ -25,6 +25,10 @@
     font-family: 'DM Mono', ui-monospace, monospace;
     pointer-events: none;
     user-select: none;
+    paint-order: stroke fill;
+    stroke: rgba(14,14,16,0.92);
+    stroke-width: 3px;
+    stroke-linejoin: round;
   }
   .t-link {
     fill: none;
@@ -322,7 +326,7 @@
           const yMid = MARGIN.top + n._lane * LANE_H + LANE_H / 2;
           return n._y >= yMid ? 'hanging' : 'auto';
         })
-        .attr('fill', 'var(--muted)')
+        .attr('fill', '#c8c8d8')
         .attr('font-size', n => n.track_count > 800 ? '11px' : n.track_count > 300 ? '10px' : '9px')
         .style('display', n => n.track_count > 80 ? null : 'none');
 
@@ -363,7 +367,7 @@
           .attr('stroke', n => genreColor(n.name));
         nodeG.select('text')
           .style('display', n => (n.track_count > 80 && !n._labelHidden) ? null : 'none')
-          .attr('fill', 'var(--muted)');
+          .attr('fill', '#c8c8d8');
         d3.selectAll('.t-link').style('opacity', 0.35);
       }
 
