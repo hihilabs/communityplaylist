@@ -17,7 +17,8 @@ jobs:
           script: |
             set -e
             cd /var/www/vhosts/communityplaylist.com/django
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             source venv/bin/activate
             pip install -r requirements.txt --quiet
             python manage.py migrate --no-input
@@ -27,7 +28,7 @@ jobs:
 
             # ── Post-deploy health check ─────────────────────────────────
             sleep 8
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://communityplaylist.com/)
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 -A "Mozilla/5.0 (compatible; CP-deploy-check/1.0)" https://communityplaylist.com/)
             if [ "$HTTP_STATUS" != "200" ]; then
               echo "HEALTH CHECK FAILED — HTTP $HTTP_STATUS"
               exit 1
