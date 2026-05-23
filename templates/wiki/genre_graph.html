@@ -27,7 +27,6 @@
     font-family: 'DM Mono', ui-monospace, monospace;
     pointer-events: none;
     user-select: none;
-    transition: opacity 0.2s;
     paint-order: stroke fill;
     stroke: rgba(14,14,16,0.92);
     stroke-width: 3px;
@@ -308,9 +307,9 @@
           window.location.href = "{{ token_url_base }}" + d.slug + '/';
         }
       })
-      .on('mouseover', (e, d) => { if (!isTouch) { showTip(e, d); highlightNeighborhood(d.slug); } })
-      .on('mousemove', (e) => { if (!isTouch) moveTip(e); })
-      .on('mouseout',  ()  => { if (!isTouch) { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); } });
+      .on('mouseover', (e, d) => { if (!isTouch && !tourActive) { showTip(e, d); highlightNeighborhood(d.slug); } })
+      .on('mousemove', (e) => { if (!isTouch && !tourActive) moveTip(e); })
+      .on('mouseout',  ()  => { if (!isTouch && !tourActive) { hideTip(); if (!activeLegend && !activeSearch) resetHighlight(); else applyHighlight(); } });
 
     nodeSel.append('circle')
       .attr('r', nodeR)
@@ -608,53 +607,52 @@
       4.5
     );
     const t = d3.zoomIdentity.translate(W / 2, H / 2).scale(scale).translate(-cx, -cy);
-    svg.transition().duration(TOUR_ZOOM_MS).ease(d3.easeCubicInOut)
+    // Named transition — anonymous hover transitions cannot interrupt this
+    svg.transition('tour').duration(TOUR_ZOOM_MS).ease(d3.easeCubicInOut)
       .call(zoom.transform, t);
   }
 
   function tourMorphHighlight(color) {
-    // Crossfade circles and links with D3 transitions — no snap
-    nodeSel.each(function(n) {
-      const active = genreColor(n.name) === color;
-      d3.select(this).select('circle')
-        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-        .style('opacity',       active ? 1    : 0.04)
-        .attr('stroke-opacity', active ? 0.8  : 0.12)
-        .attr('stroke-width',   active ? 2    : 1.5);
-      d3.select(this).select('text')
-        .style('display', null)
-        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-        .style('opacity', active ? 1 : 0)
-        .attr('fill',      active ? '#ffffff' : '#c8c8d8')
-        .attr('font-size', active ? (d => d.track_count > 500 ? '12px' : '10px') : '9px');
-    });
-    linkSel.transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+    // Selection-level named transitions — no per-element loop, no anonymous interrupt
+    nodeSel.select('circle')
+      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+      .style('opacity',       d => genreColor(d.name) === color ? 1    : 0.04)
+      .attr('stroke-opacity', d => genreColor(d.name) === color ? 0.8  : 0.12)
+      .attr('stroke-width',   d => genreColor(d.name) === color ? 2    : 1.5);
+
+    nodeSel.select('text')
+      .style('display', null)
+      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+      .style('opacity', d => genreColor(d.name) === color ? 1 : 0)
+      .attr('fill',      d => genreColor(d.name) === color ? '#ffffff' : '#c8c8d8')
+      .attr('font-size', d => genreColor(d.name) === color
+        ? (d.track_count > 500 ? '12px' : '10px') : '9px');
+
+    linkSel.transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
       .style('opacity', l => {
-        const s = l.source.slug || l.source, t = l.target.slug || l.target;
-        const sn = allNodes.find(n => n.slug === s), tn = allNodes.find(n => n.slug === t);
-        return (sn && genreColor(sn.name) === color) ||
-               (tn && genreColor(tn.name) === color) ? 0.5 : 0.02;
+        const sc = genreColor((l.source.name) || '');
+        const tc = genreColor((l.target.name) || '');
+        return (sc === color || tc === color) ? 0.5 : 0.02;
       });
   }
 
   function tourMorphReset() {
-    nodeSel.each(function(n) {
-      d3.select(this).select('circle')
-        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-        .style('opacity', null)
-        .attr('stroke-opacity', 0.45)
-        .attr('stroke-width', 1.5);
-      const show = n.track_count > 150;
-      d3.select(this).select('text')
-        .transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-        .style('opacity', show ? 1 : 0)
-        .attr('fill', '#c8c8d8')
-        .attr('font-size', n.track_count > 500 ? '11px' : '9px')
-        .on('end', function() {
-          d3.select(this).style('opacity', null).style('display', show ? null : 'none');
-        });
-    });
-    linkSel.transition().duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+    nodeSel.select('circle')
+      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+      .style('opacity', null)
+      .attr('stroke-opacity', 0.45)
+      .attr('stroke-width', 1.5);
+
+    nodeSel.select('text')
+      .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
+      .style('opacity', d => d.track_count > 150 ? 1 : 0)
+      .attr('fill', '#c8c8d8')
+      .attr('font-size', d => d.track_count > 500 ? '11px' : '9px')
+      .on('end', function(d) {
+        d3.select(this).style('opacity', null).style('display', d.track_count > 150 ? null : 'none');
+      });
+
+    linkSel.transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
       .style('opacity', 0.3);
   }
 
