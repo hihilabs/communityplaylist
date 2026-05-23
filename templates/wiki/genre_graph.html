@@ -133,6 +133,20 @@
   .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
   body.wire #btn-wire { border-color: var(--accent); color: var(--accent); }
 
+  /* ── Tour — legend stays readable while graph dims ──────────────────── */
+  body.touring #graph-legend {
+    background: rgba(18,18,22,0.98);
+    backdrop-filter: none;
+  }
+  body.touring .legend-item {
+    opacity: 0.28;
+    transition: opacity 0.6s ease;
+  }
+  body.touring .legend-item.active {
+    opacity: 1;
+    color: var(--text);
+  }
+
   /* ── Tour label overlay ──────────────────────────────────────────────── */
   #tour-label {
     position: fixed;
@@ -584,9 +598,9 @@
     { color: '#f97316', label: 'World / Folk' },
     { color: '#6b7280', label: 'Other' },
   ];
-  const TOUR_DWELL    = 15000;  // ms visible per family
-  const TOUR_ZOOM_MS  = 16000;  // zoom morph duration
-  const TOUR_FADE_MS  = 7000;   // node opacity crossfade
+  const TOUR_DWELL    = 20000;  // ms visible per family
+  const TOUR_ZOOM_MS  = 16000;  // zoom morph duration (unused while zoom off)
+  const TOUR_FADE_MS  = 11000;  // node opacity crossfade
   let tourActive = false, tourIdx = 0, tourTimer = null;
   const tourLabel = document.getElementById('tour-label');
   const tourBtn   = document.getElementById('btn-tour');
@@ -616,8 +630,8 @@
     // Selection-level named transitions — no per-element loop, no anonymous interrupt
     nodeSel.select('circle')
       .transition('tour').duration(TOUR_FADE_MS).ease(d3.easeCubicInOut)
-      .style('opacity',       d => genreColor(d.name) === color ? 1    : 0.04)
-      .attr('stroke-opacity', d => genreColor(d.name) === color ? 0.8  : 0.12)
+      .style('opacity',       d => genreColor(d.name) === color ? 1    : 0.12)
+      .attr('stroke-opacity', d => genreColor(d.name) === color ? 0.8  : 0.18)
       .attr('stroke-width',   d => genreColor(d.name) === color ? 2    : 1.5);
 
     nodeSel.select('text')
@@ -692,6 +706,7 @@
       tourBtn.classList.remove('active');
       tourBtn.textContent = '⏵ Tour';
       tourLabel.classList.remove('visible');
+      document.body.classList.remove('touring');
       activeLegend = null;
       activeSearch = '';
       document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
@@ -702,6 +717,7 @@
       tourIdx = 0;
       tourBtn.classList.add('active');
       tourBtn.textContent = '⏹ Stop';
+      document.body.classList.add('touring');
       tourStep();
     }
   };
