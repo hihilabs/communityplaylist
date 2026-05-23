@@ -327,7 +327,26 @@
           .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
           .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
         nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
-      });
+      })
+      .on('end', () => fitToView(true));
+  }
+
+  // ── Fit viewport to settled nodes ────────────────────────────────────────
+  function fitToView(animate) {
+    if (!allNodes.length) return;
+    const PAD = 60;
+    const xs = allNodes.map(n => n.x || 0);
+    const ys = allNodes.map(n => n.y || 0);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const scale = Math.min(
+      (W - PAD * 2) / Math.max(x1 - x0, 1),
+      (H - PAD * 2) / Math.max(y1 - y0, 1),
+      2
+    );
+    const t = d3.zoomIdentity.translate(W / 2, H / 2).scale(scale).translate(-cx, -cy);
+    (animate ? svg.transition().duration(900) : svg).call(zoom.transform, t);
   }
 
   // ── Highlight helpers ─────────────────────────────────────────────────
