@@ -618,6 +618,20 @@ def _hex_to_discord_int(hex_color, default=0xff6b35):
         return default
 
 
+def _bsky_post_text(text, hashtags=()):
+    """Post plain text to Bluesky. Returns True on success."""
+    try:
+        token, did = _bsky_session()
+        if not token:
+            return False
+        facets = _bsky_facets(text, hashtags=hashtags)
+        uri, _ = _bsky_create(token, did, text, facets=facets or None)
+        return bool(uri)
+    except Exception as e:
+        print(f'[Bluesky/CTA] {e}')
+        return False
+
+
 def _post_promoter_bluesky(promoter):
     try:
         token, did = _bsky_session()

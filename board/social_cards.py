@@ -262,6 +262,88 @@ def _card_shop(promoter, accent, listings):
     return img
 
 
+# ── CTA card ──────────────────────────────────────────────────────────────────
+
+def _card_cta():
+    """Full-bleed call-to-action card — 'Get featured here.'
+
+    Shown when all verified profiles have been recently promoted.
+    Encourages artists/crews to register and get verified.
+    """
+    accent = C_ACCENT
+    img    = Image.new('RGB', (CARD_SIZE, CARD_SIZE), C_BG)
+    draw   = ImageDraw.Draw(img)
+
+    # Top + bottom accent bars
+    _accent_bar(draw, accent, 0, height=12)
+    _accent_bar(draw, accent, CARD_SIZE - 12, height=12)
+
+    # Vertical accent stripe (left edge decoration)
+    draw.rectangle([(0, 0), (8, CARD_SIZE)], fill=accent)
+
+    f_eyebrow = _font(30)
+    f_big     = _font(96)
+    f_mid     = _font(44)
+    f_sub     = _font(34)
+    f_url     = _font(30)
+
+    center = CARD_SIZE // 2
+    pad    = GUTTER + 20
+
+    # Eyebrow — "COMMUNITY PLAYLIST PRESENTS"
+    eyebrow = 'COMMUNITY PLAYLIST'
+    ew = int(draw.textlength(eyebrow, font=f_eyebrow))
+    draw.text(((CARD_SIZE - ew) // 2, 180), eyebrow, font=f_eyebrow, fill=C_TEXT_MID)
+
+    # Big headline
+    line1 = 'YOUR NAME'
+    line2 = 'HERE.'
+    lw1 = int(draw.textlength(line1, font=f_big))
+    lw2 = int(draw.textlength(line2, font=f_big))
+    draw.text(((CARD_SIZE - lw1) // 2, 260), line1, font=f_big, fill=C_TEXT_HI)
+    draw.text(((CARD_SIZE - lw2) // 2, 370), line2, font=f_big, fill=accent)
+
+    # Thin separator
+    draw.line([(pad, 490), (CARD_SIZE - pad, 490)], fill=C_BORDER, width=2)
+
+    # Sub-copy
+    sub = 'Artists · Crews · Record Shops'
+    sw  = int(draw.textlength(sub, font=f_mid))
+    draw.text(((CARD_SIZE - sw) // 2, 520), sub, font=f_mid, fill=C_TEXT_MID)
+
+    steps = [
+        '1.  Register your profile',
+        '2.  Get verified',
+        '3.  We blast you to the community',
+    ]
+    sy = 610
+    for step in steps:
+        sw2 = int(draw.textlength(step, font=f_sub))
+        draw.text(((CARD_SIZE - sw2) // 2, sy), step, font=f_sub, fill=C_TEXT_HI)
+        sy += 56
+
+    # CTA pill
+    cta_text = 'communityplaylist.com/promoters/register/'
+    cta_w    = int(draw.textlength(cta_text, font=f_url)) + 32
+    cta_x    = (CARD_SIZE - cta_w) // 2
+    draw.rectangle([(cta_x, 850), (cta_x + cta_w, 900)], fill=(30, 30, 30))
+    draw.rectangle([(cta_x, 850), (cta_x + cta_w, 900)], outline=accent, width=2)
+    draw.text((cta_x + 16, 858), cta_text, font=f_url, fill=accent)
+
+    _watermark(draw)
+    return img
+
+
+def generate_cta_card():
+    """Save and return URL of the CTA card."""
+    from django.conf import settings
+    out_dir = os.path.join(settings.MEDIA_ROOT, 'social_cards')
+    os.makedirs(out_dir, exist_ok=True)
+    fname = '_cta.png'
+    _card_cta().save(os.path.join(out_dir, fname), 'PNG', optimize=True)
+    return f'{CP_BASE}{settings.MEDIA_URL}social_cards/{fname}'
+
+
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def generate_promoter_cards(promoter):
