@@ -763,11 +763,16 @@ def post_promoter(promoter):
     Trigger on is_verified transitioning True, or after a record shop sync
     adds new listings. Returns (bsky_ok, discord_ok, buffer_ok).
     """
-    return (
+    results = (
         _post_promoter_bluesky(promoter),
         _post_promoter_discord(promoter),
         post_buffer_promoter(promoter),
     )
+    if any(results):
+        from django.utils import timezone
+        promoter.last_promoted_at = timezone.now()
+        promoter.save(update_fields=['last_promoted_at'])
+    return results
 
 
 # ── Buffer (queued publishing — FB, Instagram, Threads, YouTube Community) ─────

@@ -338,6 +338,7 @@ class PromoterProfile(models.Model):
     is_verified = models.BooleanField(default=False)
     is_public   = models.BooleanField(default=True)
     is_live     = models.BooleanField(default=False, help_text='Currently streaming live (updated by check_live_streams)')
+    last_promoted_at = models.DateTimeField(null=True, blank=True, help_text='Last time profile was blasted to social media')
     twitch_unresolvable = models.BooleanField(default=False, help_text='Twitch username returned 400 — needs review')
     link_broken      = models.BooleanField(default=False, help_text='Website URL returned 4xx/5xx (check_links cron)')
     link_checked_at  = models.DateTimeField(null=True, blank=True, help_text='Last time website URL was checked')
