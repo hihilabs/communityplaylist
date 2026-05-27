@@ -1,0 +1,569 @@
+{% extends 'wiki/base.html' %}
+{% block title %}Genre Orbital — Community Playlist{% endblock %}
+
+{% block extra_head %}
+<style>
+  body { overflow: hidden; }
+  .container { padding: 0; max-width: none; }
+  footer { display: none; }
+
+  #orbital-wrap {
+    position: fixed; inset: 56px 0 0 0;
+    background: #06060e;
+    overflow: hidden;
+  }
+  #orbital-svg { width: 100%; height: 100%; cursor: grab; }
+  #orbital-svg:active { cursor: grabbing; }
+
+  .o-node { cursor: pointer; }
+  .o-nucleus { transition: stroke 0.1s; }
+
+  /* Shared chrome */
+  #view-toggle {
+    position: fixed; top: 68px; right: 14px;
+    display: flex; gap: 6px; z-index: 10;
+  }
+  .view-btn {
+    background: rgba(23,23,26,0.88); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--muted); padding: 6px 12px; font-size: 11px; font-family: inherit;
+    cursor: pointer; backdrop-filter: blur(6px); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 5px; transition: all .15s;
+  }
+  .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+  #orbital-tip {
+    position: fixed; background: rgba(23,23,26,0.96); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-size: 12px; pointer-events: none;
+    z-index: 20; display: none; max-width: 220px; backdrop-filter: blur(6px);
+  }
+  #otip-name { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; }
+  #otip-meta { color: var(--muted); font-size: 11px; display: block; }
+  #otip-bond { color: var(--accent); font-size: 10px; display: block; margin-top: 3px; font-style: italic; }
+
+  #tour-label {
+    position: fixed; top: 76px; left: 50%; transform: translateX(-50%);
+    background: rgba(14,14,18,0.92); border: 1px solid transparent; border-radius: 20px;
+    padding: 6px 22px; font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
+    pointer-events: none; z-index: 15; opacity: 0;
+    transition: opacity 0.8s ease, border-color 1.2s ease, box-shadow 1.2s ease, color 1s ease;
+    white-space: nowrap; backdrop-filter: blur(8px);
+  }
+  #tour-label.visible { opacity: 1; }
+
+  #orbital-info {
+    position: fixed; top: 68px; left: 14px;
+    background: rgba(23,23,26,0.88); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 14px; font-size: 11px; color: var(--muted);
+    backdrop-filter: blur(6px); max-width: 180px; z-index: 10; line-height: 1.7;
+  }
+  #orbital-info strong { color: var(--text); display: block; font-size: 12px; margin-bottom: 4px; }
+
+  @media (max-width: 640px) {
+    #orbital-info { display: none; }
+    #view-toggle { flex-direction: column; gap: 4px; right: 10px; }
+    .view-btn { padding: 5px 9px; font-size: 10px; }
+    #orbital-tip { left: 50% !important; top: 70px !important; transform: translateX(-50%); max-width: 85vw; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="orbital-wrap">
+  <svg id="orbital-svg"></svg>
+</div>
+
+<div id="view-toggle">
+  <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
+  <a href="{% url 'wiki:genre_graph' %}" class="view-btn">◉ Graph</a>
+  <a href="{% url 'wiki:genre_tree' %}" class="view-btn">⊕ Tree</a>
+  <a href="{% url 'wiki:genre_blob' %}" class="view-btn">⬡ Blobs</a>
+  <button id="btn-tour" class="view-btn" onclick="toggleTour()">⏵ Tour</button>
+  <button class="view-btn active">⚛ Orbital</button>
+  <button class="view-btn" onclick="location.reload(true)" title="Hard reload">↺</button>
+</div>
+
+<div id="orbital-info">
+  <strong>Genre Orbital</strong>
+  Solid = lineage bond.<br>
+  Dashed = cross-influence.<br>
+  Tour shows bonds form &amp; break.<br>
+  Click a node to explore.
+</div>
+
+<div id="orbital-tip">
+  <span id="otip-name"></span>
+  <span id="otip-meta"></span>
+  <span id="otip-bond"></span>
+</div>
+<div id="tour-label"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── Color family ──────────────────────────────────────────────────────
+  function genreColor(name) {
+    const n = name.toLowerCase();
+    if (/house|techno|trance|electro|synth|rave|ambient|wave|drone|noise|industrial|ebm|idm|glitch|electronica|dubstep|edm/.test(n)) return '#7c6af7';
+    if (/hip|hop|rap|trap|drill|grime|boom|bap|crunk|mumble|cloud|gangsta/.test(n)) return '#f59e0b';
+    if (/rock|metal|punk|grunge|hardcore|doom|thrash|death|black|shoegaze/.test(n)) return '#ef4444';
+    if (/jazz|soul|blues|funk|gospel|swing|bossa|latin|reggae|ska|dub|r&b|rnb/.test(n)) return '#22c55e';
+    if (/drum|bass|jungle|neurofunk|liquid|footwork|break/.test(n)) return '#06b6d4';
+    if (/pop|indie|alternative|dream|bedroom|chillwave/.test(n)) return '#ec4899';
+    if (/folk|world|afro|celtic|country|bluegrass|cumbia|flamenco|bhangra/.test(n)) return '#f97316';
+    return '#6b7280';
+  }
+
+  const FAMILY_CENTERS = {
+    '#7c6af7': { x: -180, y: -80 }, '#f59e0b': { x: 180, y: -80 },
+    '#ef4444': { x: -180, y:  80 }, '#22c55e': { x:   0, y: -200 },
+    '#06b6d4': { x:  180, y:  80 }, '#ec4899': { x:   0, y:  200 },
+    '#f97316': { x: -100, y:   0 }, '#6b7280': { x: 100, y:    0 },
+  };
+
+  function nodeR(tc) { return Math.max(5, Math.min(22, Math.sqrt(tc || 1) * 0.95)); }
+
+  // ── SVG / zoom setup ──────────────────────────────────────────────────
+  const wrap = document.getElementById('orbital-wrap');
+  let W = wrap.clientWidth, H = wrap.clientHeight;
+  const isTouch = window.matchMedia('(hover: none)').matches;
+  let _tapSlug = null;
+
+  const svg  = d3.select('#orbital-svg');
+  const defs = svg.append('defs');
+
+  function addGlow(id, blur) {
+    const f = defs.append('filter').attr('id', id)
+      .attr('x', '-100%').attr('y', '-100%').attr('width', '300%').attr('height', '300%');
+    f.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', blur).attr('result', 'b');
+    const m = f.append('feMerge');
+    m.append('feMergeNode').attr('in', 'b');
+    m.append('feMergeNode').attr('in', 'SourceGraphic');
+  }
+  addGlow('gn',  3.5);   // node resting
+  addGlow('ga',  9);     // node active
+  addGlow('gb',  2);     // bond
+  addGlow('gsp', 14);    // spark
+
+  const g = svg.append('g');
+  const zoom = d3.zoom().scaleExtent([0.06, 8])
+    .on('zoom', e => g.attr('transform', e.transform));
+  svg.call(zoom);
+  svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.58));
+
+  // ── State ─────────────────────────────────────────────────────────────
+  let allNodes = [], simulation;
+  let bondSel, nodeSel, sparkLayer, particleLayer;
+  let particles = [];
+  let particleRAF = null;
+  let hoveredNode = null;
+
+  // ── Build scene ───────────────────────────────────────────────────────
+  function build(nodes, links) {
+    g.selectAll('*').remove();
+    particles = [];
+
+    const bySlug = {};
+    nodes.forEach(n => { bySlug[n.slug] = n; });
+
+    // Separate lineage (parent→child) vs resonance (M2M related) bonds
+    const lineageBonds = nodes
+      .filter(n => n.derived_from__slug && bySlug[n.derived_from__slug])
+      .map(n => ({ source: n.derived_from__slug, target: n.slug, kind: 'lineage' }));
+    const lineageSet = new Set(lineageBonds.map(l => l.source + '>' + l.target));
+    const resonanceBonds = links
+      .filter(l => !lineageSet.has(l.source + '>' + l.target) && !lineageSet.has(l.target + '>' + l.source))
+      .map(l => ({ ...l, kind: 'resonance' }));
+    const allBonds = [...lineageBonds, ...resonanceBonds];
+
+    // Bond layer (drawn first, underneath nodes)
+    bondSel = g.append('g').attr('class', 'bonds')
+      .selectAll('path').data(allBonds).join('path')
+      .attr('fill', 'none')
+      .attr('stroke', d => {
+        const src = (typeof d.source === 'object') ? d.source : bySlug[d.source];
+        return src ? genreColor(src.name) : '#444';
+      })
+      .attr('stroke-width', d => d.kind === 'lineage' ? 1.3 : 0.65)
+      .attr('stroke-opacity', 0)   // fade in after sim settles
+      .attr('stroke-dasharray', d => d.kind === 'resonance' ? '3 5' : null)
+      .attr('stroke-linecap', 'round')
+      .attr('filter', 'url(#gb)');
+
+    // Spark / particle layers
+    sparkLayer    = g.append('g').attr('class', 'sparks');
+    particleLayer = g.append('g').attr('class', 'particles');
+
+    // Node layer
+    nodeSel = g.append('g').attr('class', 'nodes')
+      .selectAll('g').data(nodes).join('g')
+      .attr('class', 'o-node')
+      .call(drag())
+      .on('click', (e, d) => {
+        if (isTouch) {
+          e.stopPropagation();
+          if (_tapSlug === d.slug) { nav(d.slug); } else { _tapSlug = d.slug; showTip(e, d); moveTip(e); }
+        } else { nav(d.slug); }
+      })
+      .on('mouseover', (e, d) => { if (!isTouch) { hoveredNode = d; showTip(e, d); pulseNode(d, true); } })
+      .on('mousemove', moveTip)
+      .on('mouseout',  ()  => { if (!isTouch) { hoveredNode = null; hideTip(); pulseNode(null, false); } });
+
+    // Electron cloud rings (outer → inner opacity)
+    [[2.3, 0.025], [1.65, 0.06], [1.28, 0.12]].forEach(([mul, op], ri) => {
+      nodeSel.append('circle')
+        .attr('class', 'o-ring')
+        .attr('data-op', op)
+        .attr('data-ring', ri)
+        .attr('r', d => nodeR(d.track_count) * mul)
+        .attr('fill', 'none')
+        .attr('stroke', d => genreColor(d.name))
+        .attr('stroke-opacity', op)
+        .attr('stroke-width', 0.7)
+        .attr('pointer-events', 'none');
+    });
+
+    // Nucleus
+    nodeSel.append('circle')
+      .attr('class', 'o-nucleus')
+      .attr('r', d => nodeR(d.track_count))
+      .attr('fill', d => genreColor(d.name))
+      .attr('fill-opacity', 0.85)
+      .attr('stroke', d => genreColor(d.name))
+      .attr('stroke-opacity', 0.5).attr('stroke-width', 1.5)
+      .attr('filter', 'url(#gn)');
+
+    // Labels
+    nodeSel.append('text')
+      .text(d => d.name)
+      .attr('x', d => nodeR(d.track_count) + 3).attr('y', '0.35em')
+      .attr('fill', '#c8c8d8').attr('font-size', d => d.track_count > 500 ? '10px' : '8px')
+      .attr('font-family', "'DM Mono', ui-monospace, monospace")
+      .attr('pointer-events', 'none')
+      .attr('paint-order', 'stroke fill')
+      .attr('stroke', 'rgba(7,7,14,0.9)').attr('stroke-width', '2.5').attr('stroke-linejoin', 'round')
+      .style('display', d => d.track_count > 120 ? null : 'none');
+
+    // ── Force simulation ────────────────────────────────────────────────
+    function famForce(alpha) {
+      nodes.forEach(n => {
+        const c = FAMILY_CENTERS[genreColor(n.name)];
+        if (!c) return;
+        n.vx += (c.x - (n.x || 0)) * 0.055 * alpha;
+        n.vy += (c.y - (n.y || 0)) * 0.055 * alpha;
+      });
+    }
+    simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(allBonds).id(d => d.slug)
+        .distance(d => d.kind === 'lineage' ? 75 : 150)
+        .strength(d => d.kind === 'lineage' ? 0.28 : 0.06))
+      .force('charge', d3.forceManyBody().strength(d => -55 - nodeR(d.track_count) * 5).distanceMax(280))
+      .force('center', d3.forceCenter(0, 0).strength(0.04))
+      .force('collision', d3.forceCollide(d => nodeR(d.track_count) * 2.6))
+      .force('family', famForce)
+      .alphaDecay(0.038).velocityDecay(0.62)
+      .on('tick', tick);
+
+    // Fade bonds in after layout settles
+    setTimeout(() => {
+      bondSel.transition().duration(1200)
+        .attr('stroke-opacity', d => d.kind === 'lineage' ? 0.28 : 0.13);
+    }, 2800);
+
+    // Start ring breath after scene is stable
+    setTimeout(breatheRings, 5000);
+  }
+
+  function tick() {
+    bondSel.attr('d', d => {
+      const sx = d.source.x || 0, sy = d.source.y || 0;
+      const tx = d.target.x || 0, ty = d.target.y || 0;
+      // Lineage bonds: straight. Resonance bonds: gentle arc.
+      if (d.kind === 'lineage') return `M${sx},${sy} L${tx},${ty}`;
+      const mx = (sx+tx)/2 - (ty-sy)*0.14, my = (sy+ty)/2 + (tx-sx)*0.14;
+      return `M${sx},${sy} Q${mx},${my} ${tx},${ty}`;
+    });
+    nodeSel.attr('transform', d => `translate(${d.x||0},${d.y||0})`);
+  }
+
+  // ── Ring breathing pulse ───────────────────────────────────────────────
+  let breathePhase = 0, breatheRAF = null;
+  function breatheRings() {
+    if (breatheRAF) cancelAnimationFrame(breatheRAF);
+    function step() {
+      breathePhase += 0.006;
+      if (!tourActive && !hoveredNode) {
+        nodeSel.selectAll('.o-ring').attr('stroke-opacity', function(d) {
+          const base = +this.getAttribute('data-op');
+          const ri   = +this.getAttribute('data-ring');
+          return base * (0.55 + 0.45 * Math.sin(breathePhase + ri * 1.1 + (d._phase || 0)));
+        });
+      }
+      breatheRAF = requestAnimationFrame(step);
+    }
+    // Assign stable per-node phase offset
+    if (allNodes.length) allNodes.forEach(n => { n._phase = Math.random() * Math.PI * 2; });
+    step();
+  }
+
+  // ── Node hover ────────────────────────────────────────────────────────
+  function pulseNode(d, on) {
+    if (!nodeSel) return;
+    if (!on) {
+      nodeSel.select('.o-nucleus')
+        .attr('fill-opacity', tourActive ? null : 0.85)
+        .attr('filter', 'url(#gn)');
+      bondSel.attr('stroke-opacity', tourActive ? null :
+        function(l) { return l.kind === 'lineage' ? 0.28 : 0.13; })
+        .attr('stroke-width', l => l.kind === 'lineage' ? 1.3 : 0.65);
+      return;
+    }
+    const connected = new Set([d.slug]);
+    bondSel.each(l => {
+      const s = l.source.slug || l.source, t = l.target.slug || l.target;
+      if (s === d.slug) connected.add(t);
+      if (t === d.slug) connected.add(s);
+    });
+    nodeSel.select('.o-nucleus')
+      .attr('fill-opacity', n => connected.has(n.slug) ? 0.98 : 0.1)
+      .attr('filter', n => n.slug === d.slug ? 'url(#ga)' : 'url(#gn)');
+    bondSel
+      .attr('stroke-opacity', l => {
+        const s = l.source.slug || l.source, t = l.target.slug || l.target;
+        return (s === d.slug || t === d.slug) ? 0.9 : 0.04;
+      })
+      .attr('stroke-width', l => {
+        const s = l.source.slug || l.source, t = l.target.slug || l.target;
+        const base = l.kind === 'lineage' ? 1.3 : 0.65;
+        return (s === d.slug || t === d.slug) ? base * 2.8 : base * 0.4;
+      });
+  }
+
+  // ── Tooltip ───────────────────────────────────────────────────────────
+  const tip = document.getElementById('orbital-tip');
+  function showTip(e, d) {
+    document.getElementById('otip-name').textContent = d.name;
+    const bpm = d.bpm_min && d.bpm_max ? ` · ${d.bpm_min}–${d.bpm_max} BPM` : '';
+    document.getElementById('otip-meta').textContent = (d.track_count || 0) + ' tracks' + bpm;
+    const parent = d.derived_from__slug ? allNodes.find(n => n.slug === d.derived_from__slug) : null;
+    document.getElementById('otip-bond').textContent = parent ? `← bonded from ${parent.name}` : (d.derived_from__slug ? '' : '★ root genre');
+    tip.style.display = 'block';
+  }
+  function moveTip(e) { tip.style.left = (e.clientX+14) + 'px'; tip.style.top = (e.clientY-10) + 'px'; }
+  function hideTip() { tip.style.display = 'none'; }
+  function nav(slug) { window.location.href = '{{ token_url_base }}' + slug + '/'; }
+
+  // ── Drag ──────────────────────────────────────────────────────────────
+  function drag() {
+    return d3.drag()
+      .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.15).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end',   (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; });
+  }
+
+  // ── Particle flow along active bonds ──────────────────────────────────
+  function startParticles(color) {
+    stopParticles();
+    bondSel.each(function(d) {
+      const sc = genreColor((d.source.name||'')), tc = genreColor((d.target.name||''));
+      if (sc !== color && tc !== color) return;
+      const n = d.kind === 'lineage' ? 3 : 1;
+      for (let i = 0; i < n; i++) {
+        const dot = particleLayer.append('circle')
+          .attr('r', d.kind === 'lineage' ? 2.2 : 1.4)
+          .attr('fill', color).attr('opacity', 0.8)
+          .attr('pointer-events', 'none');
+        particles.push({ dot, el: this, t: i / n, speed: 0.003 + Math.random() * 0.0035 });
+      }
+    });
+    function loop() {
+      particles.forEach(p => {
+        try {
+          p.t = (p.t + p.speed) % 1;
+          const len = p.el.getTotalLength();
+          const pt  = p.el.getPointAtLength(p.t * len);
+          p.dot.attr('cx', pt.x).attr('cy', pt.y);
+        } catch(e) {}
+      });
+      particleRAF = requestAnimationFrame(loop);
+    }
+    loop();
+  }
+
+  function stopParticles() {
+    if (particleRAF) { cancelAnimationFrame(particleRAF); particleRAF = null; }
+    particles.forEach(p => p.dot.remove());
+    particles = [];
+  }
+
+  // ── Bond break: spark + retract ────────────────────────────────────────
+  function breakBonds(color) {
+    bondSel.each(function(d) {
+      const sc = genreColor((d.source.name||'')), tc = genreColor((d.target.name||''));
+      if (sc !== color && tc !== color) return;
+      // Spark at midpoint
+      try {
+        const pt = this.getPointAtLength(this.getTotalLength() * 0.5);
+        for (let i = 0; i < 4; i++) {
+          const ang = Math.random() * Math.PI * 2, dist = 6 + Math.random() * 14;
+          sparkLayer.append('circle')
+            .attr('cx', pt.x).attr('cy', pt.y)
+            .attr('r', 1.8 + Math.random() * 2.2).attr('fill', color)
+            .attr('opacity', 0.95).attr('filter', 'url(#gsp)')
+            .transition().duration(380).ease(d3.easeQuadOut)
+            .attr('cx', pt.x + Math.cos(ang) * dist)
+            .attr('cy', pt.y + Math.sin(ang) * dist)
+            .attr('r', 0.3).attr('opacity', 0).remove();
+        }
+      } catch(e) {}
+      // Retract
+      d3.select(this).transition().duration(480)
+        .attr('stroke-opacity', 0).attr('stroke-width', 0);
+    });
+  }
+
+  // ── Bond form: draw-in ──────────────────────────────────────────────────
+  function formBonds(color) {
+    bondSel.each(function(d) {
+      const sc = genreColor((d.source.name||'')), tc = genreColor((d.target.name||''));
+      if (sc !== color && tc !== color) return;
+      const target_w = d.kind === 'lineage' ? 2.1 : 1.0;
+      const target_op = d.kind === 'lineage' ? 0.78 : 0.5;
+      // Draw-in via stroke-dashoffset
+      try {
+        const len = this.getTotalLength();
+        d3.select(this)
+          .attr('stroke-dasharray', len + ' ' + len)
+          .attr('stroke-dashoffset', len)
+          .attr('stroke-width', target_w).attr('stroke-opacity', target_op)
+          .transition().duration(650).ease(d3.easeQuadOut)
+          .attr('stroke-dashoffset', 0)
+          .on('end', function() {
+            d3.select(this).attr('stroke-dasharray', d.kind === 'resonance' ? '3 5' : null)
+              .attr('stroke-dashoffset', null);
+          });
+      } catch(e) {
+        d3.select(this).attr('stroke-width', 0).attr('stroke-opacity', 0)
+          .transition().duration(500).attr('stroke-width', target_w).attr('stroke-opacity', target_op);
+      }
+    });
+  }
+
+  // ── Tour ──────────────────────────────────────────────────────────────
+  const TOUR_FAMILIES = [
+    { color: '#22c55e', label: 'Jazz / Soul' },
+    { color: '#f97316', label: 'World / Folk' },
+    { color: '#f59e0b', label: 'Hip-Hop / Rap' },
+    { color: '#06b6d4', label: 'Drum & Bass' },
+    { color: '#7c6af7', label: 'Electronic' },
+    { color: '#ec4899', label: 'Pop / Indie' },
+    { color: '#ef4444', label: 'Rock / Metal' },
+    { color: '#6b7280', label: 'Other' },
+  ];
+  const DWELL = 16000;
+  let tourActive = false, tourIdx = 0, tourTimer = null, prevColor = null;
+  const tourLabel = document.getElementById('tour-label');
+  const tourBtn   = document.getElementById('btn-tour');
+
+  function tourStep() {
+    if (!tourActive) return;
+    const fam = TOUR_FAMILIES[tourIdx];
+    tourIdx = (tourIdx + 1) % TOUR_FAMILIES.length;
+
+    // Break previous bonds, pause, then form new ones
+    stopParticles();
+    if (prevColor) {
+      breakBonds(prevColor);
+      setTimeout(() => {
+        formBonds(fam.color);
+        setTimeout(() => startParticles(fam.color), 750);
+      }, 520);
+    } else {
+      formBonds(fam.color);
+      setTimeout(() => startParticles(fam.color), 700);
+    }
+    prevColor = fam.color;
+
+    // Node highlight
+    nodeSel.select('.o-nucleus')
+      .transition().duration(700)
+      .attr('fill-opacity', d => genreColor(d.name) === fam.color ? 0.96 : 0.07)
+      .attr('filter', d => genreColor(d.name) === fam.color ? 'url(#ga)' : 'url(#gn)');
+    nodeSel.selectAll('.o-ring')
+      .transition().duration(700)
+      .attr('stroke-opacity', function(d) {
+        return genreColor(d.name) === fam.color
+          ? +this.getAttribute('data-op')
+          : 0;
+      });
+
+    // Label
+    tourLabel.classList.remove('visible');
+    setTimeout(() => {
+      tourLabel.textContent       = fam.label;
+      tourLabel.style.color       = fam.color;
+      tourLabel.style.borderColor = fam.color + '55';
+      tourLabel.style.boxShadow   = `0 0 18px ${fam.color}33`;
+      tourLabel.classList.add('visible');
+    }, 500);
+
+    tourTimer = setTimeout(tourStep, DWELL);
+  }
+
+  window.toggleTour = function () {
+    if (tourActive) {
+      tourActive = false; clearTimeout(tourTimer);
+      tourBtn.classList.remove('active'); tourBtn.textContent = '⏵ Tour';
+      tourLabel.classList.remove('visible');
+      stopParticles(); prevColor = null;
+      // Reset all
+      bondSel.transition().duration(600)
+        .attr('stroke-opacity', d => d.kind === 'lineage' ? 0.28 : 0.13)
+        .attr('stroke-width', d => d.kind === 'lineage' ? 1.3 : 0.65)
+        .attr('stroke-dasharray', d => d.kind === 'resonance' ? '3 5' : null)
+        .attr('stroke-dashoffset', null);
+      nodeSel.select('.o-nucleus')
+        .transition().duration(600).attr('fill-opacity', 0.85).attr('filter', 'url(#gn)');
+      nodeSel.selectAll('.o-ring')
+        .transition().duration(600)
+        .attr('stroke-opacity', function() { return +this.getAttribute('data-op'); });
+    } else {
+      // Dim everything before tour starts
+      bondSel.attr('stroke-opacity', 0.05)
+        .attr('stroke-width', d => (d.kind === 'lineage' ? 1.3 : 0.65) * 0.4);
+      nodeSel.select('.o-nucleus').attr('fill-opacity', 0.07);
+      nodeSel.selectAll('.o-ring').attr('stroke-opacity', 0);
+      tourActive = true; tourIdx = 0;
+      tourBtn.classList.add('active'); tourBtn.textContent = '⏹ Stop';
+      tourStep();
+    }
+  };
+
+  // ── Fit viewport ─────────────────────────────────────────────────────
+  function fit(animate) {
+    if (!allNodes.length) return;
+    const PAD = 60;
+    const xs = allNodes.map(n => n.x || 0).sort((a,b) => a-b);
+    const ys = allNodes.map(n => n.y || 0).sort((a,b) => a-b);
+    const q = (arr,p) => arr[Math.max(0, Math.min(arr.length-1, Math.floor(arr.length*p)))];
+    const x0=q(xs,.02), x1=q(xs,.98), y0=q(ys,.02), y1=q(ys,.98);
+    const cx=(x0+x1)/2, cy=(y0+y1)/2;
+    const sc = Math.min((W-PAD*2)/Math.max(x1-x0,1), (H-PAD*2)/Math.max(y1-y0,1), 3);
+    const t = d3.zoomIdentity.translate(W/2,H/2).scale(sc).translate(-cx,-cy);
+    (animate ? svg.transition().duration(900) : svg).call(zoom.transform, t);
+  }
+
+  // ── Load ─────────────────────────────────────────────────────────────
+  fetch("{% url 'wiki:api_graph_data' %}")
+    .then(r => r.json())
+    .then(data => {
+      allNodes = data.nodes;
+      build(allNodes, data.links);
+      setTimeout(() => fit(true), 3400);
+    });
+
+  window.addEventListener('resize', () => { W = wrap.clientWidth; H = wrap.clientHeight; });
+})();
+</script>
+{% endblock %}
