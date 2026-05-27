@@ -78,6 +78,7 @@
   <a href="{% url 'wiki:genre_tree' %}" class="view-btn">⊕ Tree</a>
   <a href="{% url 'wiki:genre_blob' %}" class="view-btn">⬡ Blobs</a>
   <button id="btn-tour" class="view-btn" onclick="toggleTour()">⏵ Tour</button>
+  <button id="btn-audio" class="view-btn" onclick="toggleAudio()" title="React to microphone audio">🎙 Audio</button>
   <button class="view-btn active">⚛ Orbital</button>
   <button class="view-btn" onclick="location.reload(true)" title="Hard reload">↺</button>
 </div>
@@ -151,6 +152,8 @@
     .on('zoom', e => g.attr('transform', e.transform));
   svg.call(zoom);
   svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.58));
+  svg.on('click', (e) => { if (e.target === svg.node()) resetExplore(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') resetExplore(); });
 
   // ── State ─────────────────────────────────────────────────────────────
   let allNodes = [], simulation;
@@ -158,6 +161,12 @@
   let particles = [];
   let particleRAF = null;
   let hoveredNode = null;
+  let exploredNode = null;   // click-to-explore
+  let _dblTimer = null;      // double-click gate
+  // audio
+  let audioCtx = null, analyser = null, micStream = null;
+  let audioActive = false, audioRAF = null;
+  let prevBass = 0;
 
   // ── Build scene ───────────────────────────────────────────────────────
   function build(nodes, links) {
@@ -200,14 +209,23 @@
       .attr('class', 'o-node')
       .call(drag())
       .on('click', (e, d) => {
+        e.stopPropagation();
         if (isTouch) {
-          e.stopPropagation();
-          if (_tapSlug === d.slug) { nav(d.slug); } else { _tapSlug = d.slug; showTip(e, d); moveTip(e); }
-        } else { nav(d.slug); }
+          if (_tapSlug === d.slug) { exploreNode(d); }
+          else { _tapSlug = d.slug; showTip(e, d); moveTip(e); }
+          return;
+        }
+        // Desktop: single click = explore, double-click = navigate
+        if (_dblTimer && _dblTimer.slug === d.slug) {
+          clearTimeout(_dblTimer.id); _dblTimer = null; nav(d.slug);
+        } else {
+          if (_dblTimer) { clearTimeout(_dblTimer.id); }
+          _dblTimer = { slug: d.slug, id: setTimeout(() => { _dblTimer = null; exploreNode(d); }, 260) };
+        }
       })
-      .on('mouseover', (e, d) => { if (!isTouch) { hoveredNode = d; showTip(e, d); pulseNode(d, true); } })
+      .on('mouseover', (e, d) => { if (!isTouch && !exploredNode) { hoveredNode = d; showTip(e, d); pulseNode(d, true); } })
       .on('mousemove', moveTip)
-      .on('mouseout',  ()  => { if (!isTouch) { hoveredNode = null; hideTip(); pulseNode(null, false); } });
+      .on('mouseout',  ()  => { if (!isTouch && !exploredNode) { hoveredNode = null; hideTip(); pulseNode(null, false); } });
 
     // Electron cloud rings (outer → inner opacity)
     [[2.3, 0.025], [1.65, 0.06], [1.28, 0.12]].forEach(([mul, op], ri) => {
@@ -359,6 +377,88 @@
       .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.15).restart(); d.fx = d.x; d.fy = d.y; })
       .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
       .on('end',   (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; });
+  }
+
+  // ── Click-to-explore ─────────────────────────────────────────────────
+  function exploreNode(d) {
+    if (tourActive) toggleTour(); // interrupt tour
+    const color = genreColor(d.name);
+    stopParticles();
+    hideTip();
+
+    if (!exploredNode) {
+      // First explore: dim everything
+      bondSel.attr('stroke-opacity', 0.04)
+        .attr('stroke-width', l => (l.kind === 'lineage' ? 1.3 : 0.65) * 0.3);
+      nodeSel.select('.o-nucleus').attr('fill-opacity', 0.06);
+      nodeSel.selectAll('.o-ring').attr('stroke-opacity', 0);
+    }
+
+    const prev = exploredNode;
+    exploredNode = d;
+    _tapSlug = null;
+
+    if (prev && genreColor(prev.name) !== color) {
+      breakBonds(genreColor(prev.name));
+      setTimeout(() => { formBonds(color); setTimeout(() => startParticles(color), 750); }, 520);
+    } else {
+      formBonds(color);
+      setTimeout(() => startParticles(color), 700);
+    }
+
+    // Highlight this node and its direct neighbours
+    const connected = new Set([d.slug]);
+    bondSel.each(l => {
+      const s = l.source.slug || l.source, t = l.target.slug || l.target;
+      if (s === d.slug) connected.add(t);
+      if (t === d.slug) connected.add(s);
+    });
+    nodeSel.select('.o-nucleus').transition().duration(700)
+      .attr('fill-opacity', n => connected.has(n.slug) ? 0.96 : 0.06)
+      .attr('filter', n => n.slug === d.slug ? 'url(#ga)' : null);
+    nodeSel.selectAll('.o-ring').transition().duration(700)
+      .attr('stroke-opacity', function(n) {
+        return connected.has(n.slug) ? +this.getAttribute('data-op') : 0;
+      });
+
+    showExplorePanel(d);
+  }
+
+  function resetExplore() {
+    if (!exploredNode) return;
+    exploredNode = null; _tapSlug = null;
+    stopParticles(); hideTip();
+    bondSel.transition().duration(600)
+      .attr('stroke-opacity', d => d.kind === 'lineage' ? 0.28 : 0.13)
+      .attr('stroke-width', d => d.kind === 'lineage' ? 1.3 : 0.65);
+    nodeSel.select('.o-nucleus').transition().duration(600)
+      .attr('fill-opacity', 0.85).attr('filter', null);
+    nodeSel.selectAll('.o-ring').transition().duration(600)
+      .attr('stroke-opacity', function() { return +this.getAttribute('data-op'); });
+  }
+
+  function showExplorePanel(d) {
+    document.getElementById('otip-name').textContent = d.name;
+    const bpm = d.bpm_min && d.bpm_max ? ' · ' + d.bpm_min + '–' + d.bpm_max + ' BPM' : '';
+    document.getElementById('otip-meta').textContent = (d.track_count || 0) + ' tracks' + bpm;
+    const parent = d.derived_from__slug ? allNodes.find(n => n.slug === d.derived_from__slug) : null;
+    document.getElementById('otip-bond').textContent = parent
+      ? ('← bonded from ' + parent.name)
+      : (d.derived_from__slug ? '' : '★ root genre');
+    // Show "open page" link
+    let link = document.getElementById('otip-link');
+    if (!link) {
+      link = document.createElement('a');
+      link.id = 'otip-link';
+      link.style.cssText = 'display:block;margin-top:6px;font-size:10px;color:var(--accent);cursor:pointer;';
+      link.textContent = '→ Open page';
+      tip.appendChild(link);
+    }
+    link.onclick = () => nav(d.slug);
+    // Position tip in corner (not following cursor in explore mode)
+    tip.style.left = '14px';
+    tip.style.top = (wrap.getBoundingClientRect().top + 70) + 'px';
+    tip.style.display = 'block';
   }
 
   // ── Particle flow along active bonds ──────────────────────────────────
@@ -537,6 +637,117 @@
       tourStep();
     }
   };
+
+  // ── Audio reactivity ─────────────────────────────────────────────────
+  const audioBtn = document.getElementById('btn-audio');
+  const FFT_SIZE  = 256;
+
+  window.toggleAudio = async function () {
+    if (audioActive) { stopAudio(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = FFT_SIZE;
+      analyser.smoothingTimeConstant = 0.82;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      micStream = stream;
+      audioActive = true;
+      audioBtn.classList.add('active'); audioBtn.textContent = '🎵 Live';
+      audioLoop();
+    } catch(err) {
+      console.warn('Mic unavailable:', err);
+      audioBtn.textContent = '🚫 Mic denied';
+      setTimeout(() => { audioBtn.textContent = '🎙 Audio'; }, 2500);
+    }
+  };
+
+  function stopAudio() {
+    audioActive = false;
+    if (audioRAF) { cancelAnimationFrame(audioRAF); audioRAF = null; }
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    audioBtn.classList.remove('active'); audioBtn.textContent = '🎙 Audio';
+    // Restore nucleus radii
+    if (nodeSel) nodeSel.select('.o-nucleus').attr('r', d => nodeR(d.track_count));
+  }
+
+  function audioLoop() {
+    if (!audioActive || !analyser) return;
+    const data = new Uint8Array(FFT_SIZE / 2);
+    analyser.getByteFrequencyData(data);
+
+    // Frequency band averages (44.1kHz, FFT_SIZE=256 → bin width ≈ 345Hz)
+    const avg = (a, b) => data.slice(a, b).reduce((s, v) => s + v, 0) / (b - a) / 255;
+    const bass  = avg(1, 5);    // ~20–175 Hz
+    const mids  = avg(5, 25);   // ~175–870 Hz
+    const highs = avg(25, 80);  // ~870–2.8 kHz
+
+    // Beat detection: sharp bass transient
+    const BEAT_THRESH = 0.55;
+    if (bass > BEAT_THRESH && prevBass <= BEAT_THRESH) onBeat(bass);
+    prevBass = bass;
+
+    // Nucleus radius pulses with bass
+    if (nodeSel) {
+      nodeSel.select('.o-nucleus')
+        .attr('r', d => nodeR(d.track_count) * (1 + bass * 0.55));
+    }
+
+    // Ring opacity breathes with mids (override breathe loop while audio active)
+    if (nodeSel && !tourActive) {
+      nodeSel.selectAll('.o-ring').attr('stroke-opacity', function(d) {
+        const base = +this.getAttribute('data-op');
+        const inScope = exploredNode
+          ? (d.slug === exploredNode.slug || isNeighbour(exploredNode, d))
+          : true;
+        return inScope ? base * (0.2 + mids * 2.2) : 0;
+      });
+    }
+
+    // Particle speed scales with highs
+    particles.forEach(p => { p.speed = 0.002 + highs * 0.012; });
+
+    audioRAF = requestAnimationFrame(audioLoop);
+  }
+
+  function isNeighbour(center, candidate) {
+    let found = false;
+    if (!bondSel) return false;
+    bondSel.each(l => {
+      const s = l.source.slug || l.source, t = l.target.slug || l.target;
+      if ((s === center.slug && t === candidate.slug) ||
+          (t === center.slug && s === candidate.slug)) found = true;
+    });
+    return found;
+  }
+
+  function onBeat(intensity) {
+    if (!bondSel) return;
+    const activeColor = exploredNode
+      ? genreColor(exploredNode.name)
+      : (tourActive ? prevColor : null);
+    if (!activeColor) return;
+    bondSel.each(function(d) {
+      const sc = genreColor((d.source.name||'')), tc = genreColor((d.target.name||''));
+      if (sc !== activeColor && tc !== activeColor) return;
+      if (Math.random() > intensity * 0.9) return;
+      try {
+        const pos = this.getPointAtLength(this.getTotalLength() * (0.3 + Math.random() * 0.4));
+        for (let i = 0; i < 2; i++) {
+          const ang = Math.random() * Math.PI * 2, dist = 3 + Math.random() * 10;
+          sparkLayer.append('circle')
+            .attr('cx', pos.x).attr('cy', pos.y)
+            .attr('r', 1.4 + Math.random() * 1.6).attr('fill', activeColor)
+            .attr('opacity', 0.85)
+            .transition().duration(320).ease(d3.easeQuadOut)
+            .attr('cx', pos.x + Math.cos(ang) * dist)
+            .attr('cy', pos.y + Math.sin(ang) * dist)
+            .attr('r', 0.2).attr('opacity', 0).remove();
+        }
+      } catch(err) {}
+    });
+  }
 
   // ── Fit viewport ─────────────────────────────────────────────────────
   function fit(animate) {

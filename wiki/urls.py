@@ -4,7 +4,8 @@ from . import views
 app_name = 'wiki'
 
 urlpatterns = [
-    path('',                    views.token_list,      name='token_list'),
+    path('',                    views.genre_orbital,   name='wiki_home'),
+    path('tokens/',             views.token_list,      name='token_list'),
     path('graph/',              views.genre_graph,     name='genre_graph'),
     path('tree/',               views.genre_tree,      name='genre_tree'),
     path('blob/',               views.genre_blob,      name='genre_blob'),
