@@ -1,0 +1,424 @@
+{% extends 'wiki/base.html' %}
+{% block title %}Genre Genealogy — Community Playlist{% endblock %}
+
+{% block extra_head %}
+<style>
+  body { overflow: hidden; }
+  .container { padding: 0; max-width: none; }
+  footer { display: none; }
+
+  #blob-wrap {
+    position: fixed; inset: 56px 0 0 0;
+    background: #07070e;
+    overflow: hidden;
+  }
+  #blob-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; display: block; }
+  #blob-canvas:active { cursor: grabbing; }
+
+  /* Vignette — makes centre pop */
+  #blob-wrap::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    background: radial-gradient(ellipse 72% 72% at 50% 50%, transparent 52%, rgba(4,4,12,0.78) 100%);
+  }
+
+  /* ── Shared chrome ────────────────────────────────────────── */
+  #view-toggle {
+    position: fixed; top: 68px; right: 14px;
+    display: flex; gap: 6px; z-index: 10;
+  }
+  .view-btn {
+    background: rgba(23,23,26,0.88); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--muted); padding: 6px 12px; font-size: 11px; font-family: inherit;
+    cursor: pointer; backdrop-filter: blur(6px); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 5px; transition: all .15s;
+  }
+  .view-btn:hover, .view-btn.active { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+  #blob-tip {
+    position: fixed;
+    background: rgba(23,23,26,0.96); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 12px; font-size: 12px; pointer-events: none; z-index: 20; display: none;
+    max-width: 220px; backdrop-filter: blur(6px);
+  }
+  #tip-name    { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; }
+  #tip-meta    { color: var(--muted); font-size: 11px; display: block; }
+  #tip-lineage { color: var(--accent); font-size: 10px; display: block; margin-top: 3px; font-style: italic; }
+
+  #tour-label {
+    position: fixed; top: 76px; left: 50%; transform: translateX(-50%);
+    background: rgba(14,14,18,0.92); border: 1px solid transparent; border-radius: 20px;
+    padding: 6px 22px; font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
+    pointer-events: none; z-index: 15; opacity: 0;
+    transition: opacity 0.8s ease, border-color 1.2s ease, box-shadow 1.2s ease, color 1s ease;
+    white-space: nowrap; backdrop-filter: blur(8px);
+  }
+  #tour-label.visible { opacity: 1; }
+
+  #blob-info {
+    position: fixed; top: 68px; left: 14px;
+    background: rgba(23,23,26,0.88); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 14px; font-size: 11px; color: var(--muted);
+    backdrop-filter: blur(6px); max-width: 176px; z-index: 10; line-height: 1.68;
+  }
+  #blob-info strong { color: var(--text); display: block; font-size: 12px; margin-bottom: 4px; }
+
+  @media (max-width: 640px) {
+    #blob-info { display: none; }
+    #view-toggle { flex-direction: column; gap: 4px; right: 10px; }
+    .view-btn { padding: 5px 9px; font-size: 10px; }
+    #blob-tip { left: 50% !important; top: 70px !important; transform: translateX(-50%); max-width: 85vw; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="blob-wrap">
+  <canvas id="blob-canvas"></canvas>
+</div>
+
+<div id="view-toggle">
+  <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
+  <a href="{% url 'wiki:genre_tree' %}" class="view-btn">⊕ Tree</a>
+  <a href="{% url 'wiki:genre_graph' %}" class="view-btn">◉ Graph</a>
+  <button id="btn-tour" class="view-btn" onclick="toggleTour()" title="Tour genre families">⏵ Tour</button>
+  <button class="view-btn active">⬡ Blobs</button>
+  <button class="view-btn" onclick="location.reload(true)" title="Hard reload">↺</button>
+</div>
+
+<div id="blob-info">
+  <strong>Genre Genealogy</strong>
+  Size = library depth.<br>
+  Lines trace lineage.<br>
+  Drag · scroll to explore.<br>
+  Click a blob to go deeper.
+</div>
+
+<div id="blob-tip">
+  <span id="tip-name"></span>
+  <span id="tip-meta"></span>
+  <span id="tip-lineage"></span>
+</div>
+<div id="tour-label"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── Color family ─────────────────────────────────────────────────────
+  function genreColor(name) {
+    const n = name.toLowerCase();
+    if (/house|techno|trance|electro|synth|rave|ambient|wave|drone|noise|industrial|ebm|idm|glitch|electronica|dubstep|edm/.test(n)) return '#7c6af7';
+    if (/hip|hop|rap|trap|drill|grime|boom|bap|crunk|mumble|cloud|gangsta/.test(n)) return '#f59e0b';
+    if (/rock|metal|punk|grunge|hardcore|doom|thrash|death|black|shoegaze/.test(n)) return '#ef4444';
+    if (/jazz|soul|blues|funk|gospel|swing|bossa|latin|reggae|ska|dub|r&b|rnb/.test(n)) return '#22c55e';
+    if (/drum|bass|jungle|neurofunk|liquid|footwork|break/.test(n)) return '#06b6d4';
+    if (/pop|indie|alternative|dream|bedroom|chillwave/.test(n)) return '#ec4899';
+    if (/folk|world|afro|celtic|country|bluegrass|cumbia|flamenco|bhangra/.test(n)) return '#f97316';
+    return '#6b7280';
+  }
+
+  function hexRgb(h) {
+    return { r: parseInt(h.slice(1,3),16), g: parseInt(h.slice(3,5),16), b: parseInt(h.slice(5,7),16) };
+  }
+
+  // ── Family cluster anchors (world-space, origin = canvas centre) ──────
+  const CLUSTERS = {
+    '#22c55e': { x: -230, y: -150 },
+    '#f97316': { x:  -90, y:  130 },
+    '#f59e0b': { x:  150, y: -185 },
+    '#7c6af7': { x:  230, y:  -45 },
+    '#06b6d4': { x:  165, y:  140 },
+    '#ec4899': { x:    0, y:  200 },
+    '#ef4444': { x: -200, y:   65 },
+    '#6b7280': { x:   10, y:    5 },
+  };
+
+  // ── Canvas setup ──────────────────────────────────────────────────────
+  const wrap   = document.getElementById('blob-wrap');
+  const canvas = document.getElementById('blob-canvas');
+  const ctx    = canvas.getContext('2d');
+  const dpr    = window.devicePixelRatio || 1;
+  let W = 0, H = 0;
+
+  function setupCanvas() {
+    W = wrap.clientWidth;
+    H = wrap.clientHeight;
+    canvas.width  = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+  }
+  setupCanvas();
+
+  // ── D3 zoom ───────────────────────────────────────────────────────────
+  let xf = d3.zoomIdentity.translate(W / 2, H / 2).scale(0.78);
+  const zoom = d3.zoom()
+    .scaleExtent([0.06, 6])
+    .on('zoom', e => { xf = e.transform; });
+  d3.select(canvas).call(zoom);
+  d3.select(canvas).call(zoom.transform, xf);
+
+  // ── Blob state ────────────────────────────────────────────────────────
+  const N_CTRL = 10;
+  let blobs = [], bySlug = {}, frame = 0;
+  let hoveredBlob = null;
+
+  function blobR(tc) { return Math.max(13, Math.min(68, Math.sqrt(tc || 1) * 2.5)); }
+
+  function makeBlob(node) {
+    const color = genreColor(node.name);
+    const c     = CLUSTERS[color] ?? { x: 0, y: 0 };
+    const r     = blobR(node.track_count);
+    return {
+      ...node, color, r,
+      x: c.x + (Math.random() - 0.5) * 180,
+      y: c.y + (Math.random() - 0.5) * 180,
+      vx: 0, vy: 0,
+      phases: Array.from({ length: N_CTRL }, () => Math.random() * Math.PI * 2),
+      freqs:  Array.from({ length: N_CTRL }, () => 0.22 + Math.random() * 0.4),
+      amps:   Array.from({ length: N_CTRL }, () => r * (0.032 + Math.random() * 0.052)),
+      opacity: 0,   // fade in on load
+      glow: 0,
+      _tgtOp:   1,
+      _tgtGlow: 0,
+    };
+  }
+
+  // ── Organic blob drawing ──────────────────────────────────────────────
+  function tracePath(blob, t) {
+    const n = N_CTRL;
+    const pts = Array.from({ length: n }, (_, i) => {
+      const a  = (i / n) * Math.PI * 2;
+      const rr = blob.r + blob.amps[i] * Math.sin(blob.phases[i] + t * blob.freqs[i]);
+      return { x: blob.x + rr * Math.cos(a), y: blob.y + rr * Math.sin(a) };
+    });
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i-1+n)%n], p1 = pts[i], p2 = pts[(i+1)%n], p3 = pts[(i+2)%n];
+      const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+      if (i === 0) ctx.moveTo(p1.x, p1.y);
+      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+    }
+    ctx.closePath();
+  }
+
+  function paintBlob(blob, t) {
+    const a = blob.opacity;
+    if (a < 0.015) return;
+    const { r: cr, g: cg, b: cb } = hexRgb(blob.color);
+
+    ctx.save();
+
+    // Glow / drop-shadow
+    const gs = blob.glow + (blob === hoveredBlob ? 0.45 : 0);
+    if (gs > 0.04) { ctx.shadowBlur = blob.r * 1.1 * gs; ctx.shadowColor = blob.color; }
+
+    tracePath(blob, t);
+
+    // Off-centre radial gradient → sphere illusion
+    const lx = blob.x - blob.r * 0.27, ly = blob.y - blob.r * 0.33;
+    const g = ctx.createRadialGradient(lx, ly, blob.r * 0.04, blob.x, blob.y, blob.r * 1.06);
+    g.addColorStop(0,    `rgba(${Math.min(255,cr+85)},${Math.min(255,cg+85)},${Math.min(255,cb+85)},${a.toFixed(3)})`);
+    g.addColorStop(0.44, `rgba(${cr},${cg},${cb},${a.toFixed(3)})`);
+    g.addColorStop(1,    `rgba(${Math.max(0,cr-52)},${Math.max(0,cg-52)},${Math.max(0,cb-52)},${(a*.88).toFixed(3)})`);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Rim stroke
+    tracePath(blob, t);
+    ctx.strokeStyle = `rgba(${Math.min(255,cr+140)},${Math.min(255,cg+140)},${Math.min(255,cb+140)},${(a*.18).toFixed(3)})`;
+    ctx.lineWidth = 1.1; ctx.stroke();
+
+    // Specular dot
+    const sx = blob.x - blob.r * 0.2, sy = blob.y - blob.r * 0.26;
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, blob.r * 0.12);
+    sg.addColorStop(0, `rgba(255,255,255,${(a*.48).toFixed(3)})`);
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.beginPath(); ctx.arc(sx, sy, blob.r * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = sg; ctx.fill();
+
+    ctx.restore();
+  }
+
+  function paintLabel(blob, t) {
+    const a = blob.opacity;
+    if (a < 0.12) return;
+    if (blob.r < 19 && blob !== hoveredBlob) return;
+    const ly = blob.y + blob.r + 12, fs = blob.r > 34 ? 11 : 9;
+    ctx.save();
+    ctx.font = `${fs}px 'DM Mono', monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = `rgba(7,7,14,${(a*.92).toFixed(3)})`; ctx.lineWidth = 3;
+    ctx.strokeText(blob.name, blob.x, ly);
+    ctx.fillStyle = `rgba(200,200,216,${a.toFixed(3)})`; ctx.fillText(blob.name, blob.x, ly);
+    if (blob.year && blob.r > 34) {
+      ctx.font = '9px \'DM Mono\', monospace';
+      ctx.fillStyle = `rgba(110,110,132,${(a*.55).toFixed(3)})`;
+      ctx.fillText(blob.year, blob.x, ly + fs + 2);
+    }
+    ctx.restore();
+  }
+
+  function paintEdge(parent, child) {
+    const a = Math.min(parent.opacity, child.opacity) * 0.26;
+    if (a < 0.015) return;
+    const { r: cr, g: cg, b: cb } = hexRgb(child.color);
+    const mx = (parent.x + child.x) / 2, my = (parent.y + child.y) / 2 - 22;
+    ctx.beginPath();
+    ctx.moveTo(parent.x, parent.y);
+    ctx.quadraticCurveTo(mx, my, child.x, child.y);
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb},${a.toFixed(3)})`;
+    ctx.lineWidth = 0.6 + Math.sqrt(child.track_count || 1) * 0.04;
+    ctx.stroke();
+  }
+
+  // ── Physics ───────────────────────────────────────────────────────────
+  function simTick() {
+    const FAM = 0.01, PAR = 0.018, DAMP = 0.83;
+    for (const b of blobs) {
+      const c = CLUSTERS[b.color] ?? { x: 0, y: 0 };
+      b.vx += (c.x - b.x) * FAM;
+      b.vy += (c.y - b.y) * FAM;
+      if (b.parent && bySlug[b.parent]) {
+        const p = bySlug[b.parent];
+        const dx = p.x - b.x, dy = p.y - b.y, d = Math.hypot(dx, dy) || 1;
+        const ideal = b.r + p.r + 26;
+        if (d > ideal) { b.vx += dx / d * PAR * (d - ideal); b.vy += dy / d * PAR * (d - ideal); }
+      }
+      for (const o of blobs) {
+        if (o === b) continue;
+        const dx = b.x - o.x, dy = b.y - o.y, d2 = dx*dx + dy*dy;
+        const md = b.r + o.r + 16;
+        if (d2 < md * md) { const d = Math.sqrt(d2)||1, f = 3000/(d2+1); b.vx += dx/d*f; b.vy += dy/d*f; }
+      }
+      b.vx *= DAMP; b.vy *= DAMP; b.x += b.vx; b.y += b.vy;
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────
+  function render(t) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.translate(xf.x, xf.y);
+    ctx.scale(xf.k, xf.k);
+
+    for (const b of blobs)
+      if (b.parent && bySlug[b.parent]) paintEdge(bySlug[b.parent], b);
+
+    const sorted = [...blobs].sort((a, b) => b.r - a.r);
+    for (const b of sorted) paintBlob(b, t);
+    for (const b of sorted) paintLabel(b, t);
+  }
+
+  // ── Hit detection ─────────────────────────────────────────────────────
+  const tip = document.getElementById('blob-tip');
+  function hitTest(cx, cy) {
+    const [wx, wy] = xf.invert([cx, cy]);
+    for (const b of blobs)
+      if ((wx-b.x)**2 + (wy-b.y)**2 < b.r * b.r * 1.6) return b;
+    return null;
+  }
+
+  canvas.addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    const b = hitTest(e.clientX - r.left, e.clientY - r.top);
+    hoveredBlob = b;
+    if (b) {
+      document.getElementById('tip-name').textContent = b.name;
+      document.getElementById('tip-meta').textContent =
+        [b.year ? `~${b.year}` : '', b.track_count ? `${b.track_count} tracks` : ''].filter(Boolean).join(' · ');
+      document.getElementById('tip-lineage').textContent =
+        b.parent && bySlug[b.parent] ? `← ${bySlug[b.parent].name}` : '';
+      tip.style.cssText = `display:block;left:${e.clientX+14}px;top:${e.clientY-10}px`;
+      canvas.style.cursor = 'pointer';
+    } else {
+      tip.style.display = 'none';
+      canvas.style.cursor = '';
+    }
+  });
+  canvas.addEventListener('mouseleave', () => { hoveredBlob = null; tip.style.display = 'none'; });
+  canvas.addEventListener('click', e => {
+    const r = canvas.getBoundingClientRect();
+    const b = hitTest(e.clientX - r.left, e.clientY - r.top);
+    if (b) window.location.href = '{{ token_url_base }}' + b.slug + '/';
+  });
+
+  // ── Tour ──────────────────────────────────────────────────────────────
+  const TOUR_FAMILIES = [
+    { color: '#22c55e', label: 'Jazz / Soul' },
+    { color: '#f97316', label: 'World / Folk' },
+    { color: '#f59e0b', label: 'Hip-Hop / Rap' },
+    { color: '#06b6d4', label: 'Drum & Bass' },
+    { color: '#7c6af7', label: 'Electronic' },
+    { color: '#ec4899', label: 'Pop / Indie' },
+    { color: '#ef4444', label: 'Rock / Metal' },
+    { color: '#6b7280', label: 'Other' },
+  ];
+  const DWELL = 18000;
+  let tourActive = false, tourIdx = 0, tourTimer = null;
+  const tourLabel = document.getElementById('tour-label');
+  const tourBtn   = document.getElementById('btn-tour');
+
+  function tourStep() {
+    if (!tourActive) return;
+    const fam = TOUR_FAMILIES[tourIdx];
+    tourIdx = (tourIdx + 1) % TOUR_FAMILIES.length;
+    tourLabel.classList.remove('visible');
+    setTimeout(() => {
+      tourLabel.textContent    = fam.label;
+      tourLabel.style.color       = fam.color;
+      tourLabel.style.borderColor = fam.color + '55';
+      tourLabel.style.boxShadow   = `0 0 18px ${fam.color}33`;
+      tourLabel.classList.add('visible');
+    }, 600);
+    blobs.forEach(b => {
+      const active = genreColor(b.name) === fam.color;
+      b._tgtOp   = active ? 1 : 0.04;
+      b._tgtGlow = active ? 0.85 : 0;
+    });
+    tourTimer = setTimeout(tourStep, DWELL);
+  }
+
+  window.toggleTour = function () {
+    if (tourActive) {
+      tourActive = false; clearTimeout(tourTimer);
+      tourBtn.classList.remove('active'); tourBtn.textContent = '⏵ Tour';
+      tourLabel.classList.remove('visible');
+      blobs.forEach(b => { b._tgtOp = 1; b._tgtGlow = 0; });
+    } else {
+      tourActive = true; tourIdx = 0;
+      tourBtn.classList.add('active'); tourBtn.textContent = '⏹ Stop';
+      tourStep();
+    }
+  };
+
+  // ── Main loop ─────────────────────────────────────────────────────────
+  let t = 0;
+  function loop() {
+    t += 0.007; frame++;
+    blobs.forEach(b => {
+      b.opacity += (b._tgtOp   - b.opacity) * 0.032;
+      b.glow    += (b._tgtGlow - b.glow)    * 0.032;
+    });
+    if (frame % 2 === 0) simTick();
+    render(t);
+    requestAnimationFrame(loop);
+  }
+
+  // ── Load ─────────────────────────────────────────────────────────────
+  fetch("{% url 'wiki:api_tree_data' %}")
+    .then(r => r.json())
+    .then(({ nodes }) => {
+      blobs = nodes.map(makeBlob);
+      blobs.forEach(b => { bySlug[b.slug] = b; });
+      for (let i = 0; i < 200; i++) simTick();
+      loop();
+    });
+
+  window.addEventListener('resize', () => {
+    setupCanvas(); W = wrap.clientWidth; H = wrap.clientHeight;
+    d3.select(canvas).call(zoom.transform, xf);
+  });
+})();
+</script>
+{% endblock %}

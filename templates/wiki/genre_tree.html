@@ -117,7 +117,9 @@
 <div id="view-toggle">
   <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
   <a href="{% url 'wiki:genre_graph' %}" class="view-btn">◉ Graph</a>
+  <a href="{% url 'wiki:genre_blob' %}" class="view-btn">⬡ Blobs</a>
   <button class="view-btn active">⊕ Tree</button>
+  <button class="view-btn" onclick="location.reload(true)" title="Hard reload">↺</button>
 </div>
 
 <div id="tree-info">
@@ -371,10 +373,8 @@
         d3.selectAll('.t-link').style('opacity', 0.35);
       }
 
-      // Auto-fit
-      const totalW = xScale(maxY) - xScale(minY) + MARGIN.left + MARGIN.right;
-      const scaleX = W / (totalW + 40);
-      svg.call(zoom.transform, d3.zoomIdentity.scale(scaleX).translate(0, 0));
+      // Layout already spans [MARGIN.left, W-MARGIN.right] — start at identity
+      svg.call(zoom.transform, d3.zoomIdentity);
 
       // ── Label collision detection ──────────────────────────────────────
       // Runs after zoom settles so getBoundingClientRect gives real screen coords.

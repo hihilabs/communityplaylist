@@ -115,6 +115,13 @@ def genre_tree(request):
     return render(request, 'wiki/genre_tree.html', {'token_url_base': token_url_base})
 
 
+@never_cache
+def genre_blob(request):
+    from django.urls import reverse
+    token_url_base = reverse('wiki:token_detail', args=['PLACEHOLDER']).replace('PLACEHOLDER/', '')
+    return render(request, 'wiki/genre_blob.html', {'token_url_base': token_url_base})
+
+
 def api_tree_data(request):
     """JSON payload for the chronological tree — nodes with origin_year + parent links."""
     cached = cache.get('wiki_tree_data_v1')

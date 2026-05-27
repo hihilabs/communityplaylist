@@ -243,6 +243,7 @@
 <div id="view-toggle">
   <a href="{% url 'wiki:token_list' %}" class="view-btn">☰ Tokens</a>
   <a href="{% url 'wiki:genre_tree' %}" class="view-btn">⊕ Tree</a>
+  <a href="{% url 'wiki:genre_blob' %}" class="view-btn">⬡ Blobs</a>
   <button id="btn-wire" class="view-btn" onclick="toggleWire()" title="Toggle wireframe">◎ Wire</button>
   <button id="btn-tour" class="view-btn" onclick="toggleTour()" title="Auto-tour genre families">⏵ Tour</button>
   <button class="view-btn active">◉ Graph</button>
@@ -401,6 +402,19 @@
       })
       .on('end', () => {});
   }
+
+  // ── Auto-tour families (defined here so buildFamilyPanel can reference it) ──
+  // Ordered by musical lineage
+  const TOUR_FAMILIES = [
+    { color: '#22c55e', label: 'Jazz / Soul' },
+    { color: '#f97316', label: 'World / Folk' },
+    { color: '#f59e0b', label: 'Hip-Hop / Rap' },
+    { color: '#06b6d4', label: 'Drum & Bass' },
+    { color: '#7c6af7', label: 'Electronic' },
+    { color: '#ec4899', label: 'Pop / Indie' },
+    { color: '#ef4444', label: 'Rock / Metal' },
+    { color: '#6b7280', label: 'Other' },
+  ];
 
   // ── Family accordion panel ────────────────────────────────────────────────
   function buildFamilyPanel(nodes) {
@@ -625,24 +639,6 @@
     applyHighlight();
   });
 
-  // ── Legend ────────────────────────────────────────────────────────────
-  document.querySelectorAll('.legend-item').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const color = this.dataset.color;
-      if (activeLegend === color) {
-        activeLegend = null;
-        this.classList.remove('active');
-      } else {
-        document.querySelectorAll('.legend-item').forEach(b => b.classList.remove('active'));
-        activeLegend = color;
-        this.classList.add('active');
-      }
-      activeSearch = '';
-      searchInput.value = '';
-      applyHighlight();
-    });
-  });
-
   // ── Focus (from ?focus= param) ────────────────────────────────────────
   function focusNode(slug) {
     const target = allNodes.find(n => n.slug === slug);
@@ -696,44 +692,10 @@
   });
 
   // ── Auto-tour ─────────────────────────────────────────────────────────
-  // Ordered by musical lineage — each family shares DNA with its neighbours
-  const TOUR_FAMILIES = [
-    { color: '#22c55e', label: 'Jazz / Soul' },    // roots
-    { color: '#f97316', label: 'World / Folk' },   // roots → diaspora
-    { color: '#f59e0b', label: 'Hip-Hop / Rap' },  // soul/funk → hip-hop
-    { color: '#06b6d4', label: 'Drum & Bass' },    // hip-hop breaks → jungle → d&b
-    { color: '#7c6af7', label: 'Electronic' },     // rave culture bridges d&b
-    { color: '#ec4899', label: 'Pop / Indie' },    // electronic → synth-pop → indie
-    { color: '#ef4444', label: 'Rock / Metal' },   // indie → alt-rock → metal
-    { color: '#6b7280', label: 'Other' },          // catch-all dissolve
-  ];
-  const TOUR_DWELL    = 20000;  // ms visible per family
-  const TOUR_ZOOM_MS  = 16000;  // zoom morph duration (unused while zoom off)
-  const TOUR_FADE_MS  = 11000;  // node opacity crossfade
+  const TOUR_DWELL = 20000;
   let tourActive = false, tourIdx = 0, tourTimer = null;
   const tourLabel = document.getElementById('tour-label');
   const tourBtn   = document.getElementById('btn-tour');
-
-  function fitFamily(color) {
-    const fam = allNodes.filter(n => genreColor(n.name) === color && n.x != null);
-    if (!fam.length) return;
-    const PAD = 80;
-    const xs = fam.map(n => n.x).sort((a, b) => a - b);
-    const ys = fam.map(n => n.y).sort((a, b) => a - b);
-    const q  = (arr, p) => arr[Math.max(0, Math.min(arr.length - 1, Math.floor(arr.length * p)))];
-    const x0 = q(xs, 0.05), x1 = q(xs, 0.95);
-    const y0 = q(ys, 0.05), y1 = q(ys, 0.95);
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    const scale = Math.min(
-      (W - PAD * 2) / Math.max(x1 - x0, 1),
-      (H - PAD * 2) / Math.max(y1 - y0, 1),
-      4.5
-    );
-    const t = d3.zoomIdentity.translate(W / 2, H / 2).scale(scale).translate(-cx, -cy);
-    // Named transition — anonymous hover transitions cannot interrupt this
-    svg.transition('tour').duration(TOUR_ZOOM_MS).ease(d3.easeCubicInOut)
-      .call(zoom.transform, t);
-  }
 
   function tourMorphHighlight(color) {
     // Drain inactive circles to near-black via fill — all circles stay fully visible.
