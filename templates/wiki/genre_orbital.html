@@ -188,8 +188,7 @@
       .attr('stroke-width', d => d.kind === 'lineage' ? 1.3 : 0.65)
       .attr('stroke-opacity', 0)   // fade in after sim settles
       .attr('stroke-dasharray', d => d.kind === 'resonance' ? '3 5' : null)
-      .attr('stroke-linecap', 'round')
-      .attr('filter', 'url(#gb)');
+      .attr('stroke-linecap', 'round');
 
     // Spark / particle layers
     sparkLayer    = g.append('g').attr('class', 'sparks');
@@ -231,8 +230,7 @@
       .attr('fill', d => genreColor(d.name))
       .attr('fill-opacity', 0.85)
       .attr('stroke', d => genreColor(d.name))
-      .attr('stroke-opacity', 0.5).attr('stroke-width', 1.5)
-      .attr('filter', 'url(#gn)');
+      .attr('stroke-opacity', 0.5).attr('stroke-width', 1.5);
 
     // Labels
     nodeSel.append('text')
@@ -292,6 +290,7 @@
   function breatheRings() {
     if (breatheRAF) cancelAnimationFrame(breatheRAF);
     function step() {
+      if (simulation && simulation.alpha() > 0.05) { breatheRAF = requestAnimationFrame(step); return; }
       breathePhase += 0.006;
       if (!tourActive && !hoveredNode) {
         nodeSel.selectAll('.o-ring').attr('stroke-opacity', function(d) {
@@ -374,15 +373,14 @@
           .attr('r', d.kind === 'lineage' ? 2.2 : 1.4)
           .attr('fill', color).attr('opacity', 0.8)
           .attr('pointer-events', 'none');
-        particles.push({ dot, el: this, t: i / n, speed: 0.003 + Math.random() * 0.0035 });
+        particles.push({ dot, el: this, t: i / n, speed: 0.003 + Math.random() * 0.0035, len: this.getTotalLength() });
       }
     });
     function loop() {
       particles.forEach(p => {
         try {
           p.t = (p.t + p.speed) % 1;
-          const len = p.el.getTotalLength();
-          const pt  = p.el.getPointAtLength(p.t * len);
+          const pt  = p.el.getPointAtLength(p.t * p.len);
           p.dot.attr('cx', pt.x).attr('cy', pt.y);
         } catch(e) {}
       });
