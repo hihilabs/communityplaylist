@@ -321,17 +321,40 @@
 .ev-card-body {
   flex: 1;
   min-width: 0;
-  padding: 12px 14px;
+  padding: 12px 8px 12px 14px;
 }
 
 /* ── Flyer thumbnail ───────────────────────────────────── */
 .ev-flyer-thumb {
-  width: 74px;
+  width: 82px;
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
+  min-height: 76px;
 }
+
+/* Left-side gradient fade — blends thumbnail into card body */
+.ev-flyer-thumb::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 32px;
+  background: linear-gradient(to right, #121212, transparent);
+  z-index: 2;
+  pointer-events: none;
+  transition: background .15s;
+}
+.ev-card:hover .ev-flyer-thumb::before,
+.ev-card:focus-visible .ev-flyer-thumb::before {
+  background: linear-gradient(to right, #161616, transparent);
+}
+.ev-now .ev-flyer-thumb::before        { background: linear-gradient(to right, #131208, transparent); }
+.ev-now:hover .ev-flyer-thumb::before  { background: linear-gradient(to right, #191508, transparent); }
+
+/* Use absolute img so card height is driven by text, not image natural size */
 .ev-flyer-thumb img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -343,8 +366,8 @@
   filter: saturate(0.8) brightness(0.85);
 }
 .ev-flyer-ph {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -546,9 +569,10 @@ body.has-player .ev-list { padding-bottom: 80px; }
 
 /* ── Mobile touch refinements ──────────────────────────── */
 @media (max-width: 600px) {
-  .ev-card-body { padding: 10px 12px; }
+  .ev-card-body { padding: 10px 6px 10px 12px; }
   .ev-card h2 { font-size: .92em; }
-  .ev-flyer-thumb { width: 58px; }
+  .ev-flyer-thumb { width: 62px; }
+  .ev-flyer-thumb::before { width: 24px; }
   .fb-search { font-size: .88em; }
 }
 
