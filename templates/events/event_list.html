@@ -1037,7 +1037,8 @@ function toggleFilterExpand() {
 }
 
 // Before submit: disable radius (client-side only) to keep URL clean
-document.getElementById('filter-form').addEventListener('submit', function(e) {
+var _filterForm = document.getElementById('filter-form');
+if (_filterForm) _filterForm.addEventListener('submit', function(e) {
   const cat = (document.getElementById('desk-category') || {}).value || '';
   if (cat === 'artists') {
     e.preventDefault();

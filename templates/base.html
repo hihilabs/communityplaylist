@@ -679,42 +679,80 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
 .cp-panel-queue{
   flex:1;min-height:0;overflow-y:auto;
   border-top:1px solid #141414;
-  scrollbar-width:thin;scrollbar-color:#222 transparent;
+  scrollbar-width:thin;scrollbar-color:#1a2040 transparent;
 }
 .cp-panel-queue::-webkit-scrollbar{width:4px}
-.cp-panel-queue::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
+.cp-panel-queue::-webkit-scrollbar-thumb{background:#1a2040;border-radius:2px}
 .cp-panel-q-header{
   display:flex;align-items:center;gap:8px;
-  padding:7px 12px 4px;font-size:.66em;color:#333;
+  padding:7px 12px 4px;font-size:.66em;color:#2a3450;
   font-family:'Courier New',monospace;letter-spacing:.08em;
-  position:sticky;top:0;background:#0d0d0d;
+  position:sticky;top:0;background:#0d0d0d;z-index:1;
 }
-#cp-panel-q-count{color:#222;margin-left:auto}
+#cp-panel-q-count{color:#1e2a48;margin-left:auto}
+.cp-panel-q-list{
+  display:grid;grid-template-columns:repeat(2,1fr);
+  gap:8px;padding:8px 10px 14px;
+}
+@keyframes phong-enter{
+  0%  {transform:scale(.5);opacity:0}
+  50% {transform:scale(1.06);opacity:.7}
+  70% {transform:scale(.97);opacity:.62}
+  85% {transform:scale(1.02);opacity:.67}
+  100%{transform:scale(1);opacity:.72}
+}
+@keyframes phong-bounce-in{
+  0%  {transform:scale(1) translateY(0);opacity:.72}
+  35% {transform:scale(1.055) translateY(-5px);opacity:1}
+  55% {transform:scale(1.025) translateY(-2px);opacity:.92}
+  75% {transform:scale(1.045) translateY(-4px);opacity:1}
+  100%{transform:scale(1.04) translateY(-3.5px);opacity:1}
+}
+@keyframes phong-bounce-out{
+  0%  {transform:scale(1.04) translateY(-3.5px);opacity:1}
+  30% {transform:scale(.985) translateY(1px);opacity:.65}
+  55% {transform:scale(1.01) translateY(-.5px);opacity:.72}
+  100%{transform:scale(1) translateY(0);opacity:.72}
+}
 .cp-panel-q-item{
-  display:flex;align-items:center;gap:9px;
-  padding:6px 10px;cursor:pointer;transition:background .12s;
+  background:#0f1525;border:2px solid #1a2040;border-radius:14px;
+  overflow:hidden;cursor:pointer;opacity:0;transform:scale(.5);
+  transition:border-color .3s,box-shadow .3s;
 }
-.cp-panel-q-item:hover{background:#141414}
+.cp-panel-q-item.phong-e{animation:phong-enter .65s ease-out forwards}
+.cp-panel-q-item.phong-i{animation:phong-bounce-in .5s ease-in-out forwards}
+.cp-panel-q-item.phong-o{animation:phong-bounce-out .45s ease-out forwards}
+.cp-panel-q-item:hover{
+  border-color:#3a6fd8;
+  box-shadow:0 0 18px rgba(58,111,216,.22),0 8px 24px rgba(0,0,0,.5),0 0 60px rgba(58,111,216,.06);
+}
 .cp-panel-q-art{
-  width:34px;height:34px;border-radius:3px;
-  background:#1a1a1a;border:1px solid #222;
+  width:100%;aspect-ratio:4/3;background:#080c16;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  font-size:.9em;color:#333;flex-shrink:0;overflow:hidden;
-  font-family:'Courier New',monospace;
+  font-size:1.6em;color:#1a2040;font-family:monospace;
 }
-.cp-panel-q-art img{width:100%;height:100%;object-fit:cover}
-.cp-panel-q-info{flex:1;min-width:0}
+.cp-panel-q-art img{
+  width:100%;height:100%;object-fit:cover;display:block;
+  filter:saturate(.25) brightness(.8);transition:filter .4s ease;
+}
+.cp-panel-q-item:hover .cp-panel-q-art img{filter:saturate(1) brightness(1)}
+.cp-panel-q-info{padding:6px 8px 8px}
 .cp-panel-q-title{
-  font-size:.8em;color:#bbb;font-weight:600;
+  font-size:.72em;color:#8a96b0;font-weight:500;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:color .3s;
 }
+.cp-panel-q-item:hover .cp-panel-q-title{color:#e0e8ff}
 .cp-panel-q-artist{
-  font-size:.72em;color:#444;
+  font-size:.62em;color:#2a3a5a;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  margin-top:2px;text-transform:uppercase;letter-spacing:.04em;
+  transition:color .3s;
 }
+.cp-panel-q-item:hover .cp-panel-q-artist{color:#4a6a9a}
 .cp-panel-q-loading{
-  text-align:center;padding:24px 0;
-  color:#333;font-family:'Courier New',monospace;font-size:.72em;letter-spacing:.1em;
+  grid-column:1/-1;text-align:center;padding:24px 0;
+  color:#1a2040;font-family:'Courier New',monospace;font-size:.72em;letter-spacing:.1em;
   animation:cp-dot-pulse 1.4s ease-in-out infinite;
 }
 /* ── Track comment chat pane ── */
