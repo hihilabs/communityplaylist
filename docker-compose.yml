@@ -28,6 +28,7 @@ services:
       - "traefik.http.routers.cp-local.rule=Host(`local.communityplaylist.com`)"
       - "traefik.http.routers.cp-local.entrypoints=websecure"
       - "traefik.http.routers.cp-local.tls=true"
+      - "traefik.http.routers.cp-local.middlewares=cp-headers@file"
       - "traefik.http.services.cp-local.loadbalancer.server.port=8000"
       # wiki.communityplaylist.com — genre wiki (host middleware switches urlconf to root)
       - "traefik.http.routers.cp-wiki.rule=Host(`wiki.communityplaylist.com`)"
