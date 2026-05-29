@@ -326,11 +326,13 @@
 
 /* ── Flyer thumbnail ───────────────────────────────────── */
 .ev-flyer-thumb {
-  width: 82px;
+  width: 78px;
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
   min-height: 76px;
+  margin: 6px 6px 6px 0;
+  border-radius: 6px;
 }
 
 /* Left-side gradient fade — blends thumbnail into card body */
