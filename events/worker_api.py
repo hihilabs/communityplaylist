@@ -22,6 +22,7 @@ ALLOWED_COMMANDS = {
     "bluesky_digest", "daily_digest", "compress_images",
     "auto_stub_artists", "check_live_streams", "dedup_events",
     "fetch_event_images", "enrich_event_flyers", "harvest_instagram_flyers",
+    "generate_event_flyers",
 }
 
 
@@ -158,8 +159,19 @@ def trigger_command(request, cmd_name):
     python = str(venv_python) if venv_python.exists() else "python3"
     manage_py = str(Path(settings.BASE_DIR) / "manage.py")
 
+    extra_args = []
+    if request.body:
+        try:
+            body = json.loads(request.body)
+            raw = body.get("extra_args", "")
+            if raw:
+                import shlex
+                extra_args = shlex.split(raw)
+        except Exception:
+            pass
+
     proc = subprocess.Popen(
-        [python, manage_py, cmd_name],
+        [python, manage_py, cmd_name] + extra_args,
         cwd=str(settings.BASE_DIR),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
