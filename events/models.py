@@ -1877,9 +1877,10 @@ class CronStatus(models.Model):
 class WorkerTask(models.Model):
     """Async task queue — processed by Unraid pull-worker, fallback on Plesk."""
     TASK_TYPES = [
-        ("geocode_event", "Geocode Event"),
-        ("geocode_venue", "Geocode Venue"),
-        ("post_bluesky",  "Post to Bluesky"),
+        ("geocode_event",        "Geocode Event"),
+        ("geocode_venue",        "Geocode Venue"),
+        ("post_bluesky",         "Post to Bluesky"),
+        ("generate_event_flyer", "Generate Event Flyer"),
     ]
     STATUSES = [
         ("queued",  "Queued"),

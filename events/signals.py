@@ -166,6 +166,27 @@ post_delete.connect(invalidate_recurring_cache, sender=_RE)
 
 
 @receiver(post_save, sender='events.Event')
+def event_approved_queue_flyer(sender, instance, **kwargs):
+    """Queue a flyer-generation task the moment an event is approved with no photo."""
+    if instance.status != 'approved' or instance.photo:
+        return
+    from events.models import WorkerTask
+    already = WorkerTask.objects.filter(
+        task_type='generate_event_flyer',
+        status__in=['queued', 'running'],
+        payload__event_id=instance.pk,
+    ).exists()
+    if not already:
+        try:
+            WorkerTask.objects.create(
+                task_type='generate_event_flyer',
+                payload={'event_id': instance.pk, 'slug': instance.slug or str(instance.pk)},
+            )
+        except Exception:
+            pass
+
+
+@receiver(post_save, sender='events.Event')
 def auto_link_recurring(sender, instance, created, **kwargs):
     """
     When a new Event is saved without a recurring_event link,
