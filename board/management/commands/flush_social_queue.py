@@ -89,11 +89,11 @@ class Command(BaseCommand):
                     if dry_run:
                         self.stdout.write(f'  [DRY] would post topic #{topic.pk}: {topic.title}')
                     else:
-                        bsky_ok, disc_ok = post_topic(topic)
+                        bsky_ok, disc_ok, buf_ok = post_topic(topic)
                         item.status    = 'posted'
                         item.posted_at = timezone.now()
                         item.save(update_fields=['status', 'posted_at'])
-                        self.stdout.write(f'  ✓ topic #{topic.pk} — bsky:{bsky_ok} disc:{disc_ok}')
+                        self.stdout.write(f'  ✓ topic #{topic.pk} — bsky:{bsky_ok} disc:{disc_ok} buf:{buf_ok}')
                         posted += 1
 
                 elif item.target_type == 'offering':
@@ -124,11 +124,11 @@ class Command(BaseCommand):
                     if dry_run:
                         self.stdout.write(f'  [DRY] would post offering #{offering.pk}: {offering.title}')
                     else:
-                        bsky_ok, disc_ok = post_offering(offering)
+                        bsky_ok, disc_ok, buf_ok = post_offering(offering)
                         item.status    = 'posted'
                         item.posted_at = timezone.now()
                         item.save(update_fields=['status', 'posted_at'])
-                        self.stdout.write(f'  ✓ offering #{offering.pk} — bsky:{bsky_ok} disc:{disc_ok}')
+                        self.stdout.write(f'  ✓ offering #{offering.pk} — bsky:{bsky_ok} disc:{disc_ok} buf:{buf_ok}')
                         posted += 1
 
             except Exception as e:
