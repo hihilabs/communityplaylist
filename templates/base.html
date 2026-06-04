@@ -569,6 +569,15 @@ body.has-panel{padding-right:380px;box-sizing:border-box}
   position:absolute;inset:0;width:100%;height:100%;
   display:none;z-index:1;pointer-events:none;
 }
+.cp-vis-fs-btn{
+  position:absolute;top:6px;right:6px;z-index:10;
+  background:rgba(0,0,0,.38);border:none;color:rgba(255,255,255,.45);
+  cursor:pointer;font-size:.85em;padding:4px 7px;border-radius:4px;
+  opacity:0;transition:opacity .2s,color .15s;line-height:1;
+}
+.cp-panel-art:hover .cp-vis-fs-btn,.cp-panel-art:fullscreen .cp-vis-fs-btn,
+.cp-panel-art:-webkit-full-screen .cp-vis-fs-btn{opacity:1}
+.cp-vis-fs-btn:hover{color:#ff6b35;opacity:1!important}
 #cp-panel-video{
   position:absolute;inset:0;
   display:none;z-index:2;background:#000;
