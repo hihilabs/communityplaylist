@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 JOBS = [
-    {'hour': 3,  'cmd': ['refresh_genre_wiki', '--api-url', 'http://10.0.0.124:3001']},
+    {'hour': 3,  'cmd': ['refresh_genre_wiki', '--api-url', os.environ.get('EDIT_MUSIC_API_URL', 'http://10.0.0.124:3001')]},
     {'hour': 4,  'cmd': ['generate_event_flyers', '--limit', '20']},
     {'hour': 14, 'cmd': ['blast_verified_profiles']},
 ]
