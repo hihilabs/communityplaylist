@@ -67,60 +67,11 @@ BOARD_TAGS = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _event_handles(event, platform):
-    """
-    Collect @mention strings from artists + promoters linked to an event.
-    Returns up to 5 handles total, deduped.
-    platform: 'instagram' → ['@heavysetups', ...]
-              'bluesky'   → ['@name.bsky.social', ...]
-    """
-    seen = set()
-    handles = []
-    field = 'instagram' if platform == 'instagram' else 'bluesky'
-    sources = list(
-        event.artists.exclude(**{field: ''}).values_list(field, flat=True)[:3]
-    ) + list(
-        event.promoters.exclude(**{field: ''}).values_list(field, flat=True)[:3]
-    )
-    for h in sources:
-        h = h.strip().lstrip('@')
-        if not h or h in seen:
-            continue
-        seen.add(h)
-        if platform == 'bluesky' and '.' not in h:
-            h = f'{h}.bsky.social'
-        handles.append(f'@{h}')
-        if len(handles) >= 5:
-            break
-    return handles
-
-
-# Short-circuit overrides — genres where the slug would be wrong/ugly
-_GENRE_OVERRIDES = {
-    'r&b':   '#RnB',
-    'j-r&b': '#JRnB',
-}
-
-# Aliases appended alongside the full tag for discoverability
-_GENRE_ALIASES = {
-    'drum and bass': '#DnB',
-    'drum & bass':   '#DnB',
-    'dnb':           '#DrumAndBass',
-    'dubstep':       '#Dub',
-}
-
-
 def _slugify_tag(text):
-    """'Drum & Bass' → '#DrumAndBass #DnB'  (& → and, accents stripped, CamelCase)"""
-    key = text.lower().strip()
-    if key in _GENRE_OVERRIDES:
-        return _GENRE_OVERRIDES[key]
+    """'Living Häus Beer Co' → '#LivingHausBeerCo'"""
     norm = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode()
-    norm = re.sub(r'&', ' and ', norm)
     norm = re.sub(r'[^a-zA-Z0-9 ]', '', norm)
-    tag   = '#' + ''.join(w.capitalize() for w in norm.split() if w)
-    alias = _GENRE_ALIASES.get(key)
-    return f'{tag} {alias}' if alias else tag
+    return '#' + ''.join(w.capitalize() for w in norm.split() if w)
 
 
 def _title_tags(title, max_words=3):
@@ -433,10 +384,6 @@ def post_event_discord(event):
     ttag   = _title_tags(event.title)
     cat_path, cat_hashtag = EVENT_CATS.get(event.category or '', EVENT_CATS[''])
     hood   = getattr(event, 'neighborhood', '') or ''
-    ig_handles = ' '.join(_event_handles(event, 'instagram'))
-    footer_tags = f'{ttag} {vtag} {cat_hashtag} #PDX'
-    if ig_handles:
-        footer_tags = f'{ig_handles}  {footer_tags}'
 
     embed = {
         'title':       event.title,
@@ -451,7 +398,7 @@ def post_event_discord(event):
             {'name': '💰 Cost',    'value': cost,                 'inline': True},
         ],
         'author':  {'name': '🌹 New Event — Community Playlist'},
-        'footer':  {'text': f'{footer_tags}\ncommunityplaylist.com',
+        'footer':  {'text': f'{ttag} {vtag} {cat_hashtag} #PDX\ncommunityplaylist.com',
                     'icon_url': LOGO},
         'timestamp': event.created_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
@@ -590,19 +537,17 @@ def build_event_batch_posts(events, daily_limit=27):
             start  = _lt(e.start_date).strftime('%-I:%M %p')
             genres = ', '.join(e.genres.values_list('name', flat=True)[:2]) or 'various'
             cost   = 'FREE' if e.is_free else (e.price_info or 'Paid')
-            vtag    = _venue_tag(e.location)
-            ttag    = _title_tags(e.title, max_words=2)
-            eurl    = f'{CP_BASE}/events/{e.slug}/'
-            loc     = e.location[:50]
-            handles = _event_handles(e, 'bluesky')
-            handle_line = ('  '.join(handles) + '\n') if handles else ''
-            text    = (
+            vtag   = _venue_tag(e.location)
+            ttag   = _title_tags(e.title, max_words=2)
+            eurl   = f'{CP_BASE}/events/{e.slug}/'
+            loc    = e.location[:50]
+            text   = (
                 f'{e.title}\n'
                 f'📅 {start}  📍 {loc}\n'
                 f'🎵 {genres}  {cost}\n'
-                f'{handle_line}{vtag}  {ttag}\n{eurl}'
+                f'{vtag}  {ttag}\n{eurl}'
             )
-            event_texts.append((text[:300], eurl, [vtag, ttag] + handles))
+            event_texts.append((text[:300], eurl, [vtag, ttag]))
 
         batches.append((header, link, event_texts))
 
@@ -616,20 +561,6 @@ def _hex_to_discord_int(hex_color, default=0xff6b35):
         return int((hex_color or '').lstrip('#'), 16)
     except ValueError:
         return default
-
-
-def _bsky_post_text(text, hashtags=()):
-    """Post plain text to Bluesky. Returns True on success."""
-    try:
-        token, did = _bsky_session()
-        if not token:
-            return False
-        facets = _bsky_facets(text, hashtags=hashtags)
-        uri, _ = _bsky_create(token, did, text, facets=facets or None)
-        return bool(uri)
-    except Exception as e:
-        print(f'[Bluesky/CTA] {e}')
-        return False
 
 
 def _post_promoter_bluesky(promoter):
@@ -662,11 +593,12 @@ def _post_promoter_bluesky(promoter):
                 shop_line += f' — {pay_str}'
 
         live_line    = f'\n🔴 LIVE on Twitch right now' if promoter.is_live and promoter.twitch else ''
+        verified_mark = ' ✓' if promoter.is_verified else ''
         genre_tags   = ' '.join(_slugify_tag(g) for g in genres)
         tag_str      = f'{genre_tags} #PDX #Portland'.strip()
 
         text = (
-            f'{type_icon} {promoter.name}\n\n'
+            f'{type_icon} {promoter.name}{verified_mark}\n\n'
             f'{bio_prev}'
             f'{shop_line}'
             f'{live_line}\n\n'
@@ -777,16 +709,11 @@ def post_promoter(promoter):
     Trigger on is_verified transitioning True, or after a record shop sync
     adds new listings. Returns (bsky_ok, discord_ok, buffer_ok).
     """
-    results = (
+    return (
         _post_promoter_bluesky(promoter),
         _post_promoter_discord(promoter),
         post_buffer_promoter(promoter),
     )
-    if any(results):
-        from django.utils import timezone
-        promoter.last_promoted_at = timezone.now()
-        promoter.save(update_fields=['last_promoted_at'])
-    return results
 
 
 # ── Buffer (queued publishing — FB, Instagram, Threads, YouTube Community) ─────
@@ -938,8 +865,9 @@ def post_buffer_promoter(promoter):
     if promoter.mixcloud:   socials.append(f'🎛 MC/{promoter.mixcloud}')
     social_line = '\n' + '  ·  '.join(socials[:3]) if socials else ''
 
+    verified_mark = ' ✓' if promoter.is_verified else ''
     text = (
-        f'{type_icon} {promoter.name}\n\n'
+        f'{type_icon} {promoter.name}{verified_mark}\n\n'
         f'{bio_prev}'
         f'{social_line}'
         f'{shop_line}\n\n'
