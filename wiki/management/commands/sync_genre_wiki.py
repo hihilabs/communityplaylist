@@ -33,7 +33,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.text import slugify
 
-from wiki.models import GenreToken, CompoundGenre
+from wiki.models import GenreToken, CompoundGenre, LibraryReport
 
 
 # Tags that must never be split — single-concept genre names containing separators
@@ -84,6 +84,29 @@ def wiki_tokenize(tag: str) -> list[str]:
     return result
 
 
+def _aggregate_reports() -> tuple[list[dict], list[dict]]:
+    """Merge all opted-in LibraryReport snapshots into the same shape the
+    live /api/genres/cooccurrence endpoint returns: [{name, count}] tokens
+    and [{a, b, count}] cooccurrence pairs, summed across every install.
+    """
+    token_totals: dict[str, int] = defaultdict(int)
+    pair_totals: dict[tuple[str, str], int] = defaultdict(int)
+
+    for report in LibraryReport.objects.all():
+        for entry in report.tokens_json:
+            name, count = entry.get('name'), entry.get('count')
+            if isinstance(name, str) and isinstance(count, int):
+                token_totals[name] += count
+        for entry in report.cooccurrence_json:
+            a, b, count = entry.get('a'), entry.get('b'), entry.get('count')
+            if isinstance(a, str) and isinstance(b, str) and isinstance(count, int):
+                pair_totals[(a, b)] += count
+
+    raw_tokens = [{'name': name, 'count': count} for name, count in token_totals.items()]
+    cooccurrence = [{'a': a, 'b': b, 'count': count} for (a, b), count in pair_totals.items()]
+    return raw_tokens, cooccurrence
+
+
 class Command(BaseCommand):
     help = 'Sync wiki tokens and compound genres from the live edit.music library'
 
@@ -97,22 +120,32 @@ class Command(BaseCommand):
             help='Minimum file count to create a compound genre'
         )
         parser.add_argument('--dry-run', action='store_true')
+        parser.add_argument(
+            '--from-reports', action='store_true',
+            help='Aggregate from opted-in LibraryReport snapshots instead of '
+                 'live-scanning a single edit.music instance'
+        )
 
     def handle(self, *args, **options):
         api_url   = options['api_url'].rstrip('/')
         min_tracks = options['min_tracks']
         dry       = options['dry_run']
 
-        # ── 1. Fetch live data ────────────────────────────────────────────
-        self.stdout.write(f'Fetching {api_url}/api/genres/cooccurrence …')
-        try:
-            with urllib.request.urlopen(f'{api_url}/api/genres/cooccurrence', timeout=30) as r:
-                data = json.load(r)
-        except Exception as e:
-            raise CommandError(f'Could not reach edit.music API: {e}')
+        # ── 1. Gather data — either from opted-in reports, or one live instance ──
+        if options['from_reports']:
+            report_count = LibraryReport.objects.count()
+            self.stdout.write(f'Aggregating {report_count} opted-in library reports …')
+            raw_tokens, cooccurrence = _aggregate_reports()
+        else:
+            self.stdout.write(f'Fetching {api_url}/api/genres/cooccurrence …')
+            try:
+                with urllib.request.urlopen(f'{api_url}/api/genres/cooccurrence', timeout=30) as r:
+                    data = json.load(r)
+            except Exception as e:
+                raise CommandError(f'Could not reach edit.music API: {e}')
 
-        raw_tokens   = data['tokens']       # [{ name, count }]
-        cooccurrence = data['cooccurrence']  # [{ a, b, count }]
+            raw_tokens   = data['tokens']       # [{ name, count }]
+            cooccurrence = data['cooccurrence']  # [{ a, b, count }]
 
         self.stdout.write(f'  {len(raw_tokens)} genre tags, {len(cooccurrence)} co-occurrence pairs')
 

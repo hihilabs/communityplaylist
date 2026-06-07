@@ -15,6 +15,11 @@ class Command(BaseCommand):
         parser.add_argument('--api-url', default='http://10.0.0.124:3001')
         parser.add_argument('--min-tracks', type=int, default=2)
         parser.add_argument('--skip-enrich', action='store_true')
+        parser.add_argument(
+            '--from-reports', action='store_true',
+            help='Aggregate from opted-in LibraryReport snapshots instead of '
+                 'live-scanning a single edit.music instance'
+        )
         parser.add_argument('--dry-run', action='store_true')
 
     def handle(self, *args, **options):
@@ -24,6 +29,7 @@ class Command(BaseCommand):
         call_command('sync_genre_wiki',
                      api_url=options['api_url'],
                      min_tracks=options['min_tracks'],
+                     from_reports=options['from_reports'],
                      dry_run=dry)
 
         if not options['skip_enrich']:
