@@ -184,3 +184,30 @@ class CompoundGenre(models.Model):
     def get_absolute_url(self):
         from django.urls import reverse
         return reverse('wiki:genre_detail', kwargs={'slug': self.slug})
+
+
+class LibraryReport(models.Model):
+    """Anonymized genre-stat snapshot reported by an opted-in edit.music install.
+    Replaces the old single-instance live scan as the wiki's data source —
+    each install periodically reports its aggregated (anonymized) token/co-occurrence
+    counts here; sync_genre_wiki --from-reports merges all snapshots together.
+    """
+    install_id = models.CharField(max_length=64, unique=True,
+                                   help_text='Random per-install UUID — no personal data')
+    tokens_json = models.JSONField(
+        default=list, blank=True,
+        help_text='[{name, count}] — genre token frequency in the reporting library',
+    )
+    cooccurrence_json = models.JSONField(
+        default=list, blank=True,
+        help_text='[{a, b, count}] — token co-occurrence pairs (which genres share files)',
+    )
+    reported_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-reported_at']
+        verbose_name = 'Library Report'
+
+    def __str__(self):
+        return f'{self.install_id} ({len(self.tokens_json)} tokens, reported {self.reported_at:%Y-%m-%d})'

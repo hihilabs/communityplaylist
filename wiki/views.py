@@ -9,7 +9,9 @@ from django.shortcuts import get_object_or_404, render
 from django.db.models import Q, Count
 from django.http import JsonResponse
 from django.views.decorators.cache import never_cache
-from .models import GenreToken, CompoundGenre, TokenAlias
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from .models import GenreToken, CompoundGenre, TokenAlias, LibraryReport
 
 
 _SOURCE_LABELS = {
@@ -238,3 +240,58 @@ def api_search(request):
     ).distinct().values('name', 'slug'))
 
     return JsonResponse({'tokens': tokens, 'compounds': compounds})
+
+
+# Max sizes accepted from a single report — keeps ingest cheap and bounds abuse
+_REPORT_MAX_TOKENS = 5000
+_REPORT_MAX_PAIRS  = 50000
+_REPORT_THROTTLE_SECONDS = 60 * 5
+
+
+def _valid_count_list(items, key_fields, max_len):
+    if not isinstance(items, list) or len(items) > max_len:
+        return False
+    for item in items:
+        if not isinstance(item, dict):
+            return False
+        if not all(field in item for field in key_fields):
+            return False
+        if not isinstance(item.get('count'), int) or item['count'] < 0:
+            return False
+    return True
+
+
+@csrf_exempt
+@require_POST
+def api_report(request):
+    """Ingest an anonymized genre-stat snapshot from an opted-in edit.music install.
+    Body: {install_id, tokens: [{name, count}], cooccurrence: [{a, b, count}]}
+    No file paths, file names, or other personal data are accepted or stored —
+    just aggregated token/pair counts (see edit.music's reporting module).
+    """
+    try:
+        body = json.loads(request.body)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'invalid JSON body'}, status=400)
+
+    install_id = body.get('install_id')
+    tokens = body.get('tokens', [])
+    cooccurrence = body.get('cooccurrence', [])
+
+    if not isinstance(install_id, str) or not (8 <= len(install_id) <= 64):
+        return JsonResponse({'error': 'install_id required (8-64 chars)'}, status=400)
+    if not _valid_count_list(tokens, ('name', 'count'), _REPORT_MAX_TOKENS):
+        return JsonResponse({'error': 'tokens must be a list of {name, count} (max %d)' % _REPORT_MAX_TOKENS}, status=400)
+    if not _valid_count_list(cooccurrence, ('a', 'b', 'count'), _REPORT_MAX_PAIRS):
+        return JsonResponse({'error': 'cooccurrence must be a list of {a, b, count} (max %d)' % _REPORT_MAX_PAIRS}, status=400)
+
+    throttle_key = f'report_throttle:{install_id}'
+    if cache.get(throttle_key):
+        return JsonResponse({'ok': True, 'throttled': True})
+    cache.set(throttle_key, True, _REPORT_THROTTLE_SECONDS)
+
+    LibraryReport.objects.update_or_create(
+        install_id=install_id,
+        defaults={'tokens_json': tokens, 'cooccurrence_json': cooccurrence},
+    )
+    return JsonResponse({'ok': True})
