@@ -11,7 +11,7 @@ class BoardConfig(AppConfig):
         from datetime import timedelta
         from .models import Topic, Offering
 
-        @receiver(post_save, sender=Topic)
+        @receiver(post_save, sender=Topic, weak=False)
         def enqueue_topic(sender, instance, created, **kwargs):
             if not created:
                 return
@@ -27,7 +27,7 @@ class BoardConfig(AppConfig):
                 defaults={'post_after': timezone.now() + timedelta(hours=delay)},
             )
 
-        @receiver(post_save, sender=Offering)
+        @receiver(post_save, sender=Offering, weak=False)
         def enqueue_offering(sender, instance, created, **kwargs):
             if not created:
                 return
