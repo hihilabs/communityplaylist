@@ -1183,6 +1183,99 @@ def import_localist(feed, now, stdout, stderr):
     return created, skipped, ''
 
 
+# ── Shift2Bikes — PDX community bike calendar ─────────────────────────────────
+# shift2bikes.org runs the open, community-maintained Portland bike-events
+# calendar (Pedalpalooza et al.). Free JSON API, no key:
+#   /api/events.php?startdate=YYYY-MM-DD&enddate=YYYY-MM-DD
+# Locations are informal ("the circle at Ladd's") so we skip geocoding and keep
+# the venue/address text. feed.url is unused (endpoint is fixed); set it anyway.
+
+def import_shift2bikes(feed, now, stdout, stderr):
+    """Import events from the Shift2Bikes API. Returns (created, skipped, error)."""
+    from datetime import datetime as _dt
+    start = now.date()
+    end   = start + timedelta(days=120)
+    api = (f"https://www.shift2bikes.org/api/events.php"
+           f"?startdate={start.isoformat()}&enddate={end.isoformat()}")
+    try:
+        r = requests.get(api, timeout=25, headers={
+            'User-Agent': 'CommunityPlaylist/1.0 (communityplaylist.com)',
+            'Accept': 'application/json',
+        })
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        return 0, 0, str(e)
+
+    rows = data if isinstance(data, list) else data.get('events', [])
+    created = skipped = 0
+    status = 'approved' if feed.auto_approve else 'pending'
+
+    for ev in rows:
+        try:
+            if ev.get('published') is False or ev.get('cancelled') is True:
+                continue
+            title = clean_text((ev.get('title') or '').strip(), max_len=200)
+            d = (ev.get('date') or '').strip()
+            if not title or not d:
+                continue
+            t = (ev.get('time') or '').strip() or '19:00:00'
+            try:
+                naive = _dt.strptime(f"{d} {t[:8]}", '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                try:
+                    naive = _dt.strptime(d, '%Y-%m-%d').replace(hour=19)
+                except ValueError:
+                    continue
+            dtstart = PDX_TZ.localize(naive)
+            if dtstart < now:
+                skipped += 1
+                continue
+
+            venue   = (ev.get('venue') or '').strip()
+            address = (ev.get('address') or '').strip()
+            location = ', '.join(p for p in (venue, address) if p) or 'Portland, OR'
+            event_url = (ev.get('shareable') or '').strip()
+            img = (ev.get('image') or '').strip()
+            image_url = f"https://www.shift2bikes.org{img}" if img.startswith('/') else (img or None)
+
+            slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{dtstart.strftime('%Y-%m-%d')}")
+            existing = Event.objects.filter(slug__startswith=slug_base).first() or _same_day_title_exists(title, dtstart)
+            if existing:
+                skipped += 1
+                continue
+
+            desc = clean_text((ev.get('details') or ev.get('printdescr') or '').strip())[:1800] or f'Imported from {feed.name}'
+            if event_url:
+                desc = f'{desc}\n\nEvent link: {event_url}'.strip()[:2000]
+            e = Event.objects.create(
+                title=title[:200],
+                description=desc[:2000],
+                location=location[:300],
+                start_date=dtstart,
+                end_date=None,
+                submitted_by=feed.name,
+                submitted_email='',
+                status=status,
+                is_free=True,                      # community bike rides are free
+                category=feed.default_category,
+                website=event_url[:200],
+            )
+            if image_url:
+                fname, content = download_image(image_url)
+                if fname and content:
+                    e.photo.save(fname, content, save=True)
+            # Informal ride locations — keep the text, don't geocode/out-of-area reject.
+            enrich_event(e, geocode=False, save=True)
+            tag_feed_defaults(e, feed)
+            created += 1
+        except Exception as ex:
+            stderr.write(f'    skipping shift2bikes event: {ex}')
+            continue
+
+    return created, skipped, ''
+
+
 class Command(BaseCommand):
     help = 'Import events from admin-managed venue/source feeds'
 
@@ -1233,6 +1326,8 @@ class Command(BaseCommand):
                     self.stderr.write('  no URL — skipping')
                     continue
                 created, skipped, error = import_localist(feed, now, self.stdout, self.stderr)
+            elif feed.source_type == VenueFeed.SOURCE_SHIFT2BIKES:
+                created, skipped, error = import_shift2bikes(feed, now, self.stdout, self.stderr)
             else:
                 error = f'unsupported source_type: {feed.source_type}'
                 created = skipped = 0
