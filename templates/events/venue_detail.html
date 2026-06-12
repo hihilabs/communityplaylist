@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% block social_meta %}{% endblock %}{# page emits its own OG in head_extra #}
 {% load url_tags %}
 {% block title %}{{ venue.name }} — Community Playlist{% endblock %}
 {% block head_extra %}

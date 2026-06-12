@@ -9,6 +9,20 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="CP · PDX">
 <link rel="manifest" href="/static/manifest.json">
+{# Site-wide SEO / social-share defaults (home, listings, board, map). Detail pages emit their own OG in head_extra and suppress these with an empty social_meta override. #}
+{% block social_meta %}
+<meta name="description" content="Community Playlist — Portland's community-powered calendar for live music, shows, free & trade, food carts, bike rides, and local artists.">
+<meta property="og:type"        content="website">
+<meta property="og:title"       content="Community Playlist PDX">
+<meta property="og:description" content="Portland's community-powered calendar — live music, events, free &amp; trade, food carts, bike rides, and local artists.">
+<meta property="og:url"         content="https://communityplaylist.com{{ request.path }}">
+<meta property="og:site_name"   content="Community Playlist PDX">
+<meta property="og:image"       content="https://communityplaylist.com/static/img/cp_logo_face.png">
+<meta name="twitter:card"        content="summary_large_image">
+<meta name="twitter:title"       content="Community Playlist PDX">
+<meta name="twitter:description" content="Portland's community-powered events &amp; music calendar.">
+<meta name="twitter:image"       content="https://communityplaylist.com/static/img/cp_logo_face.png">
+{% endblock %}
 {% block head_extra %}{% endblock %}
 <meta name="turbo-cache-control" content="no-cache">
 <script src="https://cdn.jsdelivr.net/npm/@hotwired/turbo@7.3.0/dist/turbo.es2017-umd.js" data-turbo-track="reload"></script>
