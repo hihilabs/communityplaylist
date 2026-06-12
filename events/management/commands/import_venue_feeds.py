@@ -1194,7 +1194,7 @@ def import_shift2bikes(feed, now, stdout, stderr):
     """Import events from the Shift2Bikes API. Returns (created, skipped, error)."""
     from datetime import datetime as _dt
     start = now.date()
-    end   = start + timedelta(days=120)
+    end   = start + timedelta(days=90)   # API rejects ranges much beyond ~90 days
     api = (f"https://www.shift2bikes.org/api/events.php"
            f"?startdate={start.isoformat()}&enddate={end.isoformat()}")
     try:
