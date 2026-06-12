@@ -75,10 +75,16 @@ def download_image(url, field_name='photo'):
                          headers={'User-Agent': 'CommunityPlaylist/1.0 (communityplaylist.com)'})
         r.raise_for_status()
         ct = r.headers.get('content-type', '').split(';')[0].strip().lower()
-        if ct not in IMAGE_TYPES:
+        url_ext = os.path.splitext(url.split('?')[0])[-1].lower()
+        if ct in IMAGE_TYPES:
+            ext = mimetypes.guess_extension(ct) or '.jpg'
+        elif url_ext in IMAGE_EXTS or url_ext == '.jfif':
+            # Some hosts serve images as application/octet-stream (e.g. .jfif on
+            # WordPress) — trust a known image extension on the URL.
+            ext = url_ext
+        else:
             return None, None
-        ext = mimetypes.guess_extension(ct) or '.jpg'
-        ext = ext.replace('.jpe', '.jpg')
+        ext = '.jpg' if ext in ('.jpe', '.jpeg', '.jfif') else ext
         fname = f"{field_name}_{slugify(url[-40:])}{ext}"
         return fname, ContentFile(r.content)
     except Exception:
@@ -947,6 +953,140 @@ def import_eael(feed, now, stdout, stderr):
     return created, skipped, ''
 
 
+# ── RHP / RootsHouse venue listing scraper ────────────────────────────────────
+# Many PDX venues (Holocene, Wonder Ballroom, …) ditched their iCal/REST exports
+# but still server-render the RHP "rhp-events" WordPress widget on their events
+# page. Each show is a card with a "#eventDate"/".singleEventDate" label
+# ("Thu, Jun 11"), a title, a doors/show time, image, and ticket link. Free,
+# no API key. feed.url = the venue events page, e.g. https://www.holocene.org/events/
+
+def _rhp_parse_dt(date_txt, time_txt, now):
+    """Parse RHP '... Jun 11' + 'Doors: 8 pm' → a PDX-aware datetime.
+    RHP dates carry no year; a date >45 days in the past rolls to next year.
+    Falls back to 20:00 when no time is shown."""
+    m = re.search(r'([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})', date_txt or '')
+    if not m:
+        return None
+    try:
+        month = datetime.strptime(m.group(1)[:3], '%b').month
+    except ValueError:
+        return None
+    try:
+        cand = datetime(now.year, month, int(m.group(2)), 20, 0)
+    except ValueError:
+        return None
+    if (now.date() - cand.date()).days > 45:
+        cand = cand.replace(year=now.year + 1)
+    tm = re.search(r'(\d{1,2})(?::(\d{2}))?\s*([ap])m', time_txt or '', re.I)
+    if tm:
+        hour = int(tm.group(1)) % 12
+        if tm.group(3).lower() == 'p':
+            hour += 12
+        cand = cand.replace(hour=hour, minute=int(tm.group(2) or 0))
+    return PDX_TZ.localize(cand)
+
+
+def import_rhp(feed, now, stdout, stderr):
+    """Scrape an RHP/RootsHouse WordPress venue listing. Returns (created, skipped, error)."""
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        return 0, 0, 'beautifulsoup4 not installed — run: pip install beautifulsoup4'
+    try:
+        r = requests.get(feed.url, timeout=20, headers={
+            'User-Agent': 'Mozilla/5.0 (compatible; CommunityPlaylist/1.0; +https://communityplaylist.com)',
+        })
+        r.raise_for_status()
+    except Exception as e:
+        return 0, 0, str(e)
+
+    soup = BeautifulSoup(r.text, 'html.parser')
+    # Holocene uses a grid layout (.eventMainWrapper); Wonder Ballroom a list
+    # layout (.rhpSingleEvent). Prefer one wrapper class per event to avoid the
+    # grid+list double render; cross-feed dedup is the safety net regardless.
+    cards = soup.select('.eventMainWrapper') or soup.select('.rhpSingleEvent')
+    if not cards:
+        return 0, 0, 'no RHP event cards found (layout may have changed)'
+
+    created = skipped = 0
+    status = 'approved' if feed.auto_approve else 'pending'
+    location = (feed.notes or '').strip() or feed.name
+    seen = set()
+
+    for card in cards:
+        try:
+            date_el  = card.select_one('.singleEventDate, #eventDate')
+            title_el = (card.select_one('[class*="rhp-event__title"]')
+                        or card.select_one('.rhpEventTitle, .eventListTitle, h2 a, h3 a, h2, h3'))
+            if not (date_el and title_el):
+                continue
+            title = clean_text(title_el.get_text(' ', strip=True), max_len=200)
+            if not title:
+                continue
+
+            time_txt = None
+            for s in card.find_all(string=re.compile(r'\d{1,2}(:\d{2})?\s*[ap]m', re.I)):
+                time_txt = s.strip()
+                break
+            dtstart = _rhp_parse_dt(date_el.get_text(strip=True), time_txt, now)
+            if not dtstart or dtstart < now:
+                skipped += 1
+                continue
+
+            key = (_norm_title(title), dtstart.date())
+            if key in seen:          # de-dup the grid+list double render
+                continue
+            seen.add(key)
+
+            link_el   = card.select_one('a[href]')
+            event_url = link_el['href'] if (link_el and link_el.get('href', '').startswith('http')) else ''
+            img_el    = card.select_one('img')
+            image_url = None
+            if img_el:
+                src = img_el.get('src') or img_el.get('data-src') or ''
+                if src.startswith('http'):
+                    image_url = src
+
+            slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{dtstart.strftime('%Y-%m-%d')}")
+            existing = Event.objects.filter(slug__startswith=slug_base).first() or _same_day_title_exists(title, dtstart)
+            if existing:
+                if event_url and existing.website != event_url[:200]:
+                    existing.website = event_url[:200]
+                    existing.save(update_fields=['website'])
+                skipped += 1
+                continue
+
+            description = f'Imported from {feed.name}'
+            if event_url:
+                description = f'{description}\n\nEvent link: {event_url}'.strip()
+            ev = Event.objects.create(
+                title=title[:200],
+                description=description[:2000],
+                location=location[:300],
+                start_date=dtstart,
+                end_date=None,
+                submitted_by=feed.name,
+                submitted_email='',
+                status=status,
+                is_free=False,
+                category=feed.default_category,
+                website=event_url[:200],
+            )
+            if image_url:
+                fname, content = download_image(image_url)
+                if fname and content:
+                    ev.photo.save(fname, content, save=True)
+            # Known in-area PDX venue — geocode for the map pin but never out-of-area reject.
+            enrich_event(ev, geocode=bool(location), save=True)
+            tag_feed_defaults(ev, feed)
+            created += 1
+        except Exception as e:
+            stderr.write(f'    skipping rhp card: {e}')
+            continue
+
+    return created, skipped, ''
+
+
 class Command(BaseCommand):
     help = 'Import events from admin-managed venue/source feeds'
 
@@ -987,6 +1127,11 @@ class Command(BaseCommand):
                     self.stderr.write('  no URL — skipping')
                     continue
                 created, skipped, error = import_eael(feed, now, self.stdout, self.stderr)
+            elif feed.source_type == VenueFeed.SOURCE_RHP:
+                if not feed.url:
+                    self.stderr.write('  no URL — skipping')
+                    continue
+                created, skipped, error = import_rhp(feed, now, self.stdout, self.stderr)
             else:
                 error = f'unsupported source_type: {feed.source_type}'
                 created = skipped = 0
