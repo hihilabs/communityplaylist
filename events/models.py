@@ -29,6 +29,7 @@ class VenueFeed(models.Model):
     SOURCE_19HZ         = '19hz'
     SOURCE_EAEL         = 'eael'
     SOURCE_RHP          = 'rhp'
+    SOURCE_LOCALIST     = 'localist'
     SOURCE_CHOICES = [
         (SOURCE_ICAL,         'iCal Feed'),
         (SOURCE_EVENTBRITE,   'Eventbrite API'),
@@ -37,6 +38,7 @@ class VenueFeed(models.Model):
         (SOURCE_19HZ,         '19hz.info PNW Listing'),
         (SOURCE_EAEL,         'EAEL WordPress Calendar (data-events scrape)'),
         (SOURCE_RHP,          'RHP/RootsHouse venue listing (HTML scrape)'),
+        (SOURCE_LOCALIST,     'Localist calendar API (colleges/orgs)'),
     ]
 
     CATEGORY_CHOICES = [

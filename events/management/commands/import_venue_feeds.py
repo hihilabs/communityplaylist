@@ -1087,6 +1087,102 @@ def import_rhp(feed, now, stdout, stderr):
     return created, skipped, ''
 
 
+# ── Localist calendar API (colleges / civic orgs) ─────────────────────────────
+# Localist powers many university/org calendars (e.g. University of Portland at
+# up.enterprise.localist.com). It exposes a free, keyless, paginated JSON API at
+# /api/2/events with structured title, start (ISO+tz), photo, location and a free
+# flag. feed.url = the Localist site base, e.g. https://up.enterprise.localist.com
+
+def import_localist(feed, now, stdout, stderr):
+    """Import events from a Localist calendar API. Returns (created, skipped, error)."""
+    import time as _time
+    base = feed.url.rstrip('/')
+    created = skipped = 0
+    status = 'approved' if feed.auto_approve else 'pending'
+    page = 1
+
+    while True:
+        api = f"{base}/api/2/events?days=180&pp=100&page={page}"
+        try:
+            r = requests.get(api, timeout=20, headers={
+                'User-Agent': 'CommunityPlaylist/1.0 (communityplaylist.com)',
+                'Accept': 'application/json',
+            })
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            return created, skipped, (str(e) if page == 1 else '')
+
+        events = data.get('events', [])
+        if not events:
+            break
+
+        for wrap in events:
+            try:
+                ev = wrap.get('event', wrap)
+                title = clean_text((ev.get('title') or '').strip(), max_len=200)
+                insts = ev.get('event_instances') or []
+                if not title or not insts:
+                    continue
+                start_raw = (insts[0].get('event_instance') or {}).get('start')
+                if not start_raw:
+                    continue
+                try:
+                    dtstart = datetime.fromisoformat(start_raw).astimezone(PDX_TZ)
+                except Exception:
+                    continue
+                if dtstart < now:
+                    skipped += 1
+                    continue
+
+                event_url = ev.get('localist_url') or ''
+                image_url = ev.get('photo_url') or None
+                location  = ev.get('location_name') or (feed.notes or '').strip() or feed.name
+
+                slug_base = slugify(f"{re.sub(r'\\s*&\\s*', ' and ', title)}-{dtstart.strftime('%Y-%m-%d')}")
+                existing = Event.objects.filter(slug__startswith=slug_base).first() or _same_day_title_exists(title, dtstart)
+                if existing:
+                    skipped += 1
+                    continue
+
+                desc = clean_text((ev.get('description_text') or '').strip())[:1800] or f'Imported from {feed.name}'
+                if event_url:
+                    desc = f'{desc}\n\nEvent link: {event_url}'.strip()[:2000]
+                e = Event.objects.create(
+                    title=title[:200],
+                    description=desc[:2000],
+                    location=(location or feed.name)[:300],
+                    start_date=dtstart,
+                    end_date=None,
+                    submitted_by=feed.name,
+                    submitted_email='',
+                    status=status,
+                    is_free=bool(ev.get('free')),
+                    category=feed.default_category,
+                    website=event_url[:200],
+                )
+                if image_url:
+                    fname, content = download_image(image_url)
+                    if fname and content:
+                        e.photo.save(fname, content, save=True)
+                enrich_event(e, geocode=bool(location), save=True)
+                tag_feed_defaults(e, feed)
+                created += 1
+            except Exception as ex:
+                stderr.write(f'    skipping localist event: {ex}')
+                continue
+
+        pg = data.get('page', {})
+        if not pg or pg.get('current', page) >= pg.get('total', page):
+            break
+        page += 1
+        if page > 20:      # safety bound
+            break
+        _time.sleep(0.3)
+
+    return created, skipped, ''
+
+
 class Command(BaseCommand):
     help = 'Import events from admin-managed venue/source feeds'
 
@@ -1132,6 +1228,11 @@ class Command(BaseCommand):
                     self.stderr.write('  no URL — skipping')
                     continue
                 created, skipped, error = import_rhp(feed, now, self.stdout, self.stderr)
+            elif feed.source_type == VenueFeed.SOURCE_LOCALIST:
+                if not feed.url:
+                    self.stderr.write('  no URL — skipping')
+                    continue
+                created, skipped, error = import_localist(feed, now, self.stdout, self.stderr)
             else:
                 error = f'unsupported source_type: {feed.source_type}'
                 created = skipped = 0
